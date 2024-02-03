@@ -3,7 +3,7 @@ import ywta.plugins.swingtwist as swingtwist
 
 
 def initializePlugin(obj):
-    plugin = OpenMayaMPx.MFnPlugin(obj, 'Chad Vernon', '1.0', 'Any')
+    plugin = OpenMayaMPx.MFnPlugin(obj, 'yohawing', '1.0', 'Any')
 
     # plugin.registerNode(swingtwist.SwingTwistNode.name, swingtwist.SwingTwistNode.id,
     #                     swingtwist.SwingTwistNode.creator, swingtwist.SwingTwistNode.initialize)
