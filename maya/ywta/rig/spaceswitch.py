@@ -8,7 +8,7 @@ Example Usage
 
 ::
 
-    import cmt.rig.spaceswitch as spaceswitch
+    import ywta.rig.spaceswitch as spaceswitch
 
     # Create the space switch
     spaceswitch.create_space_switch(
@@ -24,9 +24,9 @@ Example Usage
 """
 import maya.cmds as cmds
 import maya.api.OpenMaya as OpenMaya
-from cmt.dge import dge
-import cmt.rig.common as common
-import cmt.shortcuts as shortcuts
+from ywta.dge import dge
+import ywta.rig.common as common
+import ywta.shortcuts as shortcuts
 
 
 def create_space_switch(

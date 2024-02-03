@@ -1,8 +1,8 @@
 import maya.cmds as cmds
 import maya.api.OpenMaya as OpenMaya
-import cmt.shortcuts as shortcuts
-import cmt.rig.common as common
-from cmt.dge import dge
+import ywta.shortcuts as shortcuts
+import ywta.rig.common as common
+from ywta.dge import dge
 
 
 class SpineRig(object):

@@ -24,9 +24,9 @@ from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 from PySide2.QtCore import *
 from PySide2.QtGui import *
 from PySide2.QtWidgets import *
-import cmt.test.mayaunittest as mayaunittest
-import cmt.shortcuts as shortcuts
-from cmt.ui.widgets.outputconsole import OutputConsole
+import ywta.test.mayaunittest as mayaunittest
+import ywta.shortcuts as shortcuts
+from ywta.ui.widgets.outputconsole import OutputConsole
 
 logger = logging.getLogger(__name__)
 

@@ -3,7 +3,7 @@
 Example usage:
 See test_skeleton.py
 
-import cmt.rig.skeleton as skeleton
+import ywta.rig.skeleton as skeleton
 skeleton.dump('root_joint', json_file)
 cmds.file(new=True, f=True)
 skeleton.load(json_file)
@@ -20,8 +20,8 @@ import maya.cmds as cmds
 import json
 import logging
 
-import cmt.shortcuts as shortcuts
-from cmt.shortcuts import distance, vector_to
+import ywta.shortcuts as shortcuts
+from ywta.shortcuts import distance, vector_to
 
 logger = logging.getLogger(__name__)
 

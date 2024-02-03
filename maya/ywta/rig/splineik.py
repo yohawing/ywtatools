@@ -1,5 +1,5 @@
 import maya.cmds as cmds
-import cmt.shortcuts as shortcuts
+import ywta.shortcuts as shortcuts
 
 
 def create_spine(start_joint, end_joint, lower_control, upper_control, name="spine"):

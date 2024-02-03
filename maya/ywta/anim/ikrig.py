@@ -3,7 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import maya.cmds as cmds
-import cmt.shortcuts as shortcuts
+import ywta.shortcuts as shortcuts
 
 import logging
 import os
@@ -15,12 +15,12 @@ from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 from PySide2.QtCore import *
 from PySide2.QtGui import *
 from PySide2.QtWidgets import *
-import cmt.shortcuts as shortcuts
+import ywta.shortcuts as shortcuts
 
-from cmt.ui.widgets.mayanodewidget import MayaNodeWidget
-from cmt.ui.widgets.filepathwidget import FilePathWidget
-from cmt.ui.widgets.accordionwidget import AccordionWidget
-from cmt.io.fbx import import_fbx, export_animation_fbx
+from ywta.ui.widgets.mayanodewidget import MayaNodeWidget
+from ywta.ui.widgets.filepathwidget import FilePathWidget
+from ywta.ui.widgets.accordionwidget import AccordionWidget
+from ywta.io.fbx import import_fbx, export_animation_fbx
 
 logger = logging.getLogger(__name__)
 
@@ -313,7 +313,7 @@ class FBXFileBrowser(QWidget):
         self.root_path = FilePathWidget(
             "Root Directory: ",
             FilePathWidget.directory,
-            name="cmt.ikrig.fbxfilebrowser.rootpath",
+            name="ywta.ikrig.fbxfilebrowser.rootpath",
             parent=self,
         )
         self.root_path.path_changed.connect(self.set_root_path)

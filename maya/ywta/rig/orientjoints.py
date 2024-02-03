@@ -15,23 +15,23 @@ import logging
 import maya.cmds as cmds
 import maya.api.OpenMaya as OpenMaya
 
-import cmt.rig.skeleton as skeleton
+import ywta.rig.skeleton as skeleton
 reload(skeleton)
 
 log = logging.getLogger(__name__)
-MESSAGE_ATTRIBUTE = "cmt_jointOrient"
-ORIENT_GROUP = "cmt_orient_grp"
+MESSAGE_ATTRIBUTE = "ywta_jointOrient"
+ORIENT_GROUP = "ywta_orient_grp"
 
 
 class OrientJointsWindow(object):
     def __init__(self):
-        name = "cmt_orientjoints"
+        name = "ywta_orientjoints"
         if cmds.window(name, exists=True):
             cmds.deleteUI(name, window=True)
         if cmds.windowPref(name, exists=True):
             cmds.windowPref(name, remove=True)
         self.window = cmds.window(
-            name, title="CMT Orient Joints", widthHeight=(358, 380)
+            name, title="YWTA Orient Joints", widthHeight=(358, 380)
         )
         cmds.columnLayout(adjustableColumn=True)
         margin_width = 4

@@ -21,7 +21,7 @@ API
 ---
 ::
 
-    import cmt.rig.control as control
+    import ywta.rig.control as control
     curve = cmds.circle()[0]
 
     # Save the curve to disk
@@ -65,8 +65,8 @@ import webbrowser
 import maya.cmds as cmds
 import maya.api.OpenMaya as OpenMaya
 
-from cmt.settings import DOCUMENTATION_ROOT
-import cmt.shortcuts as shortcuts
+from ywta.settings import DOCUMENTATION_ROOT
+import ywta.shortcuts as shortcuts
 
 logger = logging.getLogger(__name__)
 CONTROLS_DIRECTORY = os.path.join(os.path.dirname(__file__), "controls")
@@ -82,7 +82,7 @@ def export_curves(controls=None, file_path=None):
     :return: The exported list of ControlShapes.
     """
     if file_path is None:
-        file_path = shortcuts.get_save_file_name("*.json", "cmt.control")
+        file_path = shortcuts.get_save_file_name("*.json", "ywta.control")
         if not file_path:
             return
     if controls is None:
@@ -163,7 +163,7 @@ def load_curves(file_path=None):
     :return:
     """
     if file_path is None:
-        file_path = shortcuts.get_open_file_name("*.json", "cmt.control")
+        file_path = shortcuts.get_open_file_name("*.json", "ywta.control")
         if not file_path:
             return
 

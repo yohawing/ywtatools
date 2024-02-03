@@ -15,7 +15,7 @@ from scipy.spatial.distance import cdist
 
 import maya.api.OpenMaya as OpenMaya
 import maya.cmds as cmds
-import cmt.shortcuts as shortcuts
+import ywta.shortcuts as shortcuts
 
 
 def retarget(source, target, shapes, rbf=None, radius=0.5, stride=1):

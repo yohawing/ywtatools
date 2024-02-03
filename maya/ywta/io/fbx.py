@@ -1,7 +1,7 @@
 import os
 import maya.cmds as cmds
 import maya.mel as mel
-import cmt.shortcuts as shortcuts
+import ywta.shortcuts as shortcuts
 
 
 def import_fbx(file_path):

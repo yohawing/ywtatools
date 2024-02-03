@@ -9,8 +9,8 @@ from PySide2.QtGui import *
 import maya.cmds as cmds
 from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 
-import cmt.shortcuts as shortcuts
-from cmt.rig.control import (
+import ywta.shortcuts as shortcuts
+from ywta.rig.control import (
     get_control_paths_in_library,
     rotate_components,
     CONTROLS_DIRECTORY,
