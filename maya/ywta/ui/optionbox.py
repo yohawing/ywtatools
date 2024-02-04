@@ -22,7 +22,7 @@ class OptionBox(object):
     See cmt.rig.twistdecomposition.Options for a sample implementation.
     """
 
-    def __init__(self, title, help_url=None):
+    def __init__(self, title):
         layout = mel.eval("getOptionBox")
         cmds.setParent(layout)
         mel.eval('setOptionBoxTitle("{}");'.format(title))
@@ -34,15 +34,6 @@ class OptionBox(object):
         cmds.button(apply_button, e=True, command=self._on_apply)
         close_button = mel.eval("getOptionBoxCloseBtn;")
         cmds.button(close_button, e=True, command=self._close)
-
-        if help_url:
-            help_item = mel.eval("getOptionBoxHelpItem;")
-            cmds.menuItem(
-                help_item,
-                e=True,
-                label="Help on {}".format(title),
-                command='import webbrowser; webbrowser.open("{}")'.format(help_url),
-            )
 
     def show(self):
         mel.eval("showOptionBox")
