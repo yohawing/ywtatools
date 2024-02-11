@@ -1,10 +1,10 @@
 import maya.cmds as cmds
 import maya.api.OpenMaya as OpenMaya
-import cmt.shortcuts as shortcuts
-import cmt.rig.common as common
-from cmt.dge import dge
-import cmt.rig.twoboneik as twoboneik
-import cmt.rig.spaceswitch as spaceswitch
+import ywta.shortcuts as shortcuts
+import ywta.rig.common as common
+from ywta.dge import dge
+import ywta.rig.twoboneik as twoboneik
+import ywta.rig.spaceswitch as spaceswitch
 
 reload(common)
 reload(twoboneik)
