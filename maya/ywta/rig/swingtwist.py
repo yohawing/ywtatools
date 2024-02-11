@@ -18,12 +18,12 @@ Since the network uses quaternions, partial swing and twist values between 0.0 a
 will see a flip when the driver transform rotates past 180 degrees.
 
 The setup can either be made with several standard Maya nodes, or the compiled plug-in
-can be used to create a single node. Setting cmt.settings.ENABLE_PLUGINS to False will
+can be used to create a single node. Setting ywta.settings.ENABLE_PLUGINS to False will
 use vanilla Maya nodes. Otherwise, the compiled plug-in will be used.
 
 Example Usage
 =============
-The twist decomposition network can be accessed in the cmt menu::
+The twist decomposition network can be accessed in the ywta menu::
 
     CMT > Rigging > Connect Twist Joint
 
@@ -49,7 +49,7 @@ Twist forearm from wrist::
 
 Use no plugins::
 
-    import cmt.settings as settings
+    import ywta.settings as settings
     settings.ENABLE_PLUGINS = False
     create_swing_twist(wrist, twist_joint1, twist_weight=0.5, swing_weight=0.0)
     create_swing_twist(wrist, twist_joint2, twist_weight=1.0, swing_weight=0.0)
@@ -65,11 +65,11 @@ import maya.cmds as cmds
 import maya.mel as mel
 import maya.api.OpenMaya as OpenMaya
 
-from cmt.ui.optionbox import OptionBox
-from cmt.settings import DOCUMENTATION_ROOT
-import cmt.settings as settings
-from cmt.dge import dge
-import cmt.shortcuts as shortcuts
+from ywta.ui.optionbox import OptionBox
+from ywta.settings import DOCUMENTATION_ROOT
+import ywta.settings as settings
+from ywta.dge import dge
+import ywta.shortcuts as shortcuts
 import math
 
 logger = logging.getLogger(__name__)
@@ -91,7 +91,7 @@ def create_swing_twist(
     """Create a node network to drive a transforms offsetParentMatrix from the
     decomposed swing/twist of another transform.
 
-    Setting cmt.settings.ENABLE_PLUGINS to False will use vanilla Maya nodes. Otherwise,
+    Setting ywta.settings.ENABLE_PLUGINS to False will use vanilla Maya nodes. Otherwise,
     the compiled plug-in will be used.
 
     :param driver: Driver transform
@@ -101,7 +101,7 @@ def create_swing_twist(
     :param twist_axis: Local twist axis on driver (0: X, 1: Y, 2: Z)
     """
     if settings.ENABLE_PLUGINS:
-        cmds.loadPlugin("cmt", qt=True)
+        cmds.loadPlugin("ywtatools", qt=True)
         cmds.swingTwist(
             driver, driven, twist=twist_weight, swing=swing_weight, twistAxis=twist_axis
         )
@@ -287,9 +287,9 @@ def display_menu_options(*args, **kwargs):
 
 
 class Options(OptionBox):
-    SWING_WEIGHT_WIDGET = "cmt_swing_weight"
-    TWIST_WEIGHT_WIDGET = "cmt_twist_weight"
-    TWIST_AXIS_WIDGET = "cmt_twist_axis"
+    SWING_WEIGHT_WIDGET = "swing_weight"
+    TWIST_WEIGHT_WIDGET = "twist_weight"
+    TWIST_AXIS_WIDGET = "twist_axis"
 
     @classmethod
     def get_kwargs(cls):
