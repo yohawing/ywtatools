@@ -13,6 +13,19 @@ def create_menu():
     gmainwindow = mel.eval("$tmp = $gMainWindow;")
     menu = cmds.menu(parent=gmainwindow, tearOff=True, label="YWTA")
 
+    # Mesh
+    mesh_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=menu, label="Mesh")
+    cmds.menuItem(
+        parent=mesh_menu,
+        label="Lock Selected Vertices",
+        command="import ywta.mesh.lock_selected_vertices as lsv; lsv.lock()",
+    )
+    cmds.menuItem(
+        parent=mesh_menu,
+        label="Unlock Selected Vertices",
+        command="import ywta.mesh.lock_selected_vertices as lsv; lsv.unlock()",
+    )
+
     # Rig
     rig_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=menu, label="Rigging")
     cmds.menuItem(
@@ -135,6 +148,12 @@ def create_menu():
         parent=utility_menu,
         label="Resource Browser",
         command="import maya.app.general.resourceBrowser as rb; rb.resourceBrowser().run()",
+        imageOverlayLabel="name",
+    )
+    cmds.menuItem(
+        parent=utility_menu,
+        label="Unity Exporter",
+        command="import ywta.scripts.simple_unity_exporter; ywta.scripts.simple_unity_exporter.showExportUnityUI()",
         imageOverlayLabel="name",
     )
 

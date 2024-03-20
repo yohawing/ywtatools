@@ -9,13 +9,14 @@ class NodeVectorAngle(bpy.types.Node):
     bl_label = 'Angle From Vector'
     bl_icon = 'NODE'
 
-    my_float_prop: bpy.props.FloatProperty(default=3.1415926)
+    # my_float_prop: bpy.props.FloatProperty(default=3.1415926)
 
 
     def init(self, context):
         self.inputs.new('NodeSocketVector', "vector1")
         self.inputs.new('NodeSocketVector', "vector2")
         self.outputs.new('NodeSocketFloat', "degree")
+        self.outputs.new('NodeSocketFloat', "radian")
 
     def update(self):
         input1 = self.inputs["vector1"].default_value
@@ -24,6 +25,7 @@ class NodeVectorAngle(bpy.types.Node):
         vec2 = Vector((input2[0], input2[1], input2[2]))
         angle = vec1.angle(vec2)
         self.outputs["degree"].default_value = math.degrees(angle)
+        self.outputs["degree"].default_value = angle
 
     def copy(self, node):
         print("Copying from node ", node)
@@ -33,9 +35,9 @@ class NodeVectorAngle(bpy.types.Node):
         print("Removing node ", self, ", Goodbye!")
 
     # Additional buttons displayed on the node.
-    def draw_buttons(self, context, layout):
-        layout.label(text="Node settings")
-        layout.prop(self, "my_float_prop")
+    # def draw_buttons(self, context, layout):
+    #     layout.label(text="Node settings")
+    #     layout.prop(self, "my_float_prop")
 
 
 class EXTRANODEGROUPWRAPPER_NG_group_wrapper(bpy.types.GeometryNodeCustomGroup):
