@@ -10,6 +10,7 @@ Usage:
     # To import
     skinio.import_skin(file_path='/path/to/data.skin')
 """
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -27,8 +28,8 @@ from PySide2.QtWidgets import *
 from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 
 import maya.cmds as cmds
-import maya.OpenMaya as OpenMaya
-import maya.OpenMayaAnim as OpenMayaAnim
+import maya.api.OpenMaya as OpenMaya
+import maya.api.OpenMayaAnim as OpenMayaAnim
 
 import ywta.shortcuts as shortcuts
 
@@ -39,7 +40,9 @@ EXTENSION = ".skin"
 KEY_STORE = "skinio.start_directory"
 
 
-def import_skin(file_path=None, shape=None, to_selected_shapes=False, enable_remap=True):
+def import_skin(
+    file_path=None, shape=None, to_selected_shapes=False, enable_remap=True
+):
     """Creates a skinCluster on the specified shape if one does not already exist
     and then import the weight data.
     """
@@ -205,7 +208,7 @@ def export_skin(file_path=None, shapes=None):
             skin.shape,
             len(data["weights"].keys()),
             len(data["blendWeights"]),
-            file_path
+            file_path,
         )
         with open(file_path, "w") as fh:
             json.dump(data, fh)
@@ -361,7 +364,9 @@ class SkinCluster(object):
                 if influence_without_namespace == imported_influence:
                     # Store the imported weights into the MDoubleArray
                     for jj in range(components_per_influence):
-                        weights.set(imported_weights[elements[jj]], jj * influence_count + ii)
+                        weights.set(
+                            imported_weights[elements[jj]], jj * influence_count + ii
+                        )
                     break
 
         influence_indices = OpenMaya.MIntArray(influence_count)
@@ -428,8 +433,8 @@ class WeightRemapDialog(MayaQWidgetBaseMixin, QDialog):
         hbox.addStretch()
 
         self.buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
-            Qt.Horizontal, self)
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, self
+        )
         hbox.addWidget(self.buttons)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
