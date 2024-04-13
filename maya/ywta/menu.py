@@ -10,10 +10,20 @@ from ywta.settings import DOCUMENTATION_ROOT
 
 def create_menu():
     """Creates the YWTA menu."""
-    gmainwindow = mel.eval("$tmp = $gMainWindow;")
-    menu = cmds.menu(parent=gmainwindow, tearOff=True, label="YWTA")
+    # delete the menu if it already exists
+    delete_menu()
 
-    # Mesh
+    gmainwindow = mel.eval("$tmp = $gMainWindow;")
+    menu = cmds.menu("YWTA", parent=gmainwindow, tearOff=True, label="YWTA")
+
+    cmds.menuItem(
+        parent=menu,
+        label="Reload YWTA",
+        command="import ywta.reloadmodules; ywta.reloadmodules.unload_packages()",
+        imageOverlayLabel="Test",
+    )
+
+    #region Mesh
     mesh_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=menu, label="Mesh")
     cmds.menuItem(
         parent=mesh_menu,
@@ -25,24 +35,25 @@ def create_menu():
         label="Unlock Selected Vertices",
         command="import ywta.mesh.lock_selected_vertices as lsv; lsv.unlock()",
     )
+    #endregion
 
-    # Rig
+    #region Rig
     rig_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=menu, label="Rigging")
     cmds.menuItem(
         parent=rig_menu,
         label="Freeze to offsetParentMatrix",
         command="import ywta.rig.common; ywta.rig.common.freeze_to_parent_offset()",
     )
-    cmds.menuItem(
-        parent=rig_menu,
-        label="CQueue",
-        command="import ywta.cqueue.window; ywta.cqueue.window.show()",
-        imageOverlayLabel="cqueue",
-    )
+    # cmds.menuItem(
+    #     parent=rig_menu,
+    #     label="CQueue",
+    #     command="import ywta.cqueue.window; ywta.cqueue.window.show()",
+    #     imageOverlayLabel="cqueue",
+    # )
     cmds.menuItem(parent=rig_menu, divider=True, dividerLabel="Skeleton")
     cmds.menuItem(
         parent=rig_menu,
-        label="Orient Joints",
+        label="Joint Edit Tools",
         command="import ywta.rig.orientjoints as oj; oj.OrientJointsWindow()",
         image="orientJoint.png",
     )
@@ -94,8 +105,9 @@ def create_menu():
         label="Import Control Curves",
         command="import ywta.rig.control as control; control.import_curves()",
     )
+    #endregion
 
-    # Deform
+    #region Deform
     deform_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=menu, label="Deform")
     cmds.menuItem(parent=deform_menu, divider=True, dividerLabel="Skinning")
     transfer_shape_menu_item = cmds.menuItem(
@@ -112,6 +124,11 @@ def create_menu():
     )
     cmds.menuItem(
         parent=deform_menu,
+        label="Duplicate Skinned Mesh",
+        command="import ywta.rig.skin_duplicate as sd; sd.duplicate_skinned_mesh()",
+    )
+    cmds.menuItem(
+        parent=deform_menu,
         label="Export Skin Weights",
         command="import ywta.deform.skinio as skinio; skinio.export_skin()",
         # image="exportSmoothSkin.png",
@@ -122,7 +139,9 @@ def create_menu():
         command="import ywta.deform.skinio as skinio; skinio.import_skin(to_selected_shapes=True)",
         image="importSmoothSkin.png",
     )
+    #endregion
 
+    #region Utility
     utility_menu = cmds.menuItem(
         subMenu=True, tearOff=True, parent=menu, label="Utility"
     )
@@ -140,12 +159,6 @@ def create_menu():
     )
     cmds.menuItem(
         parent=utility_menu,
-        label="Reload YWTA",
-        command="import ywta.reloadmodules; ywta.reloadmodules.unload_packages()",
-        imageOverlayLabel="Test",
-    )
-    cmds.menuItem(
-        parent=utility_menu,
         label="Resource Browser",
         command="import maya.app.general.resourceBrowser as rb; rb.resourceBrowser().run()",
         imageOverlayLabel="name",
@@ -156,6 +169,8 @@ def create_menu():
         command="import ywta.scripts.simple_unity_exporter; ywta.scripts.simple_unity_exporter.showExportUnityUI()",
         imageOverlayLabel="name",
     )
+    #endregion
+
 
     cmds.menuItem(
         parent=menu,
@@ -170,6 +185,7 @@ def create_menu():
     )
 
     cmds.menuItem(parent=menu, divider=True, dividerLabel="About")
+    
     cmds.menuItem(
         parent=menu,
         label="About YWTA",
@@ -183,6 +199,11 @@ def create_menu():
         image="menuIconHelp.png",
     )
 
+def delete_menu():
+    """Deletes the YWTA menu."""
+    #check if the menu exists
+    if cmds.menu("YWTA", exists=True):
+        cmds.deleteUI("YWTA", menu=True)
 
 def documentation():
     """Opens the documentation web page."""

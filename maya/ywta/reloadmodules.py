@@ -1,8 +1,9 @@
 from math import e
 import sys
 import importlib
+import ywta
 
-DEFAULT_RELOAD_PACKAGES = []
+DEFAULT_RELOAD_PACKAGES = ["ywta"]
 
 class RollbackImporter(object):
     """Used to remove imported modules from the module list.
@@ -27,12 +28,13 @@ class RollbackImporter(object):
             if modname not in self.previous_modules:
                 # Force reload when modname next imported
                 try:
-                    # del (sys.modules[modname])
+                    # del(sys.modules[modname])
                     importlib.reload(sys.modules[modname])
+                    print(f"Unloaded: {modname}")
                 except:
                     pass
 
-    def unload_packages(silent=True, packages=None):
+    def unload_packages(self, packages=None):
         if packages is None:
             packages = DEFAULT_RELOAD_PACKAGES
 
@@ -44,14 +46,15 @@ class RollbackImporter(object):
                     reloadList.append(i)
 
         # unload everything
-        for i in reloadList:
+        for modname in reloadList:
             try:
-                if sys.modules[i] is not None:
-                    del(sys.modules[i])
-                    if not silent:
-                        print("Unloaded: %s" % i)
+                if sys.modules[modname] is not None:
+                    importlib.reload(sys.modules[modname])
+                    print(f"Unloaded: {modname}")
             except:
-                print("Failed to unload: %s" % i)
+                print(f"Failed to unload: {modname}")
+
+        ywta.initialize()
 
 
 _rollbackimporter = RollbackImporter()
@@ -65,6 +68,6 @@ def reload_modules():
     global _rollbackimporter
     _rollbackimporter.uninstall()
 
-def unload_packages(silent=True, packages=None):
+def unload_packages():
     global _rollbackimporter
-    _rollbackimporter.unload_packages(silent=False, packages=["ywta"])
+    _rollbackimporter.unload_packages()
