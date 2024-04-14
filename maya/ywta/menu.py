@@ -116,6 +116,11 @@ def create_menu():
         command="import ywta.deform.transfer_shape as tbs;tbs.exec_from_menu()",
         image="exportSmoothSkin.png",
     )
+    bake_deformer_menu_item = cmds.menuItem(
+        parent=deform_menu,
+        label="Bake Deformer to Blendshape",
+        command="import ywta.deform.deformer as bd; bd.bake_deformed_to_blendshape()",
+    )
     cmds.menuItem(
         parent=deform_menu,
         insertAfter=transfer_shape_menu_item,
