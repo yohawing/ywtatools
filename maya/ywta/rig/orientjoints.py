@@ -66,6 +66,7 @@ class OrientJointsWindow(object):
         cmds.button(label="Reset Bind Pose", c=self.resetBindPose)
         cmds.button(label="Mirror Joint", c=self.mirrorJoint)
         cmds.button(label="Mirror Joint Attr", c=self.mirrorJointAttr)
+        cmds.button(label="Toggle SSC", c=self.toggleSegmentScaleCompensate)
 
         cmds.setParent("..")
         cmds.setParent("..")
@@ -231,8 +232,10 @@ class OrientJointsWindow(object):
             mirroredParent = getMirroredJoint(parent)
             # add joint
             new_jnt = getMirroredJoint(parent)
-            cmds.joint(new_jnt, position=cmds.xform(mirroredParent, q=1, worldSpace=1, translation=1))
-
+            cmds.joint(
+                new_jnt,
+                position=cmds.xform(mirroredParent, q=1, worldSpace=1, translation=1),
+            )
 
     def mirrorJointAttr(self, *args):
         selected_joints = cmds.ls(sl=1, type="joint")
@@ -240,16 +243,31 @@ class OrientJointsWindow(object):
             mirroredJnt = getMirroredJoint(jnt)
             tr = cmds.getAttr(jnt + ".translate")[0]
             cmds.setAttr(
-                mirroredJnt + ".translate",
-                -tr[0],tr[1],tr[2],
-                type="double3"
+                mirroredJnt + ".translate", -tr[0], tr[1], tr[2], type="double3"
             )
             jo = cmds.getAttr(jnt + ".jointOrient")[0]
             cmds.setAttr(
-                mirroredJnt + ".jointOrient",
-                jo[0],-jo[1],-jo[2],
-                type="double3"
+                mirroredJnt + ".jointOrient", jo[0], -jo[1], -jo[2], type="double3"
             )
+
+    def toggleSegmentScaleCompensate(self, *args):
+        """選択したジョンイとのSeasonScaleCompensateを切り替える。
+        フラグで子階層も再帰的に処理する。選択したJointの値を反転したものを全てに適応する。"""
+        joints = cmds.ls(sl=True, type="joint")
+        isSSC = cmds.getAttr(joints[0] + ".segmentScaleCompensate")
+        recursive = cmds.checkBox(self.isRecursiveHierarchy, query=True, value=True)
+        toggleSegmentScaleCompensate(joints, isSSC, recursive)
+
+
+def toggleSegmentScaleCompensate(joints, status, recursive=True):
+    for jnt in joints:
+        # check type is joint
+        if not cmds.nodeType(jnt) == "joint":
+            continue
+        cmds.setAttr(jnt + ".segmentScaleCompensate", not status)
+        if recursive:
+            children = cmds.listRelatives(jnt, children=True, type="joint") or []
+            toggleSegmentScaleCompensate(children, status, recursive)
 
 
 def getMirroredJoint(joint, word1="Left", word2="Right"):
@@ -259,6 +277,7 @@ def getMirroredJoint(joint, word1="Left", word2="Right"):
     if word2 in joint:
         return joint.replace(word2, word1)
     return None
+
 
 class Axis:
     x = "X"
@@ -321,10 +340,8 @@ def resetBindPose():
     selected = cmds.ls(selection=True, dag=True)
     # type check if mesh
     if cmds.ls(selected, type="mesh"):
-
         skinClusters = cmds.ls(cmds.listHistory(selected), type="skinCluster")
         for sc in skinClusters:
-            geometry = cmds.skinCluster(sc, query=True, geometry=True)
             joints = cmds.skinCluster(sc, query=True, influence=True)
 
             # get bind pose

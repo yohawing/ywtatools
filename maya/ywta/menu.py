@@ -23,7 +23,7 @@ def create_menu():
         imageOverlayLabel="Test",
     )
 
-    #region Mesh
+    # region Mesh
     mesh_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=menu, label="Mesh")
     cmds.menuItem(
         parent=mesh_menu,
@@ -35,9 +35,15 @@ def create_menu():
         label="Unlock Selected Vertices",
         command="import ywta.mesh.lock_selected_vertices as lsv; lsv.unlock()",
     )
-    #endregion
+    # 複数のオブジェクトをマージして階層をJoint化しBindSkinする
+    cmds.menuItem(
+        parent=mesh_menu,
+        label="Merge Objects and Skinning",
+        command="import ywta.mesh.merge_and_skin as mas; mas.merge_and_skin()",
+    )
+    # endregion
 
-    #region Rig
+    # region Rig
     rig_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=menu, label="Rigging")
     cmds.menuItem(
         parent=rig_menu,
@@ -105,9 +111,15 @@ def create_menu():
         label="Import Control Curves",
         command="import ywta.rig.control as control; control.import_curves()",
     )
-    #endregion
+    cmds.menuItem(parent=rig_menu, divider=True, dividerLabel="HumanIK")
+    cmds.menuItem(
+        parent=rig_menu,
+        label="HumanIK Auto Setup",
+        command="import ywta.rig.humanik as humanik; humanik.setup_hik_character()",
+    )
+    # endregion
 
-    #region Deform
+    # region Deform
     deform_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=menu, label="Deform")
     cmds.menuItem(parent=deform_menu, divider=True, dividerLabel="Skinning")
     transfer_shape_menu_item = cmds.menuItem(
@@ -144,9 +156,9 @@ def create_menu():
         command="import ywta.deform.skinio as skinio; skinio.import_skin(to_selected_shapes=True)",
         image="importSmoothSkin.png",
     )
-    #endregion
+    # endregion
 
-    #region Utility
+    # region Utility
     utility_menu = cmds.menuItem(
         subMenu=True, tearOff=True, parent=menu, label="Utility"
     )
@@ -174,8 +186,7 @@ def create_menu():
         command="import ywta.scripts.simple_unity_exporter; ywta.scripts.simple_unity_exporter.showExportUnityUI()",
         imageOverlayLabel="name",
     )
-    #endregion
-
+    # endregion
 
     cmds.menuItem(
         parent=menu,
@@ -190,7 +201,7 @@ def create_menu():
     )
 
     cmds.menuItem(parent=menu, divider=True, dividerLabel="About")
-    
+
     cmds.menuItem(
         parent=menu,
         label="About YWTA",
@@ -204,11 +215,13 @@ def create_menu():
         image="menuIconHelp.png",
     )
 
+
 def delete_menu():
     """Deletes the YWTA menu."""
-    #check if the menu exists
+    # check if the menu exists
     if cmds.menu("YWTA", exists=True):
         cmds.deleteUI("YWTA", menu=True)
+
 
 def documentation():
     """Opens the documentation web page."""
