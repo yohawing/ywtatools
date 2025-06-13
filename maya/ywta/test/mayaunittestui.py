@@ -18,7 +18,7 @@ import os
 import sys
 import traceback
 import unittest
-import webbrowser
+import importlib
 
 from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 
@@ -50,10 +50,6 @@ def show():
         _win.close()
     _win = MayaTestRunnerDialog()
     _win.show()
-
-
-# def documentation():
-#     webbrowser.open("https://github.com/chadmv/cmt/wiki/Unit-Test-Runner-Dialog")
 
 
 class MayaTestRunnerDialog(MayaQWidgetBaseMixin, QMainWindow):
@@ -143,7 +139,6 @@ class MayaTestRunnerDialog(MayaQWidgetBaseMixin, QMainWindow):
 
     def run_all_tests(self):
         """Callback method to run all the tests found in MAYA_MODULE_PATH."""
-        self.reset_rollback_importer()
         test_suite = unittest.TestSuite()
         mayaunittest.get_tests(test_suite=test_suite)
         self.output_console.clear()
@@ -151,7 +146,6 @@ class MayaTestRunnerDialog(MayaQWidgetBaseMixin, QMainWindow):
 
     def run_selected_tests(self):
         """Callback method to run the selected tests in the UI."""
-        self.reset_rollback_importer()
         test_suite = unittest.TestSuite()
 
         indices = self.test_view.selectedIndexes()
@@ -180,7 +174,6 @@ class MayaTestRunnerDialog(MayaQWidgetBaseMixin, QMainWindow):
 
     def run_failed_tests(self):
         """Callback method to run all the tests with fail or error statuses."""
-        self.reset_rollback_importer()
         test_suite = unittest.TestSuite()
         for node in self.model.node_lookup.values():
             if isinstance(node.test, unittest.TestCase) and node.get_status() in {
@@ -438,4 +431,9 @@ class RollbackImporter(object):
         for modname in sys.modules.keys():
             if modname not in self.previous_modules:
                 # Force reload when modname next imported
-                del sys.modules[modname]
+                try:
+                    # del(sys.modules[modname])
+                    importlib.reload(sys.modules[modname])
+                    print(f"Unloaded: {modname}")
+                except:
+                    pass

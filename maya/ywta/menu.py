@@ -27,11 +27,6 @@ def create_menu():
     animation_menu = cmds.menuItem(
         subMenu=True, tearOff=True, parent=menu, label="Animation"
     )
-    # cmds.menuItem(
-    #     parent=deformer,
-    #     label="Set Keyframe Blendshape Per Frame",
-    #     command="import ywta.deformer as def; def.set_keyframe_blendshape_per_frame()",
-    # )
 
     # region Mesh
     mesh_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=menu, label="Mesh")

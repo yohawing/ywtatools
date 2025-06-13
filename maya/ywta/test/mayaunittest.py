@@ -61,8 +61,8 @@ def run_tests(test=None, test_suite=None):
 
 def get_tests(test=None, test_suite=None):
     """必要なすべてのテストを含むunittest.TestSuiteを取得します。
+    testsディレクトリを使用します。
 
-    MAYA_MODULE_PATHにある全モジュールの「tests」ディレクトリを使用します。
     @param test: 'test_mytest.SomeTestCase.test_function'のような特定のテストを見つけるためのテストパス（オプション）。
     @param test_suite: 発見されたテストを追加するunittest.TestSuite（オプション）。省略された場合、新しいTestSuiteが
     作成されます。
