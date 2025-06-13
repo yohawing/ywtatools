@@ -63,7 +63,7 @@
 - Maya環境でのテスト実行を前提
 
 ## 依存関係
-- numpy, scipy, pyparsing (requirements.txt参照)
+- numpy, scipy, pyparsing (requirements.txt参照)　（新しいPythonモジュールは追加しないこと
 - Maya Python API
 - Blender Python API
 - Visual Studio (C++開発時)

@@ -17,7 +17,7 @@ def test_basic_functionality():
     print("=== 基本機能テスト ===")
 
     # 一時ファイルで設定マネージャーを作成
-    with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
         temp_config = Path(f.name)
 
     try:
@@ -65,7 +65,7 @@ def test_environment_variables():
     os.environ["YWTA_ENABLE_PLUGINS"] = "false"
 
     try:
-        with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             temp_config = Path(f.name)
 
         settings = SettingsManager(temp_config)
@@ -89,7 +89,7 @@ def test_validation():
     """検証機能のテスト"""
     print("\n=== 検証機能テスト ===")
 
-    with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
         temp_config = Path(f.name)
 
     try:

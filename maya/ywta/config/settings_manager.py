@@ -51,7 +51,7 @@ class SettingsManager(BaseConfig):
             config_dir = Path.home() / ".ywta_tools"
 
         config_dir.mkdir(parents=True, exist_ok=True)
-        return config_dir / "config.yaml"
+        return config_dir / "config.json"
 
     def _init_qsettings(self):
         """QSettings互換性のための初期化"""
@@ -73,7 +73,7 @@ class SettingsManager(BaseConfig):
         self.add_config_value(
             ConfigValue(
                 key="documentation.root_url",
-                default="https://chadmv.github.io/cmt/html",
+                default="",
                 description="ドキュメントのルートURL",
                 env_var="YWTA_DOCUMENTATION_ROOT",
             )

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 import json
-import yaml
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, Union, Type, TypeVar, Generic
 from pathlib import Path
@@ -216,13 +215,11 @@ class BaseConfig(ABC):
 
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                if file_path.suffix.lower() in [".yaml", ".yml"]:
-                    self._config_data = yaml.safe_load(f) or {}
-                elif file_path.suffix.lower() == ".json":
+                if file_path.suffix.lower() == ".json":
                     self._config_data = json.load(f)
                 else:
                     raise ConfigError(
-                        f"Unsupported config file format: {file_path.suffix}"
+                        f"Unsupported config file format: {file_path.suffix}, only .json is supported"
                     )
 
             logger.info(f"Config loaded from: {file_path}")
@@ -259,15 +256,11 @@ class BaseConfig(ABC):
         try:
             file_path.parent.mkdir(parents=True, exist_ok=True)
             with open(file_path, "w", encoding="utf-8") as f:
-                if file_path.suffix.lower() in [".yaml", ".yml"]:
-                    yaml.dump(
-                        config_data, f, default_flow_style=False, allow_unicode=True
-                    )
-                elif file_path.suffix.lower() == ".json":
+                if file_path.suffix.lower() == ".json":
                     json.dump(config_data, f, indent=2, ensure_ascii=False)
                 else:
                     raise ConfigError(
-                        f"Unsupported config file format: {file_path.suffix}"
+                        f"Unsupported config file format: {file_path.suffix}, only .json is supported"
                     )
 
             logger.info(f"Config saved to: {file_path}")
