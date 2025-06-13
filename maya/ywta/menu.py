@@ -23,6 +23,16 @@ def create_menu():
         imageOverlayLabel="Test",
     )
 
+    # region Animation
+    animation_menu = cmds.menuItem(
+        subMenu=True, tearOff=True, parent=menu, label="Animation"
+    )
+    # cmds.menuItem(
+    #     parent=deformer,
+    #     label="Set Keyframe Blendshape Per Frame",
+    #     command="import ywta.deformer as def; def.set_keyframe_blendshape_per_frame()",
+    # )
+
     # region Mesh
     mesh_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=menu, label="Mesh")
     cmds.menuItem(
@@ -62,6 +72,12 @@ def create_menu():
         label="Joint Edit Tools",
         command="import ywta.rig.orientjoints as oj; oj.OrientJointsWindow()",
         image="orientJoint.png",
+    )
+    cmds.menuItem(
+        parent=rig_menu,
+        label="Create Joint",
+        command="import ywta.rig.create_joint as cj; cj.create_joint_from_selected_component()",
+        image="joint.png",
     )
     cmds.menuItem(
         parent=rig_menu,
@@ -128,10 +144,15 @@ def create_menu():
         command="import ywta.deform.transfer_shape as tbs;tbs.exec_from_menu()",
         image="exportSmoothSkin.png",
     )
-    bake_deformer_menu_item = cmds.menuItem(
+    cmds.menuItem(
         parent=deform_menu,
         label="Bake Deformer to Blendshape",
         command="import ywta.deform.deformer as bd; bd.bake_deformed_to_blendshape()",
+    )
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Set Keyframe Blendshape Per Frame",
+        command="import ywta.deform.deformer as bd; bd.set_keyframe_blendshape_per_frame()",
     )
     cmds.menuItem(
         parent=deform_menu,
@@ -155,6 +176,13 @@ def create_menu():
         label="Import Skin Weights",
         command="import ywta.deform.skinio as skinio; skinio.import_skin(to_selected_shapes=True)",
         image="importSmoothSkin.png",
+    )
+    cmds.menuItem(parent=deform_menu, divider=True, dividerLabel="BlendShape")
+    cmds.menuItem(
+        parent=deform_menu,
+        label="BlendShape Target Renamer",
+        command="import ywta.deform.target_renamer as tr; tr.show_blendshape_target_renamer()",
+        image="blendShape.png",
     )
     # endregion
 

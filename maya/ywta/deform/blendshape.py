@@ -65,7 +65,9 @@ def add_target(blendshape, target_mesh_name, new_target_name=None):
         index = index[-1] + 1 if index else 0
 
     base_shape = cmds.blendShape(blendshape, q=True, g=True)[0]
-    cmds.blendShape(blendshape, edit=True, target=(base_shape, index, target_mesh_name, 1.0))
+    cmds.blendShape(
+        blendshape, edit=True, target=(base_shape, index, target_mesh_name, 1.0)
+    )
 
     if new_target_name:
         cmds.aliasAttr(new_target_name, "{}.w[{}]".format(blendshape, index))
@@ -80,6 +82,7 @@ def get_target_list(blendshape):
     ]
     return targets
 
+
 def get_target_index(blendshape, target):
     indices = cmds.getAttr("{}.w".format(blendshape), mi=True) or []
     for i in indices:
@@ -90,8 +93,8 @@ def get_target_index(blendshape, target):
         "Target {} does not exist on blendShape {}".format(target, blendshape)
     )
 
-def set_target_weights(blendshape, target, weights):
 
+def set_target_weights(blendshape, target, weights):
     index = get_target_index(blendshape, target)
     for i, w in enumerate(weights):
         cmds.setAttr(
@@ -254,6 +257,7 @@ def get_targets_at_index(blend_name, index=0):
     blend_fn.getTargets(base_obj[0], index, obj_array)
     return obj_array
 
+
 def get_base_object(blend_name):
     """
     returns the base object of the blendShape node.
@@ -264,3 +268,111 @@ def get_base_object(blend_name):
     obj_array = OpenMaya.MObjectArray()
     blend_fn.getBaseObjects(obj_array)
     return obj_array[0]
+
+
+def find_replace_target_names(blendshape, find_text, replace_text, case_sensitive=True):
+    """Find and replace text in blendshape target names.
+
+    :param blendshape: Name of the blendshape node
+    :param find_text: Text to find in target names
+    :param replace_text: Text to replace with
+    :param case_sensitive: Whether the search should be case sensitive (default: True)
+    :return: Dictionary with old_name: new_name pairs for renamed targets
+    """
+    if not cmds.objExists(blendshape):
+        raise RuntimeError("BlendShape node '{}' does not exist".format(blendshape))
+
+    if cmds.nodeType(blendshape) != "blendShape":
+        raise RuntimeError("'{}' is not a blendShape node".format(blendshape))
+
+    targets = get_target_list(blendshape)
+    renamed_targets = {}
+
+    for target in targets:
+        if target is None:
+            continue
+
+        # Perform find and replace
+        if case_sensitive:
+            if find_text in target:
+                new_name = target.replace(find_text, replace_text)
+            else:
+                continue
+        else:
+            if find_text.lower() in target.lower():
+                # Case insensitive replacement
+                import re
+
+                new_name = re.sub(
+                    re.escape(find_text), replace_text, target, flags=re.IGNORECASE
+                )
+            else:
+                continue
+
+        # Skip if name doesn't change
+        if new_name == target:
+            continue
+
+        # Get the target index
+        try:
+            index = get_target_index(blendshape, target)
+
+            # Rename the target by creating a new alias
+            cmds.aliasAttr(new_name, "{}.w[{}]".format(blendshape, index))
+            renamed_targets[target] = new_name
+
+        except RuntimeError as e:
+            cmds.warning("Failed to rename target '{}': {}".format(target, str(e)))
+            continue
+
+    return renamed_targets
+
+
+def find_replace_target_names_regex(blendshape, pattern, replacement):
+    """Find and replace text in blendshape target names using regular expressions.
+
+    :param blendshape: Name of the blendshape node
+    :param pattern: Regular expression pattern to find
+    :param replacement: Replacement text (can include regex groups like \\1, \\2)
+    :return: Dictionary with old_name: new_name pairs for renamed targets
+    """
+    import re
+
+    if not cmds.objExists(blendshape):
+        raise RuntimeError("BlendShape node '{}' does not exist".format(blendshape))
+
+    if cmds.nodeType(blendshape) != "blendShape":
+        raise RuntimeError("'{}' is not a blendShape node".format(blendshape))
+
+    targets = get_target_list(blendshape)
+    renamed_targets = {}
+
+    try:
+        regex = re.compile(pattern)
+    except re.error as e:
+        raise RuntimeError("Invalid regular expression pattern: {}".format(str(e)))
+
+    for target in targets:
+        if target is None:
+            continue
+
+        # Apply regex substitution
+        new_name = regex.sub(replacement, target)
+
+        # Skip if name doesn't change
+        if new_name == target:
+            continue
+
+        # Get the target index
+        try:
+            index = get_target_index(blendshape, target)
+
+            # Rename the target by creating a new alias
+            cmds.aliasAttr(new_name, "{}.w[{}]".format(blendshape, index))
+            renamed_targets[target] = new_name
+
+        except RuntimeError as e:
+            cmds.warning("Failed to rename target '{}': {}".format(target, str(e)))
+            continue
+
+    return renamed_targets
