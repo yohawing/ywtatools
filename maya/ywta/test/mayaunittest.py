@@ -1,35 +1,36 @@
 """
-Contains functions and classes to aid in the unit testing process within Maya.
+Maya内でのユニットテストプロセスを支援する関数とクラスを提供します。
 
-The main classes are:
-TestCase - A derived class of unittest.TestCase which add convenience functionality such as auto plug-in
-           loading/unloading, and auto temporary file name generation and cleanup.
-TestResult - A derived class of unittest.TextTestResult which customizes the test result so we can do things like do a
-            file new between each test and suppress script editor output.
+主要なクラス：
+TestCase - unittest.TestCaseを継承し、プラグインの自動ロード/アンロード、一時ファイル名の生成と
+           クリーンアップなどの便利な機能を追加したクラスです。
+TestResult - unittest.TextTestResultを継承し、各テスト間での新規ファイル作成やスクリプトエディタの
+            出力抑制などのカスタマイズを行うクラスです。
 
-To write tests for this system you need to,
-    a) Derive from cmt.test.TestCase
-    b) Write one or more tests that use the unittest module's assert methods to validate the results.
+このシステムでテストを作成するにはtestsディレクトリ内に新規のPythonファイルを作成し、以下の手順に従います：
+    a) YWTA.test.TestCaseを継承したクラスを作成
+    b) unittestモジュールのassertメソッドを使用して結果を検証するテストを1つ以上作成
 
-Example usage:
+使用例：
 
 # test_sample.py
-from cmt.test import TestCase
+from ywta.test import TestCase
 class SampleTests(TestCase):
     def test_create_sphere(self):
         sphere = cmds.polySphere(n='mySphere')[0]
         self.assertEqual('mySphere', sphere)
 
-# To run just this test case in Maya
-import cmt.test
-cmt.test.run_tests(test='test_sample.SampleTests')
+# Mayaで特定のテストケースのみを実行
+import ywta.test
+ywta.test.run_tests(test='test_sample.SampleTests')
 
-# To run an individual test in a test case
-cmt.test.run_tests(test='test_sample.SampleTests.test_create_sphere')
+# テストケース内の特定のテストを実行
+ywta.test.run_tests(test='test_sample.SampleTests.test_create_sphere')
 
-# To run all tests
-cmt.test.run_tests()
+# すべてのテストを実行
+ywta.test.run_tests()
 """
+
 import os
 import shutil
 import sys
@@ -40,18 +41,17 @@ import logging
 import maya.cmds as cmds
 
 # The environment variable that signifies tests are being run with the custom TestResult class.
-CMT_TESTING_VAR = "CMT_UNITTEST"
+YWTA_TESTING_VAR = "YWTA_UNITTEST"
 
 
-def run_tests(directories=None, test=None, test_suite=None):
-    """Run all the tests in the given paths.
+def run_tests(test=None, test_suite=None):
+    """指定されたパスにあるすべてのテストを実行します。
 
-    @param directories: A generator or list of paths containing tests to run.
-    @param test: Optional name of a specific test to run.
-    @param test_suite: Optional TestSuite to run.  If omitted, a TestSuite will be generated.
+    @param test: 実行する特定のテストの名前（オプション）。
+    @param test_suite: 実行するTestSuite（オプション）。省略された場合、TestSuiteが生成されます。
     """
     if test_suite is None:
-        test_suite = get_tests(directories, test)
+        test_suite = get_tests(test)
 
     runner = unittest.TextTestRunner(verbosity=2, resultclass=TestResult)
     runner.failfast = False
@@ -59,18 +59,18 @@ def run_tests(directories=None, test=None, test_suite=None):
     runner.run(test_suite)
 
 
-def get_tests(directories=None, test=None, test_suite=None):
-    """Get a unittest.TestSuite containing all the desired tests.
+def get_tests(test=None, test_suite=None):
+    """必要なすべてのテストを含むunittest.TestSuiteを取得します。
 
-    @param directories: Optional list of directories with which to search for tests.  If omitted, use all "tests"
-    directories of the modules found in the MAYA_MODULE_PATH.
-    @param test: Optional test path to find a specific test such as 'test_mytest.SomeTestCase.test_function'.
-    @param test_suite: Optional unittest.TestSuite to add the discovered tests to.  If omitted a new TestSuite will be
-    created.
-    @return: The populated TestSuite.
+    MAYA_MODULE_PATHにある全モジュールの「tests」ディレクトリを使用します。
+    @param test: 'test_mytest.SomeTestCase.test_function'のような特定のテストを見つけるためのテストパス（オプション）。
+    @param test_suite: 発見されたテストを追加するunittest.TestSuite（オプション）。省略された場合、新しいTestSuiteが
+    作成されます。
+    @return: テストが追加されたTestSuite。
     """
-    if directories is None:
-        directories = maya_module_tests()
+
+    # maya/ywta/testsディレクトリから探す
+    directories = [os.path.join(os.path.dirname(__file__), "../tests")]
 
     # Populate a TestSuite with all the tests
     if test_suite is None:
@@ -97,18 +97,10 @@ def get_tests(directories=None, test=None, test_suite=None):
     return test_suite
 
 
-def maya_module_tests():
-    """Generator function to iterate over all the Maya module tests directories."""
-    for path in os.environ["MAYA_MODULE_PATH"].split(os.pathsep):
-        p = "{0}/tests".format(path)
-        if os.path.exists(p):
-            yield p
-
-
 def run_tests_from_commandline():
-    """Runs the tests in Maya standalone mode.
+    """Mayaスタンドアロンモードでテストを実行します。
 
-    This is called when running cmt/bin/runmayatests.py from the commandline.
+    コマンドラインからYWTA/bin/runmayatests.pyを実行する際に呼び出されます。
     """
     import maya.standalone
 
@@ -133,7 +125,7 @@ def run_tests_from_commandline():
 
 
 class Settings(object):
-    """Contains options for running tests."""
+    """テスト実行のためのオプションを含むクラス。"""
 
     # Specifies where files generated during tests should be stored
     # Use a uuid subdirectory so tests that are running concurrently such as on a build server
@@ -153,9 +145,9 @@ class Settings(object):
 
 
 def set_temp_dir(directory):
-    """Set where files generated from tests should be stored.
+    """テストから生成されたファイルを保存する場所を設定します。
 
-    @param directory: A directory path.
+    @param directory: ディレクトリパス。
     """
     if os.path.exists(directory):
         Settings.temp_dir = directory
@@ -164,34 +156,34 @@ def set_temp_dir(directory):
 
 
 def set_delete_files(value):
-    """Set whether temp files should be deleted after running all tests in a test case.
+    """テストケース内のすべてのテスト実行後に一時ファイルを削除するかどうかを設定します。
 
-    @param value: True to delete files registered with a TestCase.
+    @param value: TestCaseに登録されたファイルを削除する場合はTrue。
     """
     Settings.delete_files = value
 
 
 def set_buffer_output(value):
-    """Set whether the standard output and standard error streams are buffered during the test run.
+    """テスト実行中に標準出力と標準エラーストリームをバッファリングするかどうかを設定します。
 
-    @param value: True or False
+    @param value: TrueまたはFalse
     """
     Settings.buffer_output = value
 
 
 def set_file_new(value):
-    """Set whether a new file should be created after each test.
+    """各テスト後に新しいファイルを作成するかどうかを設定します。
 
-    @param value: True or False
+    @param value: TrueまたはFalse
     """
     Settings.file_new = value
 
 
 def add_to_path(path):
-    """Add the specified path to the system path.
+    """指定されたパスをシステムパスに追加します。
 
-    @param path: Path to add.
-    @return True if path was added. Return false if path does not exist or path was already in sys.path
+    @param path: 追加するパス。
+    @return パスが追加された場合はTrue。パスが存在しないか、すでにsys.pathにある場合はFalseを返します。
     """
     if os.path.exists(path) and path not in sys.path:
         sys.path.insert(0, path)
@@ -200,10 +192,10 @@ def add_to_path(path):
 
 
 class TestCase(unittest.TestCase):
-    """Base class for unit test cases run in Maya.
+    """Maya内で実行されるユニットテストケースの基本クラス。
 
-    Tests do not have to inherit from this TestCase but this derived TestCase contains convenience
-    functions to load/unload plug-ins and clean up temporary files.
+    テストはこのTestCaseを継承する必要はありませんが、このクラスにはプラグインのロード/アンロードや
+    一時ファイルのクリーンアップなどの便利な機能が含まれています。
     """
 
     # Keep track of all temporary files that were created so they can be cleaned up after all tests have been run
@@ -214,31 +206,31 @@ class TestCase(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        super(TestCase, cls).tearDownClass()
+        unittest.TestCase.tearDownClass()
         cls.delete_temp_files()
         cls.unload_plugins()
 
     @classmethod
     def load_plugin(cls, plugin):
-        """Load the given plug-in and saves it to be unloaded when the TestCase is finished.
+        """指定されたプラグインをロードし、TestCase終了時にアンロードするために保存します。
 
-        @param plugin: Plug-in name.
+        @param plugin: プラグイン名。
         """
         cmds.loadPlugin(plugin, qt=True)
         cls.plugins_loaded.add(plugin)
 
     @classmethod
     def unload_plugins(cls):
-        # Unload any plugins that this test case loaded
+        # このテストケースでロードされたプラグインをアンロード
         for plugin in cls.plugins_loaded:
             cmds.unloadPlugin(plugin)
         cls.plugins_loaded = []
 
     @classmethod
     def delete_temp_files(cls):
-        """Delete the temp files in the cache and clear the cache."""
-        # If we don't want to keep temp files around for debugging purposes, delete them when
-        # all tests in this TestCase have been run
+        """キャッシュ内の一時ファイルを削除し、キャッシュをクリアします。"""
+        # デバッグ目的で一時ファイルを保持したくない場合、このTestCaseのすべてのテストが
+        # 実行された後にファイルを削除します
         if Settings.delete_files:
             for f in cls.files_created:
                 if os.path.exists(f):
@@ -249,12 +241,11 @@ class TestCase(unittest.TestCase):
 
     @classmethod
     def get_temp_filename(cls, file_name):
-        """Get a unique filepath name in the testing directory.
+        """テストディレクトリ内の一意のファイルパス名を取得します。
 
-        The file will not be created, that is up to the caller.  This file will be deleted when
-        the tests are finished.
-        @param file_name: A partial path ex: 'directory/somefile.txt'
-        @return The full path to the temporary file.
+        ファイルは作成されません。作成は呼び出し元の責任です。このファイルはテスト終了時に削除されます。
+        @param file_name: 部分的なパス例：'directory/somefile.txt'
+        @return 一時ファイルへのフルパス。
         """
         temp_dir = Settings.temp_dir
         if not os.path.exists(temp_dir):
@@ -270,73 +261,71 @@ class TestCase(unittest.TestCase):
         return path
 
     def assertListAlmostEqual(self, first, second, places=7, msg=None, delta=None):
-        """Asserts that a list of floating point values is almost equal.
+        """浮動小数点値のリストがほぼ等しいことをアサートします。
 
-        unittest has assertAlmostEqual and assertListEqual but no assertListAlmostEqual.
+        unittestにはassertAlmostEqualとassertListEqualはありますが、assertListAlmostEqualはありません。
         """
         self.assertEqual(len(first), len(second), msg)
         for a, b in zip(first, second):
             self.assertAlmostEqual(a, b, places, msg, delta)
 
     def tearDown(self):
-        if Settings.file_new and CMT_TESTING_VAR not in os.environ.keys():
-            # If running tests without the custom runner, like with PyCharm, the file new of the TestResult class isn't
-            # used so call file new here
+        if Settings.file_new and YWTA_TESTING_VAR not in os.environ.keys():
+            # PyCharmなどのカスタムランナーなしでテストを実行する場合、TestResultクラスのfile newは
+            # 使用されないため、ここでfile newを呼び出します
             cmds.file(f=True, new=True)
 
 
 class TestResult(unittest.TextTestResult):
-    """Customize the test result so we can do things like do a file new between each test and suppress script
-    editor output.
-    """
+    """各テスト間での新規ファイル作成やスクリプトエディタの出力抑制などを行うためにテスト結果をカスタマイズします。"""
 
     def __init__(self, stream, descriptions, verbosity):
         super(TestResult, self).__init__(stream, descriptions, verbosity)
         self.successes = []
 
     def startTestRun(self):
-        """Called before any tests are run."""
+        """テスト実行前に呼び出されます。"""
         super(TestResult, self).startTestRun()
-        # Create an environment variable that specifies tests are being run through the custom runner.
-        os.environ[CMT_TESTING_VAR] = "1"
+        # カスタムランナーを通じてテストが実行されていることを指定する環境変数を作成します。
+        os.environ[YWTA_TESTING_VAR] = "1"
 
         ScriptEditorState.suppress_output()
         if Settings.buffer_output:
-            # Disable any logging while running tests. By disabling critical, we are disabling logging
-            # at all levels below critical as well
+            # テスト実行中のログを無効にします。criticalを無効にすることで、
+            # critical以下のすべてのレベルのログも無効になります
             logging.disable(logging.CRITICAL)
 
     def stopTestRun(self):
-        """Called after all tests are run."""
+        """すべてのテスト実行後に呼び出されます。"""
         if Settings.buffer_output:
-            # Restore logging state
+            # ログ状態を復元
             logging.disable(logging.NOTSET)
         ScriptEditorState.restore_output()
         if Settings.delete_files and os.path.exists(Settings.temp_dir):
             shutil.rmtree(Settings.temp_dir)
 
-        del os.environ[CMT_TESTING_VAR]
+        del os.environ[YWTA_TESTING_VAR]
 
         super(TestResult, self).stopTestRun()
 
     def stopTest(self, test):
-        """Called after an individual test is run.
+        """個々のテスト実行後に呼び出されます。
 
-        @param test: TestCase that just ran."""
+        @param test: 実行されたばかりのTestCase。"""
         super(TestResult, self).stopTest(test)
         if Settings.file_new:
             cmds.file(f=True, new=True)
 
     def addSuccess(self, test):
-        """Override the base addSuccess method so we can store a list of the successful tests.
+        """成功したテストのリストを保存できるように、基本のaddSuccessメソッドをオーバーライドします。
 
-        @param test: TestCase that successfully ran."""
+        @param test: 正常に実行されたTestCase。"""
         super(TestResult, self).addSuccess(test)
         self.successes.append(test)
 
 
 class ScriptEditorState(object):
-    """Provides methods to suppress and restore script editor output."""
+    """スクリプトエディタの出力を抑制および復元するメソッドを提供します。"""
 
     # Used to restore logging states in the script editor
     suppress_results = None
@@ -346,7 +335,7 @@ class ScriptEditorState(object):
 
     @classmethod
     def suppress_output(cls):
-        """Hides all script editor output."""
+        """すべてのスクリプトエディタ出力を非表示にします。"""
         if Settings.buffer_output:
             cls.suppress_results = cmds.scriptEditorInfo(q=True, suppressResults=True)
             cls.suppress_errors = cmds.scriptEditorInfo(q=True, suppressErrors=True)
@@ -362,7 +351,7 @@ class ScriptEditorState(object):
 
     @classmethod
     def restore_output(cls):
-        """Restores the script editor output settings to their original values."""
+        """スクリプトエディタの出力設定を元の値に復元します。"""
         if None not in {
             cls.suppress_results,
             cls.suppress_errors,

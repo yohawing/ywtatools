@@ -1,6 +1,8 @@
 """
-CMT Unit Test framework.
+YWTA Unit Test framework.
 """
-from cmt.test.mayaunittest import TestCase
+
+from ywta.test.mayaunittest import TestCase
+from ywta.test.mayaunittest import run_tests
 
 __all__ = ["TestCase", "run_tests"]

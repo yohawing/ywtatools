@@ -23,6 +23,18 @@
 - [ ] コードの整理とリファクタリング
 - [ ] ドキュメントの更新
 
+## 考慮事項
+
+### Pyside2とPyside6の併用
+ImportErrorを避けるため、Pyside2とPyside6の両方をサポートするコードを記述します。以下のコードスニペットを使用して、適切なモジュールをインポートしてください。
+
+```
+try:
+  from PySide6.QtCore import QObject, Qt
+except ImportError:
+  from PySide2.QtCore import QObject, Qt
+```
+
 ## 現在の設計の概要
 
 ### 1. __モジュール構造__
