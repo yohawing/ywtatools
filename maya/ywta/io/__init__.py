@@ -1,0 +1,2 @@
+# Dependencies:
+#   - ywta.shortcuts
