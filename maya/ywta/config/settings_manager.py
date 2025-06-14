@@ -191,6 +191,19 @@ class SettingsManager(BaseConfig):
 
         優先順位: 環境変数 > ユーザー設定 > デフォルト設定 > 指定されたデフォルト値
         """
+
+        # 環境変数から取得
+        env_value = os.getenv(f"YWTA_{key.upper().replace('.', '_')}", None)
+        if env_value is not None:
+            # 環境変数が設定されている場合はそれを使用
+            logger.debug(f"環境変数から取得: {key} = {env_value}")
+            # ConfigValueが定義されていない場合はそのまま返す
+            if isinstance(env_value, str) and env_value.lower() in ("true", "false"):
+                return env_value.lower() == "true"
+            if isinstance(env_value, str) and env_value.isdigit():
+                return int(env_value)
+            return env_value
+
         # ConfigValueが登録されている場合はそれを使用
         if key in self._config_values:
             return self._config_values[key].get(self._config_data)
