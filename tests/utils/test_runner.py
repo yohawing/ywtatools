@@ -42,6 +42,7 @@ def run_tests(test_suite, verbosity=2, buffer=True):
         unittest.TestResult: テスト実行結果
     """
     runner = unittest.TextTestRunner(verbosity=verbosity, buffer=buffer)
+    runner.failfast = False  # エラーが発生した場合はすぐに停止
     return runner.run(test_suite)
 
 
@@ -180,7 +181,11 @@ def main():
 
     # 環境に応じたテスト実行
     if args.env == "maya":
-        result = run_maya_tests(test_dir, args.pattern)
+        # Mayaのテスト実行はtest_runner.pyではなく、別のスクリプトで行うことをユーザーに知らせる
+        print(
+            "Mayaのテストは `python tests/run_maya_tests.py` を使用して実行してください。"
+        )
+        # result = run_maya_tests(test_dir, args.pattern)
     elif args.env == "blender":
         result = run_blender_tests(test_dir, args.pattern)
     else:

@@ -70,7 +70,7 @@ def get_tests(test=None, test_suite=None):
     """
 
     # maya/ywta/testsディレクトリから探す
-    directories = [os.path.join(os.path.dirname(__file__), "../tests")]
+    directories = [os.path.join(os.path.dirname(__file__), "../../../tests/maya/unit")]
 
     # Populate a TestSuite with all the tests
     if test_suite is None:
@@ -130,7 +130,7 @@ class Settings(object):
     # Specifies where files generated during tests should be stored
     # Use a uuid subdirectory so tests that are running concurrently such as on a build server
     # do not conflict with each other.
-    temp_dir = os.path.join(tempfile.gettempdir(), "mayaunittest", str(uuid.uuid4()))
+    temp_dir = os.path.join(tempfile.gettempdir(), "maya_unit_test", str(uuid.uuid4()))
 
     # Controls whether temp files should be deleted after running all tests in the test case
     delete_files = True

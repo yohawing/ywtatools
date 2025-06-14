@@ -50,7 +50,7 @@
 ### 設定値の取得
 
 ```python
-from maya.ywta.config.settings_manager import get_setting
+from ywta.config.settings_manager import get_setting
 
 # 設定値を取得
 control_color = get_setting("rig.default_control_color")
@@ -63,7 +63,7 @@ log_dir = get_setting("logging.log_directory", "C:/Temp")
 ### 設定値の設定
 
 ```python
-from maya.ywta.config.settings_manager import set_setting
+from ywta.config.settings_manager import set_setting
 
 # 設定値を設定
 set_setting("rig.default_control_color", 13)
@@ -73,7 +73,7 @@ set_setting("ui.language", "ja")
 ### 設定値のリセット
 
 ```python
-from maya.ywta.config.settings_manager import reset_setting
+from ywta.config.settings_manager import reset_setting
 
 # 特定の設定値をデフォルトにリセット
 reset_setting("rig.default_control_color")
@@ -85,7 +85,7 @@ reset_setting()
 ### 設定のエクスポート/インポート
 
 ```python
-from maya.ywta.config.settings_manager import export_settings, import_settings
+from ywta.config.settings_manager import export_settings, import_settings
 
 # 現在の設定をエクスポート
 export_settings("C:/Temp/my_settings.json")
@@ -97,7 +97,7 @@ import_settings("C:/Temp/my_settings.json")
 ### 設定の保存
 
 ```python
-from maya.ywta.config.settings_manager import save_settings
+from ywta.config.settings_manager import save_settings
 
 # 現在の設定をユーザー設定ファイルに保存
 save_settings()
@@ -106,7 +106,7 @@ save_settings()
 ### 設定変更時のコールバック
 
 ```python
-from maya.ywta.config.settings_manager import add_callback, remove_callback, set_setting
+from ywta.config.settings_manager import add_callback, remove_callback, set_setting
 
 # コールバック関数を定義
 def on_theme_changed(key, value):
@@ -130,7 +130,7 @@ set_setting("ui.theme.primary_color", "#00FF00")
 ### 設定マネージャーの直接使用
 
 ```python
-from maya.ywta.config.settings_manager import get_settings_manager
+from ywta.config.settings_manager import get_settings_manager
 
 # 設定マネージャーのインスタンスを取得
 settings = get_settings_manager()
@@ -163,8 +163,8 @@ modified_settings = settings.get_modified_settings()
 設定値の検証が必要な場合は、`ConfigSchema`クラスを使用して検証ルールを定義できます。
 
 ```python
-from maya.ywta.config.config_schema import ConfigSchema
-from maya.ywta.config.settings_manager import get_settings_manager
+from ywta.config.config_schema import ConfigSchema
+from ywta.config.settings_manager import get_settings_manager
 
 # スキーマを作成
 schema = ConfigSchema()
@@ -196,7 +196,7 @@ schema.validate("rig.control_scale", settings.get("rig.control_scale"))
 これらのプロパティは、`settings.py`モジュールからアクセスできます：
 
 ```python
-from maya.ywta.settings import DOCUMENTATION_ROOT, ENABLE_PLUGINS
+from ywta.settings import DOCUMENTATION_ROOT, ENABLE_PLUGINS
 
 print(DOCUMENTATION_ROOT)
 print(ENABLE_PLUGINS)

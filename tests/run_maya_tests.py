@@ -14,9 +14,9 @@ import argparse
 from pathlib import Path
 
 # プロジェクトルートをPythonパスに追加
-project_root = str(Path(__file__).parent.parent.absolute())
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+YWTA_ROOT_DIR = str(Path(__file__).parent.parent.absolute())
+if YWTA_ROOT_DIR not in sys.path:
+    sys.path.insert(0, YWTA_ROOT_DIR)
 
 from tests.common.test_settings import TestSettings
 from tests.utils.test_runner import run_maya_tests
@@ -73,17 +73,6 @@ def main():
     """Maya用テスト実行のメイン関数"""
     parser = argparse.ArgumentParser(description="YWTA Tools Maya テスト実行ツール")
 
-    # テストタイプの選択
-    parser.add_argument(
-        "--type",
-        choices=["unit", "integration", "performance"],
-        default="unit",
-        help="テストタイプ (デフォルト: unit)",
-    )
-
-    # テストディレクトリの指定
-    parser.add_argument("--dir", help="テストを検索するディレクトリ")
-
     # テストファイルパターンの指定
     parser.add_argument(
         "--pattern",
@@ -100,64 +89,34 @@ def main():
         help="Mayaのバージョン (デフォルト: 2024)",
     )
 
-    # 出力バッファリングの指定
-    parser.add_argument(
-        "--no-buffer", action="store_true", help="出力バッファリングを無効にする"
-    )
-
     args = parser.parse_args()
 
-    # 環境設定
-    TestSettings.environment = "maya"
-    TestSettings.test_mode = args.type
-    TestSettings.buffer_output = not args.no_buffer
+    # プロジェクトルートを取
+    mayapy_path = mayapy(args.maya)
 
-    # テストディレクトリが指定された場合
-    if args.dir:
-        test_dir = args.dir
-    else:
-        # デフォルトのテストディレクトリをタイプに基づいて決定
-        test_dir = os.path.join(
-            TestSettings.get_project_root(), "tests", "maya", args.type
-        )
+    maya_unit_test = os.path.join(
+        YWTA_ROOT_DIR, "maya", "ywta", "test", "maya_unit_test.py"
+    )
 
-    # Maya用のテスト実行
-    # result = run_maya_tests(test_dir, args.pattern)
-
-    # 環境変数を設定
+    # mayapyを使用してテストを実行
+    command = [
+        str(mayapy_path),
+        str(maya_unit_test),
+        "--maya",
+        str(args.maya),
+        "--pattern",
+        args.pattern,
+    ]
+    os.environ["MAYA_SCRIPT_PATH"] = ""
+    os.environ["MAYA_MODULE_PATH"] = YWTA_ROOT_DIR
 
     try:
-        mayaunittest = Path(project_root) / "maya" / "ywta" / "test" / "mayaunittest.py"
-        mayapy_path = mayapy(args.maya)
+        subprocess.check_call(command)
+    except subprocess.CalledProcessError as e:
+        print(f"テストの実行に失敗しました: {e}")
+        sys.exit(1)
 
-        os.environ["MAYA_MODULE_PATH"] = str(project_root)
-
-        # テストを実行
-        cmd = [str(mayapy_path), str(mayaunittest)]
-        print(f"テストを実行中: {' '.join(cmd)}")
-
-        result = subprocess.run(
-            cmd,
-            check=False,  # エラーが発生しても例外をスローしない
-            capture_output=True,
-            text=True,
-        )
-
-        # 出力を表示
-        if result.stdout:
-            print(result.stdout)
-        if result.stderr:
-            print(f"エラー出力:\n{result.stderr}")
-
-        # 終了コードを返す
-        if result.returncode != 0:
-            print(f"テスト実行が失敗しました。終了コード: {result.returncode}")
-        else:
-            print("テスト実行が成功しました。")
-
-    except Exception as e:
-        print(f"テスト実行中にエラーが発生しました: {e}")
-        raise
+    print("テストが正常に実行されました。")
 
 
 if __name__ == "__main__":

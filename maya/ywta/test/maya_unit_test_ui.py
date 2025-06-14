@@ -31,7 +31,7 @@ except ImportError:
     from PySide2.QtGui import *
     from PySide2.QtWidgets import *
 
-import ywta.test.mayaunittest as mayaunittest
+import ywta.test.maya_unit_test as maya_unit_test
 from ywta.core.ui_utils import BaseTreeNode
 from ywta.ui.widgets.outputconsole import OutputConsole
 
@@ -64,13 +64,13 @@ class MayaTestRunnerDialog(MayaQWidgetBaseMixin, QMainWindow):
         action = menu.addAction("Buffer Output")
         action.setToolTip("Only display output during a failed test.")
         action.setCheckable(True)
-        action.setChecked(mayaunittest.Settings.buffer_output)
-        action.toggled.connect(mayaunittest.set_buffer_output)
+        action.setChecked(maya_unit_test.Settings.buffer_output)
+        action.toggled.connect(maya_unit_test.set_buffer_output)
         action = menu.addAction("New Scene Between Test")
         action.setToolTip("Creates a new scene file after each test.")
         action.setCheckable(True)
-        action.setChecked(mayaunittest.Settings.file_new)
-        action.toggled.connect(mayaunittest.set_file_new)
+        action.setChecked(maya_unit_test.Settings.file_new)
+        action.toggled.connect(maya_unit_test.set_file_new)
         menu = menubar.addMenu("Help")
 
         toolbar = self.addToolBar("Tools")
@@ -119,7 +119,7 @@ class MayaTestRunnerDialog(MayaQWidgetBaseMixin, QMainWindow):
 
     def refresh_tests(self):
         self.reset_rollback_importer()
-        test_suite = mayaunittest.get_tests()
+        test_suite = maya_unit_test.get_tests()
         root_node = TestNode(test_suite)
         self.model = TestTreeModel(root_node, self)
         self.test_view.setModel(self.model)
@@ -139,7 +139,7 @@ class MayaTestRunnerDialog(MayaQWidgetBaseMixin, QMainWindow):
     def run_all_tests(self):
         """Callback method to run all the tests found in MAYA_MODULE_PATH."""
         test_suite = unittest.TestSuite()
-        mayaunittest.get_tests(test_suite=test_suite)
+        maya_unit_test.get_tests(test_suite=test_suite)
         self.output_console.clear()
         self.model.run_tests(self.output_console, test_suite)
 
@@ -166,7 +166,7 @@ class MayaTestRunnerDialog(MayaQWidgetBaseMixin, QMainWindow):
 
         # Now get the tests with the pruned paths
         for path in test_paths:
-            mayaunittest.get_tests(test=path, test_suite=test_suite)
+            maya_unit_test.get_tests(test=path, test_suite=test_suite)
 
         self.output_console.clear()
         self.model.run_tests(self.output_console, test_suite)
@@ -179,7 +179,7 @@ class MayaTestRunnerDialog(MayaQWidgetBaseMixin, QMainWindow):
                 TestStatus.fail,
                 TestStatus.error,
             }:
-                mayaunittest.get_tests(test=node.path(), test_suite=test_suite)
+                maya_unit_test.get_tests(test=node.path(), test_suite=test_suite)
         self.output_console.clear()
         self.model.run_tests(self.output_console, test_suite)
 
@@ -380,10 +380,10 @@ class TestTreeModel(QAbstractItemModel):
         :param test_suite: The TestSuite to run.
         """
         runner = unittest.TextTestRunner(
-            stream=stream, verbosity=2, resultclass=mayaunittest.TestResult
+            stream=stream, verbosity=2, resultclass=maya_unit_test.TestResult
         )
         runner.failfast = False
-        runner.buffer = mayaunittest.Settings.buffer_output
+        runner.buffer = maya_unit_test.Settings.buffer_output
         result = runner.run(test_suite)
 
         self._set_test_result_data(result.failures, TestStatus.fail)

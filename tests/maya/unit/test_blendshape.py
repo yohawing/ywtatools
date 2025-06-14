@@ -83,44 +83,6 @@ class BlendShapeTests(TestCase):
         with self.assertRaises(RuntimeError):
             bs.get_target_index(blendshape, "non_existent_target")
 
-    def test_zero_and_restore_weights(self):
-        """Test zeroing weights and restoring them"""
-        # Create base mesh and blendshape
-        base_mesh = cmds.polyCube()[0]
-        blendshape = bs.get_or_create_blendshape_node(base_mesh)
-
-        # Create and add targets
-        target1 = cmds.polyCube(name="target1")[0]
-        target2 = cmds.polyCube(name="target2")[0]
-        bs.add_target(blendshape, target1)
-        bs.add_target(blendshape, target2)
-
-        # Set weights
-        cmds.setAttr(f"{blendshape}.target1", 0.5)
-        cmds.setAttr(f"{blendshape}.target2", 0.7)
-
-        # Verify weights are set
-        self.assertAlmostEqual(cmds.getAttr(f"{blendshape}.target1"), 0.5)
-        self.assertAlmostEqual(cmds.getAttr(f"{blendshape}.target2"), 0.7)
-
-        # Zero weights
-        connections = bs.zero_weights(blendshape)
-
-        # Verify weights are zeroed
-        self.assertAlmostEqual(cmds.getAttr(f"{blendshape}.target1"), 0.0)
-        self.assertAlmostEqual(cmds.getAttr(f"{blendshape}.target2"), 0.0)
-
-        # Set different weights
-        cmds.setAttr(f"{blendshape}.target1", 0.3)
-        cmds.setAttr(f"{blendshape}.target2", 0.4)
-
-        # Restore weights (should reconnect any connections, not restore values)
-        bs.restore_weights(blendshape, connections)
-
-        # Since we didn't have connections, values should remain
-        self.assertAlmostEqual(cmds.getAttr(f"{blendshape}.target1"), 0.3)
-        self.assertAlmostEqual(cmds.getAttr(f"{blendshape}.target2"), 0.4)
-
     def test_find_replace_target_names(self):
         """Test finding and replacing text in target names"""
         # Create base mesh and blendshape

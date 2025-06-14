@@ -12,6 +12,11 @@ import uuid
 import logging
 
 try:
+    import maya.standalone
+
+    # Mayaのスタンドアロンモードを初期化
+    maya.standalone.initialize(name="python")
+    # MayaのコマンドとMELをインポート
     import maya.cmds as cmds
     import maya.mel as mel
 
@@ -50,6 +55,9 @@ class MayaTestCase(BaseTestCase):
         """テストケースクラスの終了処理"""
         # プラグインのアンロード
         cls.unload_plugins()
+
+        if float(cmds.about(v=True)) >= 2016.0:
+            maya.standalone.uninitialize()
 
         super().tearDownClass()
 

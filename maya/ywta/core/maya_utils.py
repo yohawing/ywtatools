@@ -49,7 +49,7 @@ def get_mfnmesh(mesh_name):
     :param mesh_name: メッシュ名
     :return: MFnMesh
     """
-    from maya.ywta.core.node_utils import get_shape
+    from ywta.core.node_utils import get_shape
 
     mesh = get_shape(mesh_name)
     path = get_dag_path(mesh)
@@ -74,7 +74,7 @@ def set_points(mesh_name, points):
     :param mesh_name: メッシュ名
     :param points: MPointArray
     """
-    from maya.ywta.core.node_utils import get_shape
+    from ywta.core.node_utils import get_shape
 
     mesh = get_shape(mesh_name)
     path = get_dag_path(mesh)

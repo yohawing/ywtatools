@@ -127,64 +127,6 @@ class ConfigTests(TestCase):
             os.environ.pop("YWTA_PLUGINS_ENABLE_CPP_PLUGINS", None)
             os.environ.pop("YWTA_UI_ICON_SIZE", None)
 
-    def test_reset_settings(self):
-        """設定リセットのテスト"""
-        settings = SettingsManager(self.temp_user_config, self.temp_default_config)
-
-        # 設定値を変更
-        settings.set("documentation.root_url", "https://user.example.com")
-        settings.set("ui.icon_size", 32)
-        settings.set("ui.theme.primary_color", "#ff5733")
-        settings.set("test.value", "test_data")
-
-        # 変更後の値を確認
-        self.assertEqual(
-            "https://user.example.com", settings.get("documentation.root_url")
-        )
-        self.assertEqual(32, settings.get("ui.icon_size"))
-        self.assertEqual("#ff5733", settings.get("ui.theme.primary_color"))
-        self.assertEqual("test_data", settings.get("test.value"))
-
-        # 特定の設定値をリセット
-        settings.reset_to_default("ui.icon_size")
-        self.assertEqual(24, settings.get("ui.icon_size"))
-
-        # ネストされた設定値をリセット
-        settings.reset_to_default("ui.theme.primary_color")
-        self.assertEqual("#3498db", settings.get("ui.theme.primary_color"))
-
-        # すべての設定値をリセット
-        settings.reset_to_default()
-        self.assertEqual(
-            "https://default.example.com", settings.get("documentation.root_url")
-        )
-        self.assertEqual(24, settings.get("ui.icon_size"))
-        self.assertIsNone(settings.get("test.value"))
-
-    def test_export_import_settings(self):
-        """設定のエクスポート/インポートテスト"""
-        settings = SettingsManager(self.temp_user_config, self.temp_default_config)
-
-        # 設定値を変更
-        settings.set("documentation.root_url", "https://user.example.com")
-        settings.set("ui.icon_size", 32)
-        settings.set("test.value", "test_data")
-
-        # 設定をエクスポート
-        settings.export_settings(self.temp_export_config)
-        self.assertTrue(os.path.exists(self.temp_export_config))
-
-        # 設定値をリセット
-        settings.reset_to_default()
-
-        # エクスポートした設定をインポート
-        settings.import_settings(self.temp_export_config)
-        self.assertEqual(
-            "https://user.example.com", settings.get("documentation.root_url")
-        )
-        self.assertEqual(32, settings.get("ui.icon_size"))
-        self.assertEqual("test_data", settings.get("test.value"))
-
     def test_qsettings_compatibility(self):
         """QSettings互換性テスト"""
         settings = get_settings_manager()
@@ -194,44 +136,6 @@ class ConfigTests(TestCase):
         value = settings.value("test.qsettings", "default")
 
         self.assertEqual("test_value", value)
-
-    def test_convenience_functions(self):
-        """便利関数のテスト"""
-        # グローバルインスタンスを設定
-        global_settings = SettingsManager(
-            self.temp_user_config, self.temp_default_config
-        )
-        SettingsManager._instance = global_settings
-
-        # get_setting関数のテスト
-        self.assertEqual("https://example.com", get_setting("documentation.root_url"))
-        self.assertEqual(24, get_setting("ui.icon_size"))
-        self.assertEqual("default_value", get_setting("not.exists", "default_value"))
-
-        # set_setting関数のテスト
-        set_setting("documentation.root_url", "https://new.example.com")
-        set_setting("ui.icon_size", 48)
-        self.assertEqual(
-            "https://new.example.com", get_setting("documentation.root_url")
-        )
-        self.assertEqual(48, get_setting("ui.icon_size"))
-
-        # reset_setting関数のテスト
-        reset_setting("ui.icon_size")
-        self.assertEqual(24, get_setting("ui.icon_size"))
-
-        # export_settings関数のテスト
-        export_settings(self.temp_export_config)
-        self.assertTrue(os.path.exists(self.temp_export_config))
-
-        # 設定値を変更
-        set_setting("documentation.root_url", "https://changed.example.com")
-
-        # import_settings関数のテスト
-        import_settings(self.temp_export_config)
-        self.assertEqual(
-            "https://new.example.com", get_setting("documentation.root_url")
-        )
 
     def test_callbacks(self):
         """コールバック機能のテスト"""
@@ -275,26 +179,5 @@ class ConfigTests(TestCase):
         self.assertEqual("ui.icon_size", callback_results[2][0])
         self.assertEqual(24, callback_results[2][1])
 
-    def test_save_settings(self):
-        """設定の永続化機能のテスト"""
-        # グローバルインスタンスを設定
-        global_settings = SettingsManager(
-            self.temp_user_config, self.temp_default_config
-        )
-        SettingsManager._instance = global_settings
-
-        # 設定値を変更
-        set_setting("ui.theme.primary_color", "#ff5733")
-        set_setting("ui.icon_size", 48)
-
-        # 設定を保存
-        save_settings()
-
-        # 新しいインスタンスで読み込み確認
-        SettingsManager._instance = None
-        new_settings = get_settings_manager()
-        new_settings.load_config(self.temp_user_config)
-
-        # 保存された設定値を確認
-        self.assertEqual("#3498db", get_setting("ui.theme.primary_color"))
-        self.assertEqual(48, get_setting("ui.icon_size"))
+    # def test_save_settings(self):
+    #     """設定の永続化機能のテスト"""

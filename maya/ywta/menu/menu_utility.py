@@ -26,7 +26,7 @@ def create_utility_menu(parent_menu):
     cmds.menuItem(
         parent=utility_menu,
         label="Unit Test Runner",
-        command="import ywta.test.mayaunittestui; ywta.test.mayaunittestui.show()",
+        command="import ywta.test.maya_unit_test_ui; ywta.test.maya_unit_test_ui.show()",
         imageOverlayLabel="Test",
         annotation="ユニットテストを実行するためのUIを開きます",
     )

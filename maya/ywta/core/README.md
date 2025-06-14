@@ -2,7 +2,7 @@
 
 ## 概要
 
-`maya.ywta.core`パッケージは、YWTAツールセット全体で使用される共通のユーティリティ関数とクラスを提供します。このパッケージは、以前は`shortcuts.py`に含まれていた機能を機能別に整理し、より明確な責任分担と依存関係を持つモジュール構造に再編成しています。
+`ywta.core`パッケージは、YWTAツールセット全体で使用される共通のユーティリティ関数とクラスを提供します。このパッケージは、以前は`shortcuts.py`に含まれていた機能を機能別に整理し、より明確な責任分担と依存関係を持つモジュール構造に再編成しています。
 
 ## モジュール構造
 
@@ -69,10 +69,10 @@ Mayaのノード操作に関連するユーティリティ関数を提供しま�
 
 ```python
 # 例：Maya APIユーティリティを使用する場合
-from maya.ywta.core.maya_utils import get_mfnmesh, get_points
+from ywta.core.maya_utils import get_mfnmesh, get_points
 
 # 例：ジオメトリユーティリティを使用する場合
-from maya.ywta.core.geometry_utils import distance, vector_to
+from ywta.core.geometry_utils import distance, vector_to
 ```
 
 ### 後方互換性
@@ -81,7 +81,7 @@ from maya.ywta.core.geometry_utils import distance, vector_to
 
 ```python
 # 非推奨の使用方法（警告が表示されます）
-from maya.ywta.shortcuts import get_shape, distance
+from ywta.shortcuts import get_shape, distance
 ```
 
 ## レイヤードアーキテクチャ

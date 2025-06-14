@@ -2,7 +2,7 @@
 Shortcuts Module
 
 このモジュールは、後方互換性のために維持されています。
-新しいコードでは、maya.ywta.core パッケージの特定のモジュールを直接インポートすることをお勧めします。
+新しいコードでは、ywta.core パッケージの特定のモジュールを直接インポートすることをお勧めします。
 """
 
 from __future__ import absolute_import

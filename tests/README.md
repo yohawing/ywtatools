@@ -29,16 +29,6 @@ tests/
 python tests/run_tests.py
 ```
 
-特定の環境やテストタイプを指定することもできます：
-
-```bash
-# Maya環境の単体テストを実行
-python tests/run_tests.py --env maya --type unit
-
-# Blender環境の統合テストを実行
-python tests/run_tests.py --env blender --type integration
-```
-
 ### Maya用テストの実行
 
 Maya環境でテストを実行するには、以下のいずれかの方法を使用します：
@@ -51,9 +41,9 @@ Maya環境でテストを実行するには、以下のいずれかの方法を�
    import tests.run_maya_tests
    ```
 
-2. mayapy.exeを使用して実行：
+2. CLIからMayaのStandalone環境での実行：
    ```bash
-   mayapy.exe tests/run_maya_tests.py
+   python tests/run_maya_tests.py --type unit --pattern test_*.py --maya 2024
    ```
 
 オプションを指定することもできます：
