@@ -17,3 +17,6 @@ __all__ = [
     "SettingsManager",
     "ConfigSchema",
 ]
+
+# Dependencies:
+#   - ywta.config.base_config
