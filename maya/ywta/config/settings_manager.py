@@ -227,10 +227,16 @@ class SettingsManager(BaseConfig):
         if key is None:
             # すべての設定値をリセット
             self._config_data.clear()
+            # ConfigValueもリセット
+            for config_value in self._config_values.values():
+                config_value.reset()
             self.save_config()
             logger.info("すべての設定値をデフォルトにリセットしました")
         else:
             # 指定された設定値をリセット
+            if key in self._config_values:
+                self._config_values[key].reset()
+
             keys = key.split(".")
             if len(keys) == 1:
                 if key in self._config_data:

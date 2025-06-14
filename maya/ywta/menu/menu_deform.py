@@ -47,21 +47,6 @@ def create_deform_menu(parent_menu):
         annotation="スキンが適用されたメッシュを複製します",
     )
 
-    cmds.menuItem(
-        parent=deform_menu,
-        label="Export Skin Weights",
-        command="import ywta.deform.skinio as skinio; skinio.export_skin()",
-        annotation="スキンウェイトをエクスポートします",
-    )
-
-    cmds.menuItem(
-        parent=deform_menu,
-        label="Import Skin Weights",
-        command="import ywta.deform.skinio as skinio; skinio.import_skin(to_selected_shapes=True)",
-        image="importSmoothSkin.png",
-        annotation="スキンウェイトをインポートします",
-    )
-
     # デフォーマー関連
     cmds.menuItem(
         parent=deform_menu,

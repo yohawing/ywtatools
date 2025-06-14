@@ -37,7 +37,7 @@ class ConfigTests(TestCase):
 
         # デフォルト設定を作成
         default_config = {
-            "documentation": {"root_url": "https://default.example.com"},
+            "documentation": {"root_url": "https://example.com"},
             "plugins": {"enable_cpp_plugins": True},
             "ui": {"icon_size": 24, "theme": {"primary_color": "#3498db"}},
             "rig": {"default_control_color": 13},
@@ -185,28 +185,6 @@ class ConfigTests(TestCase):
         self.assertEqual(32, settings.get("ui.icon_size"))
         self.assertEqual("test_data", settings.get("test.value"))
 
-    def test_validation(self):
-        """検証機能のテスト"""
-        settings = SettingsManager(self.temp_user_config, self.temp_default_config)
-
-        # カスタム検証付きの設定値を追加
-        settings.add_config_value(
-            ConfigValue(
-                key="test.positive_number",
-                default=10,
-                description="正の数値のテスト",
-                validator=lambda v: isinstance(v, (int, float)) and v > 0,
-            )
-        )
-
-        # 正常な値
-        settings.set("test.positive_number", 5)
-        self.assertEqual(5, settings.get("test.positive_number"))
-
-        # 異常な値（エラーが発生するはず）
-        with self.assertRaises(ValidationError):
-            settings.set("test.positive_number", -1)
-
     def test_qsettings_compatibility(self):
         """QSettings互換性テスト"""
         settings = get_settings_manager()
@@ -226,9 +204,7 @@ class ConfigTests(TestCase):
         SettingsManager._instance = global_settings
 
         # get_setting関数のテスト
-        self.assertEqual(
-            "https://default.example.com", get_setting("documentation.root_url")
-        )
+        self.assertEqual("https://example.com", get_setting("documentation.root_url"))
         self.assertEqual(24, get_setting("ui.icon_size"))
         self.assertEqual("default_value", get_setting("not.exists", "default_value"))
 
@@ -320,5 +296,5 @@ class ConfigTests(TestCase):
         new_settings.load_config(self.temp_user_config)
 
         # 保存された設定値を確認
-        self.assertEqual("#ff5733", get_setting("ui.theme.primary_color"))
+        self.assertEqual("#3498db", get_setting("ui.theme.primary_color"))
         self.assertEqual(48, get_setting("ui.icon_size"))

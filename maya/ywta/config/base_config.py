@@ -111,7 +111,7 @@ class ConfigValue(Generic[T]):
     def _parse_env_value(self, env_value: str) -> T:
         """環境変数の値を適切な型に変換"""
         if isinstance(self.default, bool):
-            return env_value.lower() in ("true", "1", "yes", "on")
+            return env_value.lower() in ("true", "1", "yes", "on", "t")
         elif isinstance(self.default, int):
             return int(env_value)
         elif isinstance(self.default, float):
