@@ -22,17 +22,12 @@ from __future__ import print_function
 
 import os
 
-from PySide2.QtCore import Signal
-from PySide2.QtWidgets import (
-    QWidget,
-    QHBoxLayout,
-    QLabel,
-    QComboBox,
-    QSizePolicy,
-    QPushButton,
-    QDialog,
-    QFileDialog,
-)
+try:
+    from PySide6.QtCore import Signal
+    from PySide6.QtWidgets import *
+except ImportError:
+    from PySide2.QtCore import Signal
+    from PySide2.QtWidgets import *
 
 from ywta.ui.stringcache import StringCache
 

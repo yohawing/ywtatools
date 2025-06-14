@@ -1,0 +1,118 @@
+{
+  "documentation": {
+    "root_url": "https://github.com/yohawing/ywtatools",
+    "local_path": "",
+    "open_in_browser": true
+  },
+  "plugins": {
+    "enable_cpp_plugins": true,
+    "auto_load": true,
+    "search_paths": []
+  },
+  "ui": {
+    "icon_size": 24,
+    "menu_name": "YWTA Tools",
+    "use_shelf": true,
+    "shelf_name": "YWTA",
+    "theme": {
+      "primary_color": "#3498db",
+      "secondary_color": "#2ecc71",
+      "text_color": "#2c3e50"
+    },
+    "language": "en"
+  },
+  "logging": {
+    "level": "INFO",
+    "file_logging": true,
+    "log_directory": "",
+    "max_log_files": 5,
+    "max_file_size_mb": 10
+  },
+  "rig": {
+    "default_control_color": 13,
+    "default_control_shape": "circle",
+    "control_scale": 1.0,
+    "joint_radius": 1.0,
+    "auto_orient_joints": true,
+    "naming": {
+      "control_suffix": "_ctrl",
+      "joint_prefix": "jnt_",
+      "group_suffix": "_grp",
+      "side_token": {
+        "left": "L",
+        "right": "R",
+        "center": "C"
+      }
+    }
+  },
+  "deform": {
+    "default_skin_method": "dual_quaternion",
+    "max_influences": 4,
+    "normalize_weights": true,
+    "blendshape": {
+      "default_envelope": 1.0,
+      "use_in_between": true,
+      "topology_check": true
+    },
+    "skinio": {
+      "default_directory": "",
+      "file_format": "json",
+      "compress_files": true
+    }
+  },
+  "mesh": {
+    "default_subdivision_level": 1,
+    "cleanup": {
+      "remove_unused_vertices": true,
+      "remove_unused_uvs": true,
+      "fix_non_manifold": true
+    },
+    "export": {
+      "default_format": "fbx",
+      "triangulate": true,
+      "optimize_for_unity": false,
+      "optimize_for_unreal": false
+    }
+  },
+  "anim": {
+    "default_frame_rate": 24,
+    "time_range": {
+      "start": 1,
+      "end": 120
+    },
+    "auto_key": false,
+    "tangent_type": "auto"
+  },
+  "io": {
+    "fbx": {
+      "export_version": "FBX201900",
+      "ascii": false,
+      "embed_media": false,
+      "preserve_references": true
+    },
+    "alembic": {
+      "frame_range_mode": "timeline",
+      "write_uv": true,
+      "write_color_sets": true,
+      "data_format": "ogawa"
+    }
+  },
+  "system": {
+    "temp_directory": "",
+    "cache_size_mb": 512,
+    "threads": 0,
+    "check_for_updates": true,
+    "telemetry": false,
+    "maya_version": ""
+  },
+  "user": {
+    "name": "",
+    "email": "",
+    "preferences": {
+      "auto_save": true,
+      "auto_save_interval_min": 15,
+      "recent_projects": [],
+      "recent_files": []
+    }
+  }
+}

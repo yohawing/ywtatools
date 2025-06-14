@@ -10,9 +10,9 @@ from __future__ import division
 from __future__ import print_function
 
 # 各サブモジュールからのインポート
-from maya.ywta.core.maya_utils import *
-from maya.ywta.core.node_utils import *
-from maya.ywta.core.namespace_utils import *
-from maya.ywta.core.ui_utils import *
-from maya.ywta.core.settings_utils import *
-from maya.ywta.core.geometry_utils import *
+from ywta.core.maya_utils import *
+from ywta.core.node_utils import *
+from ywta.core.namespace_utils import *
+from ywta.core.ui_utils import *
+from ywta.core.settings_utils import *
+from ywta.core.geometry_utils import *

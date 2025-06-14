@@ -22,7 +22,6 @@ from ywta.reloadmodules import RollbackImporter
 
 from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 
-
 try:
     from PySide6.QtCore import QObject, Qt
     from PySide6.QtGui import QIcon, QPixmap
@@ -33,7 +32,7 @@ except ImportError:
     from PySide2.QtWidgets import *
 
 import ywta.test.mayaunittest as mayaunittest
-import ywta.shortcuts as shortcuts
+from ywta.core.ui_utils import BaseTreeNode
 from ywta.ui.widgets.outputconsole import OutputConsole
 
 logger = logging.getLogger(__name__)
@@ -210,7 +209,7 @@ class TestStatus:
     skipped = 4
 
 
-class TestNode(shortcuts.BaseTreeNode):
+class TestNode(BaseTreeNode):
     """A node representing a Test, TestCase, or TestSuite for display in a QTreeView."""
 
     success_icon = QPixmap(os.path.join(ICON_DIR, "ywta_test_success.png"))

@@ -14,7 +14,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Maya API関連のユーティリティ
-from maya.ywta.core.maya_utils import (
+from ywta.core.maya_utils import (
     get_mobject,
     get_dag_path,
     get_mfnmesh,
@@ -26,26 +26,26 @@ from maya.ywta.core.maya_utils import (
 )
 
 # ノード操作関連のユーティリティ
-from maya.ywta.core.node_utils import (
+from ywta.core.node_utils import (
     get_shape,
     get_node_in_namespace_hierarchy,
 )
 
 # 名前空間関連のユーティリティ
-from maya.ywta.core.namespace_utils import (
+from ywta.core.namespace_utils import (
     get_namespace_from_name,
     remove_namespace_from_name,
 )
 
 # UI関連のユーティリティ
-from maya.ywta.core.ui_utils import (
+from ywta.core.ui_utils import (
     BaseTreeNode,
     SingletonWindowMixin,
     get_icon_path,
 )
 
 # 設定関連のユーティリティ
-from maya.ywta.core.settings_utils import (
+from ywta.core.settings_utils import (
     get_setting,
     set_setting,
     get_save_file_name,
@@ -55,7 +55,7 @@ from maya.ywta.core.settings_utils import (
 )
 
 # ジオメトリ関連のユーティリティ
-from maya.ywta.core.geometry_utils import (
+from ywta.core.geometry_utils import (
     distance,
     vector_to,
 )
@@ -70,7 +70,7 @@ def _deprecated_warning(original_func):
     def wrapper(*args, **kwargs):
         warnings.warn(
             f"Function {original_func.__name__} in shortcuts.py is deprecated. "
-            f"Use the equivalent function from maya.ywta.core instead.",
+            f"Use the equivalent function from ywta.core instead.",
             DeprecationWarning,
             stacklevel=2,
         )
