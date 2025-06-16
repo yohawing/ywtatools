@@ -4,17 +4,16 @@ import maya.cmds as cmds
 import maya.OpenMaya as OpenMaya
 import maya.OpenMayaAnim as OpenMayaAnim
 
-from ywta.io.obj import import_obj, export_obj
 import ywta.shortcuts as shortcuts
 import ywta.deform.np_mesh as np_mesh
 import ywta.rig.common as common
 
 
 def get_blendshape_node(geometry):
-    """Get the first blendshape node upstream from the given geometry.
+    """指定されたジオメトリの上流にある最初のブレンドシェイプノードを取得します。
 
-    :param geometry: Name of the geometry
-    :return: The blendShape node name
+    :param geometry: ジオメトリの名前
+    :return: ブレンドシェイプノードの名前
     """
     geometry = shortcuts.get_shape(geometry)
     history = cmds.listHistory(geometry, il=2, pdo=False) or []
@@ -31,11 +30,11 @@ def get_blendshape_node(geometry):
 
 
 def get_or_create_blendshape_node(geometry):
-    """Get the first blendshape node upstream from the given geometry or create one if
-    one does not exist.
+    """指定されたジオメトリの上流にある最初のブレンドシェイプノードを取得します。
+    存在しない場合は新しく作成します。
 
-    :param geometry: Name of the geometry
-    :return: The blendShape node name
+    :param geometry: ジオメトリの名前
+    :return: ブレンドシェイプノードの名前
     """
     geometry = shortcuts.get_shape(geometry)
     blendshape = get_blendshape_node(geometry)
@@ -105,105 +104,120 @@ def set_target_weights(blendshape, target, weights):
         )
 
 
-def import_obj_directory(directory, base_mesh=None):
-    if base_mesh:
-        blendshape = get_or_create_blendshape_node(base_mesh)
-    for f in os.listdir(directory):
-        if not f.lower().endswith(".obj") or f.startswith("_"):
-            continue
-        full_path = os.path.join(directory, f)
-        target = import_obj(full_path)
-        if base_mesh:
-            add_target(blendshape, target)
-            cmds.delete(target)
-
-
-def export_blendshape_targets(blendshape, directory):
-    """Export all targets of a blendshape as objs.
-
-    :param blendshape: Blendshape name
-    :param directory: Directory path
-    """
-    connections = zero_weights(blendshape)
-    targets = get_target_list(blendshape)
-    base = cmds.blendShape(blendshape, q=True, g=True)[0]
-    for t in targets:
-        plug = "{}.{}".format(blendshape, t)
-        cmds.setAttr(plug, 1)
-        file_path = os.path.join(directory, "{}.obj".format(t))
-        export_obj(base, file_path)
-        cmds.setAttr(plug, 0)
-    restore_weights(blendshape, connections)
-
-
 def zero_weights(blendshape):
-    """Disconnects all connections to blendshape target weights and zero's
-     out the weights.
+    """ブレンドシェイプターゲットのウェイトへのすべての接続を切断し、
+    ウェイトをゼロにします。
 
-    :param blendshape: Blendshape node name
-    :return: Dictionary of connections dict[target] = connection
+    :param blendshape: ブレンドシェイプノードの名前
+    :return: 接続の辞書 dict[target] = [connection, original_value]
     """
     connections = {}
     targets = get_target_list(blendshape)
     for t in targets:
         plug = "{}.{}".format(blendshape, t)
+        # 現在の値を保存
+        original_value = cmds.getAttr(plug)
         connection = cmds.listConnections(plug, plugs=True, d=False)
         if connection:
-            connections[t] = connection[0]
+            connections[t] = [connection[0], original_value]
             cmds.disconnectAttr(connection[0], plug)
+        else:
+            # 接続がない場合でも元の値を保存
+            connections[t] = [None, original_value]
         cmds.setAttr(plug, 0)
     return connections
 
 
 def restore_weights(blendshape, connections):
-    """Restore the weight connections disconnected from zero_weights.
+    """zero_weightsで切断されたウェイト接続を復元します。
 
-    :param blendshape: Blendshape name
-    :param connections: Dictionary of connections returned from zero_weights.
+    :param blendshape: ブレンドシェイプの名前
+    :param connections: zero_weightsから返された接続の辞書
     """
-    for target, connection in connections.items():
-        cmds.connectAttr(connection, "{}.{}".format(blendshape, target))
+    for target, data in connections.items():
+        plug = "{}.{}".format(blendshape, target)
+        connection, original_value = data
+        if connection:
+            cmds.connectAttr(connection, plug)
+        else:
+            # 接続がない場合は値を直接設定
+            cmds.setAttr(plug, original_value)
 
 
 def transfer_shapes(source, destination, blendshape=None):
-    """Transfers the shapes on the given blendshape to the destination mesh.
+    """指定されたブレンドシェイプのシェイプを宛先メッシュに転送します。
 
-    It is assumed the blendshape indirectly deforms the destination mesh.
+    ブレンドシェイプが間接的に宛先メッシュを変形させることを前提としています。
 
-    :param source: Mesh to transfer shapes from.
-    :param destination: Mesh to transfer shapes to.
-    :param blendshape: Optional blendshape node name. If no blendshape is given, the
-        blendshape on the source mesh will be used.
-    :return: The new blendshape node name.
+    :param source: シェイプを転送元のメッシュ
+    :param destination: シェイプを転送先のメッシュ
+    :param blendshape: オプションのブレンドシェイプノード名。ブレンドシェイプが指定されない場合、
+        ソースメッシュ上のブレンドシェイプが使用されます。
+    :return: 新しいブレンドシェイプノードの名前
     """
     if blendshape is None:
         blendshape = get_blendshape_node(source)
         if blendshape is None:
-            return
+            return None
+
     connections = zero_weights(blendshape)
     targets = get_target_list(blendshape)
     new_targets = []
-    for t in targets:
-        cmds.setAttr("{}.{}".format(blendshape, t), 1)
-        new_targets.append(cmds.duplicate(destination, name=t)[0])
-        cmds.setAttr("{}.{}".format(blendshape, t), 0)
+
+    # 転送先メッシュのヒストリーを削除して新しいシェイプを受け入れる準備をする
     cmds.delete(destination, ch=True)
-    new_blendshape = cmds.blendShape(new_targets, destination, foc=True)[0]
-    cmds.delete(new_targets)
-    for t in targets:
-        cmds.connectAttr(
-            "{}.{}".format(blendshape, t), "{}.{}".format(new_blendshape, t)
-        )
-    restore_weights(blendshape, connections)
+
+    try:
+        # 各ターゲットについて処理
+        for t in targets:
+            # ソースのブレンドシェイプターゲットをアクティブ化
+            cmds.setAttr("{}.{}".format(blendshape, t), 1)
+            # 転送先メッシュを複製して形状を保存
+            target_mesh = cmds.duplicate(destination, name=t)[0]
+            new_targets.append(target_mesh)
+            # ソースのブレンドシェイプターゲットを非アクティブ化
+            cmds.setAttr("{}.{}".format(blendshape, t), 0)
+
+        # 転送先メッシュに新しいブレンドシェイプを作成
+        new_blendshape = cmds.blendShape(new_targets, destination, foc=True)[0]
+
+        # ターゲットごとに元のブレンドシェイプから新しいブレンドシェイプへ接続を作成
+        for i, t in enumerate(targets):
+            try:
+                # 新しいブレンドシェイプノードのターゲットを名前で確認
+                if cmds.attributeQuery(t, node=new_blendshape, exists=True):
+                    cmds.connectAttr(
+                        "{}.{}".format(blendshape, t), "{}.{}".format(new_blendshape, t)
+                    )
+                else:
+                    # 名前でターゲットが見つからない場合はインデックスを使用
+                    cmds.connectAttr(
+                        "{}.{}".format(blendshape, t),
+                        "{}.w[{}]".format(new_blendshape, i),
+                    )
+            except RuntimeError as e:
+                cmds.warning("Failed to connect target '{}': {}".format(t, str(e)))
+
+        # 複製したターゲットメッシュを削除
+        cmds.delete(new_targets)
+    except Exception as e:
+        # エラーが発生した場合、中間オブジェクトをクリーンアップ
+        if new_targets:
+            cmds.delete(new_targets)
+        raise RuntimeError("Error transferring shapes: {}".format(str(e)))
+    finally:
+        # 元のブレンドシェイプの重みを復元
+        restore_weights(blendshape, connections)
+
     return new_blendshape
 
 
 def propagate_neutral_update(old_neutral, new_neutral, shapes):
-    """Propagate neutral update deltas to target shapes
+    """ニュートラル更新のデルタをターゲットシェイプに伝播します
 
-    :param old_neutral: The old neutral mesh
-    :param new_neutral: The new neutral mesh
-    :param shapes: The list of shapes to update
+    :param old_neutral: 古いニュートラルメッシュ
+    :param new_neutral: 新しいニュートラルメッシュ
+    :param shapes: 更新するシェイプのリスト
     """
     _old = np_mesh.Mesh.from_maya_mesh(old_neutral)
     _new = np_mesh.Mesh.from_maya_mesh(new_neutral)
@@ -215,14 +229,14 @@ def propagate_neutral_update(old_neutral, new_neutral, shapes):
 
 
 def create_shapes_joint(blendshapes, parent, name="shapes"):
-    """Create a joint with a weight attribute per each blendshape target.
+    """各ブレンドシェイプターゲットごとにウェイト属性を持つジョイントを作成します。
 
-    This is used to export blendshape animation with the skeleton.
+    これはブレンドシェイプアニメーションをスケルトンと一緒にエクスポートするために使用されます。
 
-    :param blendshapes: List of blendshape nodes.
-    :param parent: Joint to parent the new joint under.
-    :param name: Name of the new joint. "shapes" by default.
-    :return: The new joint name
+    :param blendshapes: ブレンドシェイプノードのリスト
+    :param parent: 新しいジョイントの親となるジョイント
+    :param name: 新しいジョイントの名前。デフォルトは "shapes"
+    :return: 新しいジョイントの名前
     """
     joint = cmds.createNode("joint", name=name)
     common.snap_to(joint, parent)
@@ -244,10 +258,10 @@ def create_shapes_joint(blendshapes, parent, name="shapes"):
 
 def get_targets_at_index(blend_name, index=0):
     """
-    returns targets.
-    :param blend_name: <str> the name of the blendShape node.
-    :param index: <int> shape index.
-    :return: <tuple> string array of targets at index.
+    ターゲットを返します。
+    :param blend_name: <str> ブレンドシェイプノードの名前
+    :param index: <int> シェイプのインデックス
+    :return: <tuple> インデックスにあるターゲットの文字列配列
     """
     blend_fn = shortcuts.get_mfnblendshapedeformer(blend_name)
     # base_obj = get_base_object(blend_name)[0]
@@ -260,9 +274,9 @@ def get_targets_at_index(blend_name, index=0):
 
 def get_base_object(blend_name):
     """
-    returns the base object of the blendShape node.
-    :param blend_name: <str> the name of the blendShape node.
-    :return: <tuple> string array of base object.
+    ブレンドシェイプノードのベースオブジェクトを返します。
+    :param blend_name: <str> ブレンドシェイプノードの名前
+    :return: <tuple> ベースオブジェクトの文字列配列
     """
     blend_fn = shortcuts.get_mfnblendshapedeformer(blend_name)
     obj_array = OpenMaya.MObjectArray()
@@ -271,13 +285,13 @@ def get_base_object(blend_name):
 
 
 def find_replace_target_names(blendshape, find_text, replace_text, case_sensitive=True):
-    """Find and replace text in blendshape target names.
+    """ブレンドシェイプターゲット名のテキストを検索して置換します。
 
-    :param blendshape: Name of the blendshape node
-    :param find_text: Text to find in target names
-    :param replace_text: Text to replace with
-    :param case_sensitive: Whether the search should be case sensitive (default: True)
-    :return: Dictionary with old_name: new_name pairs for renamed targets
+    :param blendshape: ブレンドシェイプノードの名前
+    :param find_text: ターゲット名で検索するテキスト
+    :param replace_text: 置換するテキスト
+    :param case_sensitive: 検索が大文字と小文字を区別するかどうか（デフォルト: True）
+    :return: 名前変更されたターゲットの old_name: new_name ペアを持つ辞書
     """
     if not cmds.objExists(blendshape):
         raise RuntimeError("BlendShape node '{}' does not exist".format(blendshape))
@@ -329,12 +343,12 @@ def find_replace_target_names(blendshape, find_text, replace_text, case_sensitiv
 
 
 def find_replace_target_names_regex(blendshape, pattern, replacement):
-    """Find and replace text in blendshape target names using regular expressions.
+    """正規表現を使用してブレンドシェイプターゲット名のテキストを検索して置換します。
 
-    :param blendshape: Name of the blendshape node
-    :param pattern: Regular expression pattern to find
-    :param replacement: Replacement text (can include regex groups like \\1, \\2)
-    :return: Dictionary with old_name: new_name pairs for renamed targets
+    :param blendshape: ブレンドシェイプノードの名前
+    :param pattern: 検索する正規表現パターン
+    :param replacement: 置換テキスト（\\1、\\2などの正規表現グループを含めることができます）
+    :return: 名前変更されたターゲットの old_name: new_name ペアを持つ辞書
     """
     import re
 

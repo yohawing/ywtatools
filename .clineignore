@@ -1,0 +1,147 @@
+# YWTA Tools - Cline Ignore Rules
+# Clineが処理しない/読み込まないファイルとディレクトリを指定
+
+# コンパイル済みファイル
+*.mll
+*.dll
+*.so
+*.dylib
+*.pyd
+*.pyc
+*.pyo
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ビルド関連
+build/
+build.*/
+maya/cpp/build.2022/
+maya/cpp/build.2024/
+maya/plug-ins/2022/
+maya/plug-ins/2024/
+dist/
+target/
+*.egg-info/
+
+# サードパーティライブラリ
+maya/cpp/third-party/
+node_modules/
+.eggs/
+lib/
+lib64/
+
+# IDE/エディタ設定
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ログファイル
+*.log
+pip-log.txt
+pip-delete-this-directory.txt
+
+# テスト関連
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*,cover
+.hypothesis/
+.pytest_cache/
+
+# 一時ファイル
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+
+# Maya固有
+*.ma~
+*.mb~
+*.mel~
+*.py~
+
+# Blender固有
+*.blend1
+*.blend2
+*.blend~
+
+# バイナリファイル
+*.exe
+*.bin
+*.dat
+
+# 大容量ファイル
+*.fbx
+*.obj
+*.abc
+*.usd
+*.usda
+*.usdc
+
+# アーカイブファイル
+*.zip
+*.rar
+*.7z
+*.tar
+*.gz
+
+# 画像ファイル（アイコン以外）
+*.tga
+*.exr
+*.hdr
+*.tiff
+*.tif
+*.bmp
+*.gif
+*.jpg
+*.jpeg
+# *.png  # アイコンファイルがあるためコメントアウト
+
+# 動画ファイル
+*.mov
+*.mp4
+*.avi
+*.mkv
+
+# 音声ファイル
+*.wav
+*.mp3
+*.aac
+
+# ドキュメント（大容量）
+*.pdf
+*.doc
+*.docx
+
+# 設定ファイル（機密情報含む可能性）
+.env
+.env.local
+config.ini
+secrets.json
+
+# Git関連
+.git/
+.gitmodules
+
+# パッケージマネージャー
+requirements-dev.txt
+poetry.lock
+Pipfile.lock
+
+# プロファイリング
+*.prof
+*.profile
+
+# その他の開発ツール
+.mypy_cache/
+.dmypy.json
+dmypy.json

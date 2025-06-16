@@ -1,13 +1,14 @@
 """
-Contains a user interface for the CMT testing framework.
+Contains a user interface for the YWTA testing framework.
 
 The dialog will display all tests found in MAYA_MODULE_PATH and allow the user to
 selectively run the tests.  The dialog will also automatically get any code updates
 without any need to reload if the dialog is opened before any other tools have been
 run.
 
-To open the dialog run the menu item: CMT > Utility > Unit Test Runner.
+To open the dialog run the menu item: YWTA > Utility > Unit Test Runner.
 """
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -17,20 +18,26 @@ import os
 import sys
 import traceback
 import unittest
-import webbrowser
+from ywta.reloadmodules import RollbackImporter
 
 from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 
-from PySide2.QtCore import *
-from PySide2.QtGui import *
-from PySide2.QtWidgets import *
-import ywta.test.mayaunittest as mayaunittest
-import ywta.shortcuts as shortcuts
+try:
+    from PySide6.QtCore import QObject, Qt
+    from PySide6.QtGui import QIcon, QPixmap
+    from PySide6.QtWidgets import *
+except ImportError:
+    from PySide2.QtCore import *
+    from PySide2.QtGui import *
+    from PySide2.QtWidgets import *
+
+import ywta.test.maya_unit_test as maya_unit_test
+from ywta.core.ui_utils import BaseTreeNode
 from ywta.ui.widgets.outputconsole import OutputConsole
 
 logger = logging.getLogger(__name__)
 
-ICON_DIR = os.path.join(os.environ["CMT_ROOT_PATH"], "icons")
+ICON_DIR = os.path.join(os.environ["YWTA_ROOT_PATH"], "icons")
 
 _win = None
 
@@ -44,15 +51,11 @@ def show():
     _win.show()
 
 
-def documentation():
-    webbrowser.open("https://github.com/chadmv/cmt/wiki/Unit-Test-Runner-Dialog")
-
-
 class MayaTestRunnerDialog(MayaQWidgetBaseMixin, QMainWindow):
     def __init__(self, *args, **kwargs):
         super(MayaTestRunnerDialog, self).__init__(*args, **kwargs)
         self.setAttribute(Qt.WA_DeleteOnClose)
-        self.setWindowTitle("CMT Unit Test Runner")
+        self.setWindowTitle("YWTA Unit Test Runner")
         self.resize(1000, 600)
         self.rollback_importer = RollbackImporter()
 
@@ -61,33 +64,31 @@ class MayaTestRunnerDialog(MayaQWidgetBaseMixin, QMainWindow):
         action = menu.addAction("Buffer Output")
         action.setToolTip("Only display output during a failed test.")
         action.setCheckable(True)
-        action.setChecked(mayaunittest.Settings.buffer_output)
-        action.toggled.connect(mayaunittest.set_buffer_output)
+        action.setChecked(maya_unit_test.Settings.buffer_output)
+        action.toggled.connect(maya_unit_test.set_buffer_output)
         action = menu.addAction("New Scene Between Test")
         action.setToolTip("Creates a new scene file after each test.")
         action.setCheckable(True)
-        action.setChecked(mayaunittest.Settings.file_new)
-        action.toggled.connect(mayaunittest.set_file_new)
+        action.setChecked(maya_unit_test.Settings.file_new)
+        action.toggled.connect(maya_unit_test.set_file_new)
         menu = menubar.addMenu("Help")
-        action = menu.addAction("Documentation")
-        action.triggered.connect(documentation)
 
         toolbar = self.addToolBar("Tools")
         action = toolbar.addAction("Run All Tests")
-        action.setIcon(QIcon(QPixmap(os.path.join(ICON_DIR, "cmt_run_all_tests.png"))))
+        action.setIcon(QIcon(QPixmap(os.path.join(ICON_DIR, "ywta_run_all_tests.png"))))
         action.triggered.connect(self.run_all_tests)
         action.setToolTip("Run all tests.")
 
         action = toolbar.addAction("Run Selected Tests")
         action.setIcon(
-            QIcon(QPixmap(os.path.join(ICON_DIR, "cmt_run_selected_tests.png")))
+            QIcon(QPixmap(os.path.join(ICON_DIR, "ywta_run_selected_tests.png")))
         )
         action.setToolTip("Run all selected tests.")
         action.triggered.connect(self.run_selected_tests)
 
         action = toolbar.addAction("Run Failed Tests")
         action.setIcon(
-            QIcon(QPixmap(os.path.join(ICON_DIR, "cmt_run_failed_tests.png")))
+            QIcon(QPixmap(os.path.join(ICON_DIR, "ywta_run_failed_tests.png")))
         )
         action.setToolTip("Run all failed tests.")
         action.triggered.connect(self.run_failed_tests)
@@ -118,7 +119,7 @@ class MayaTestRunnerDialog(MayaQWidgetBaseMixin, QMainWindow):
 
     def refresh_tests(self):
         self.reset_rollback_importer()
-        test_suite = mayaunittest.get_tests()
+        test_suite = maya_unit_test.get_tests()
         root_node = TestNode(test_suite)
         self.model = TestTreeModel(root_node, self)
         self.test_view.setModel(self.model)
@@ -137,15 +138,13 @@ class MayaTestRunnerDialog(MayaQWidgetBaseMixin, QMainWindow):
 
     def run_all_tests(self):
         """Callback method to run all the tests found in MAYA_MODULE_PATH."""
-        self.reset_rollback_importer()
         test_suite = unittest.TestSuite()
-        mayaunittest.get_tests(test_suite=test_suite)
+        maya_unit_test.get_tests(test_suite=test_suite)
         self.output_console.clear()
         self.model.run_tests(self.output_console, test_suite)
 
     def run_selected_tests(self):
         """Callback method to run the selected tests in the UI."""
-        self.reset_rollback_importer()
         test_suite = unittest.TestSuite()
 
         indices = self.test_view.selectedIndexes()
@@ -167,21 +166,20 @@ class MayaTestRunnerDialog(MayaQWidgetBaseMixin, QMainWindow):
 
         # Now get the tests with the pruned paths
         for path in test_paths:
-            mayaunittest.get_tests(test=path, test_suite=test_suite)
+            maya_unit_test.get_tests(test=path, test_suite=test_suite)
 
         self.output_console.clear()
         self.model.run_tests(self.output_console, test_suite)
 
     def run_failed_tests(self):
         """Callback method to run all the tests with fail or error statuses."""
-        self.reset_rollback_importer()
         test_suite = unittest.TestSuite()
         for node in self.model.node_lookup.values():
             if isinstance(node.test, unittest.TestCase) and node.get_status() in {
                 TestStatus.fail,
                 TestStatus.error,
             }:
-                mayaunittest.get_tests(test=node.path(), test_suite=test_suite)
+                maya_unit_test.get_tests(test=node.path(), test_suite=test_suite)
         self.output_console.clear()
         self.model.run_tests(self.output_console, test_suite)
 
@@ -211,13 +209,13 @@ class TestStatus:
     skipped = 4
 
 
-class TestNode(shortcuts.BaseTreeNode):
+class TestNode(BaseTreeNode):
     """A node representing a Test, TestCase, or TestSuite for display in a QTreeView."""
 
-    success_icon = QPixmap(os.path.join(ICON_DIR, "cmt_test_success.png"))
-    fail_icon = QPixmap(os.path.join(ICON_DIR, "cmt_test_fail.png"))
-    error_icon = QPixmap(os.path.join(ICON_DIR, "cmt_test_error.png"))
-    skip_icon = QPixmap(os.path.join(ICON_DIR, "cmt_test_skip.png"))
+    success_icon = QPixmap(os.path.join(ICON_DIR, "ywta_test_success.png"))
+    fail_icon = QPixmap(os.path.join(ICON_DIR, "ywta_test_fail.png"))
+    error_icon = QPixmap(os.path.join(ICON_DIR, "ywta_test_error.png"))
+    skip_icon = QPixmap(os.path.join(ICON_DIR, "ywta_test_skip.png"))
 
     def __init__(self, test, parent=None):
         super(TestNode, self).__init__(parent)
@@ -333,7 +331,7 @@ class TestTreeModel(QAbstractItemModel):
 
     def setData(self, index, value, role=Qt.EditRole):
         node = index.internalPointer()
-        data_changed_kwargs = ([index, index, []])
+        data_changed_kwargs = [index, index, []]
         if role == Qt.EditRole:
             self.dataChanged.emit(*data_changed_kwargs)
         if role == Qt.DecorationRole:
@@ -382,10 +380,10 @@ class TestTreeModel(QAbstractItemModel):
         :param test_suite: The TestSuite to run.
         """
         runner = unittest.TextTestRunner(
-            stream=stream, verbosity=2, resultclass=mayaunittest.TestResult
+            stream=stream, verbosity=2, resultclass=maya_unit_test.TestResult
         )
         runner.failfast = False
-        runner.buffer = mayaunittest.Settings.buffer_output
+        runner.buffer = maya_unit_test.Settings.buffer_output
         result = runner.run(test_suite)
 
         self._set_test_result_data(result.failures, TestStatus.fail)
@@ -408,28 +406,3 @@ class TestTreeModel(QAbstractItemModel):
             index = self.get_index_of_node(node)
             self.setData(index, reason, Qt.ToolTipRole)
             self.setData(index, status, Qt.DecorationRole)
-
-
-class RollbackImporter(object):
-    """Used to remove imported modules from the module list.
-
-    This allows tests to be rerun after code updates without doing any reloads.
-    Original idea from: http://pyunit.sourceforge.net/notes/reloading.html
-
-    Usage:
-    def run_tests(self):
-        if self.rollback_importer:
-            self.rollback_importer.uninstall()
-        self.rollback_importer = RollbackImporter()
-        self.load_and_execute_tests()
-    """
-
-    def __init__(self):
-        """Creates an instance and installs as the global importer."""
-        self.previous_modules = set(sys.modules.keys())
-
-    def uninstall(self):
-        for modname in sys.modules.keys():
-            if modname not in self.previous_modules:
-                # Force reload when modname next imported
-                del (sys.modules[modname])
