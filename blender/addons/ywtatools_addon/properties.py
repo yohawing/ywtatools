@@ -1,4 +1,3 @@
-import bpy
 from bpy.types import Scene
 
 from bpy.props import BoolProperty
@@ -13,6 +12,7 @@ from bpy.props import BoolProperty
 
 def register():
     Scene.my_property = BoolProperty(default=True)
+
 
 def unregister():
     del Scene.my_property
