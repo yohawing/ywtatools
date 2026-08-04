@@ -75,6 +75,9 @@ uvx nox -s maya_tests -- --type unit --maya 2024
 # Blenderテスト（tests/run_blender_tests.py をラップ）
 uvx nox -s blender_tests
 uvx nox -s blender_tests -- --type integration
+
+# AutoRemesher コアDLLのビルド（要 VS2022 + CMake、Qt不要）
+uvx nox -s autoremesher_build
 ```
 
 既存の `tests/run_maya_tests.py` / `tests/run_blender_tests.py` を直接実行することも可能です（詳細は `tests/README.md`）。
@@ -95,7 +98,15 @@ ruff check .
 uvx nox -s lint
 ```
 
-既存コードは safe fix + format 適用済みだが、自動修正できないlintエラーが約280件残っている（大半はワイルドカードimport由来の F403/F405、ほか E722/F841/F821 など）。未コミットのWIP差分がある間は、**リポジトリ全体への `ruff check --fix .` / `ruff format .` を実行しない**（WIP差分と整形差分が混ざる事故が過去に発生）。修正・整形は `ruff format <file>` のようにパスを明示して実行すること。`maya/ywta/shortcuts.py` は再エクスポートハブのため F401/E402 を除外している（import を削除しない）。
+既存コードは safe fix + format 適用済みだが、自動修正できないlintエラーが約270件残っている（大半はワイルドカードimport由来の F403/F405、ほか E722/F841/F821 など）。未コミットのWIP差分がある間は、**リポジトリ全体への `ruff check --fix .` / `ruff format .` を実行しない**（WIP差分と整形差分が混ざる事故が過去に発生）。修正・整形は `ruff format <file>` のようにパスを明示して実行すること。`maya/ywta/shortcuts.py` は再エクスポートハブのため F401/E402 を除外している（import を削除しない）。
+
+## AutoRemesher 統合
+
+自動クアッドリメッシャー [huxingyi/autoremesher](https://github.com/huxingyi/autoremesher)（MIT）を `external/autoremesher` に submodule（1.0.0 pin）として取り込み、コア（Qt非依存）を利用している。**submodule 内のファイルは改変禁止**（回避が必要な場合は `cpp/autoremesher_core/qtshim/` のようにヘッダ差し込みで対応する）。
+
+- `cpp/autoremesher_core/` — コア静的 lib + Blender 用 C ABI DLL（`uvx nox -s autoremesher_build` → `bin/windows/ywta_autoremesher.dll`）
+- Maya: `maya/cpp/src/autoRemesherNode.cpp`（MPxNode、コアを静的リンク）+ `maya/ywta/mesh/autoremesher.py`（ノード作成ヘルパー）。ビルドは `maya/cpp/build.bat`
+- Blender: `blender/modules/ywta_remesh/binding.py`（ctypes）+ `ywtatools_addon/autoremesher.py`（オペレータ）。DLL は `YWTA_AUTOREMESHER_DLL` 環境変数で上書き可
 
 ## コミット規律
 

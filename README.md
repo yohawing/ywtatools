@@ -16,6 +16,19 @@
 特定の機能を使う場合は、プラグインのビルドが必要です。プラグインのビルドにはVisual Studioとcmakeが必要です。
 `maya/cpp/build.bat`を実行すると、自動的にpluginがビルドされ、所定のフォルダにプラグインがビルドされます。
 
+## AutoRemesher（自動クアッドリメッシュ）
+
+[huxingyi/autoremesher](https://github.com/huxingyi/autoremesher)（MIT）を組み込んだ自動リトポロジー機能です。初回のみ submodule の取得とビルドが必要です（VS2022 + CMake、Qt は不要）:
+
+```
+git submodule update --init external/autoremesher
+uvx nox -s autoremesher_build   # Blender用DLL (bin/windows/ywta_autoremesher.dll)
+maya\cpp\build.bat              # Mayaプラグイン (autoRemesherNode を含む)
+```
+
+- **Maya**: メッシュを選択して YWTA > Mesh > AutoRemesher Node。`<元名>_remeshed` オブジェクトが生成され、ノードの targetCount / adaptivity / modelType を変更すると再リメッシュされます（元メッシュは非破壊）
+- **Blender**: オブジェクトを選択して Object メニュー > AutoRemesh。実行後は左下のRedoパネル（F9）でパラメータを調整できます
+
 ## Dependency
 
 Pythonの依存モジュールはRequirements.txtに記載しています。Mayapyへのインストールは自己責任でおねがいします。

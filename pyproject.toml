@@ -11,6 +11,7 @@ target-version = "py310"
 # fix = true は既存コード384件のlintエラーが残っている間は危険（ruff checkが
 # リポジトリ全体を書き換えWIPと混ざる事故が発生済み）。修正は --fix で明示的に行う。
 exclude = [
+    "external",
     "maya/cpp",
     "build",
     "build.*",
