@@ -80,3 +80,7 @@ build.*/
 artifacts/
 .claude/settings.local.json
 
+# AutoRemesher コアのビルド出力 (cpp/autoremesher_core)
+/bin/
+cpp/autoremesher_core/build*/
+

@@ -1,0 +1,32 @@
+﻿// Qt非依存で external/autoremesher/src/AutoRemesher/autoremesher.cpp をビルドするための
+// 最小限の <QDebug> 代替シム。
+//
+// autoremesher.cpp はコア（Qt非依存であるはずのファイル）でも `qDebug() << ...` による
+// ログ出力にQtのQDebugを使っている。submodule 側は変更しないため、
+// このディレクトリを他のインクルードパスより先に検索させることで
+// 本物のQDebugの代わりにこのシムを解決させる（capi側のCMakeLists.txtで
+// target_include_directories(... BEFORE) している）。
+//
+// 実際のログ出力は行わず、`<<` を全て無視するno-opストリームとして振る舞う。
+#ifndef YWTA_AUTOREMESHER_QDEBUG_SHIM_H
+#define YWTA_AUTOREMESHER_QDEBUG_SHIM_H
+
+namespace ywta_qtshim {
+
+class NullDebugStream {
+public:
+    template <typename T>
+    NullDebugStream& operator<<(const T&)
+    {
+        return *this;
+    }
+};
+
+} // namespace ywta_qtshim
+
+inline ywta_qtshim::NullDebugStream qDebug()
+{
+    return ywta_qtshim::NullDebugStream();
+}
+
+#endif // YWTA_AUTOREMESHER_QDEBUG_SHIM_H

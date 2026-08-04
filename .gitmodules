@@ -1,3 +1,6 @@
 [submodule "cgcmake"]
 	path = cgcmake
 	url = git@github.com:chadmv/cgcmake.git
+[submodule "external/autoremesher"]
+	path = external/autoremesher
+	url = https://github.com/huxingyi/autoremesher
