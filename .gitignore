@@ -74,3 +74,9 @@ build.*/
 .vscode
 .vscode/*
 
+# ローカル専用の作業ファイル（家風）
+/TODO.md
+.ai/
+artifacts/
+.claude/settings.local.json
+
