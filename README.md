@@ -46,3 +46,15 @@ python tests/run_maya_tests.py --pattern "test_*.py" --maya 2024
 ### Maya内から実行
 
 Maya内でテストを実行するには、YWTA > Utility > Unit Test Runnerからテスト実行用のUIを開いてください。
+
+# 開発者向け情報
+
+開発ルール・コーディング規約・コミット規律などは [AGENTS.md](./AGENTS.md) を参照してください。
+Lintは以下のコマンドで実行できます。
+
+```bash
+ruff check .
+```
+
+
+Humanikの半自動マッピングを作ってみたい。
