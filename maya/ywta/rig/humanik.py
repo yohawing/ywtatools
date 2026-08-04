@@ -7,14 +7,11 @@ Functions:
 
 """
 
-import os
 import json
 import re
 import maya.cmds as cmds
 import maya.mel as mel
 import pymel.core as pm
-
-import mgear
 
 
 # 選択したJointの階層からバインドポーズのリストを取得してすべてバインドポーズにする。
@@ -75,11 +72,6 @@ def setup_hik_character():
 
     pm.mel.hikSetCharacterObject(hip_joint, new_character, 1, 0)
     mel.eval("hikUpdateDefinitionUI();")
-
-    # ここで止まる
-    load_character_definition(
-        r"F:\3dcg\Nix\nixx_maya\data\moveai_character_definition.hikm"
-    )
 
     mel.eval(f'hikCharacterLock("{new_character}", 1,1);')
     # mel.eval("hikCreateControlRig;")

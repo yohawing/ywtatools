@@ -5,7 +5,6 @@
 """
 
 import maya.cmds as cmds
-import maya.mel as mel
 
 
 def create_rigging_menu(parent_menu):
@@ -17,9 +16,7 @@ def create_rigging_menu(parent_menu):
     Returns:
         作成されたメニュー項目
     """
-    rig_menu = cmds.menuItem(
-        subMenu=True, tearOff=True, parent=parent_menu, label="Rigging"
-    )
+    rig_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=parent_menu, label="Rigging")
 
     # 共通機能
     cmds.menuItem(
@@ -35,7 +32,7 @@ def create_rigging_menu(parent_menu):
     cmds.menuItem(
         parent=rig_menu,
         label="Joint Edit Tools",
-        command="import ywta.rig.orientjoints as oj; oj.OrientJointsWindow()",
+        command="import ywta.rig.joint_edit_tools as oj; oj.JointEditToolsWindow()",
         image="orientJoint.png",
         annotation="ジョイントの向きを編集するためのツールを開きます",
     )
@@ -55,6 +52,14 @@ def create_rigging_menu(parent_menu):
         image="menuIconModify.png",
         imageOverlayLabel="name",
         annotation="ジョイントチェーンの名前を一括変更します",
+    )
+
+    cmds.menuItem(
+        parent=rig_menu,
+        label="Joint Size Tools",
+        command="import ywta.rig.joint_size as js; js.set_joint_size_from_menu()",
+        image="joint.png",
+        annotation="ジョイントのサイズを階層で一括設定します",
     )
 
     cmds.menuItem(

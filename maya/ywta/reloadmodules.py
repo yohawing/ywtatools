@@ -1,4 +1,3 @@
-from math import e
 import sys
 import importlib
 import ywta
@@ -93,6 +92,6 @@ def reload_modules():
     _rollbackimporter.uninstall()
 
 
-def unload_packages():
+def unload_packages(modnames=None):
     global _rollbackimporter
-    _rollbackimporter.unload_packages()
+    _rollbackimporter.unload_packages(modnames)
