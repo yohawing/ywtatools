@@ -44,8 +44,8 @@ def create_mesh_menu(parent_menu):
     cmds.menuItem(
         parent=mesh_menu,
         label="AutoRemesher Node",
-        command="import ywta.mesh.autoremesher as ar; ar.create_remesh_node()",
-        annotation="選択メッシュをクアッドリメッシュするAutoRemesherノードを作成します（別オブジェクトに出力）",
+        command="import ywta.mesh.autoremesher as ar; ar.show_options()",
+        annotation="パラメータを指定してAutoRemesherノードを作成します（別オブジェクトに出力）",
     )
 
     return mesh_menu

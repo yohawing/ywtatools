@@ -107,6 +107,28 @@ class TestAutoRemesherNode(unittest.TestCase):
 
         self.assertGreater(quad_count, tri_count)
 
+    def test_create_remesh_node_with_params(self):
+        """create_remesh_node() に渡したパラメータがノードのアトリビュートに反映されるかテスト"""
+        import ywta.mesh.autoremesher as autoremesher
+
+        cube = cmds.polyCube()[0]
+        cmds.select(cube)
+
+        node = autoremesher.create_remesh_node(
+            target_count=2000,
+            adaptivity=0.5,
+            edge_scaling=1.5,
+            model_type=1,
+        )
+
+        self.assertTrue(cmds.objExists(node))
+        self.assertEqual(cmds.getAttr(f"{node}.targetCount"), 2000)
+        self.assertAlmostEqual(cmds.getAttr(f"{node}.adaptivity"), 0.5, places=6)
+        self.assertAlmostEqual(cmds.getAttr(f"{node}.edgeScaling"), 1.5, places=6)
+        self.assertEqual(cmds.getAttr(f"{node}.modelType"), 1)
+        self.assertTrue(cmds.getAttr(f"{node}.enable"))
+        self.assertEqual(cmds.ls(selection=True), [node])
+
 
 if __name__ == "__main__":
     unittest.main()

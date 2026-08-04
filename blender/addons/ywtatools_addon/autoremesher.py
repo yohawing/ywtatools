@@ -73,6 +73,17 @@ class YWTA_OT_autoremesh(Operator):
         obj = context.active_object
         return obj is not None and obj.type == "MESH"
 
+    def invoke(self, context, event):
+        # 実行前にパラメータ入力用ダイアログを表示する（実行後もF9のRedoパネルで再調整可能）
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "target_count")
+        layout.prop(self, "adaptivity")
+        layout.prop(self, "edge_scaling")
+        layout.prop(self, "model_type")
+
     def execute(self, context):
         obj = context.active_object
         if obj is None or obj.type != "MESH":
