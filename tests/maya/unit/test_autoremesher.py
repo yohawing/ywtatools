@@ -51,6 +51,8 @@ class TestAutoRemesherNode(unittest.TestCase):
         self.assertAlmostEqual(cmds.getAttr(f"{node}.adaptivity"), 1.0, places=6)
         self.assertAlmostEqual(cmds.getAttr(f"{node}.edgeScaling"), 1.0, places=6)
         self.assertEqual(cmds.getAttr(f"{node}.modelType"), 0)
+        self.assertAlmostEqual(cmds.getAttr(f"{node}.sharpEdgeDegrees"), 90.0, places=6)
+        self.assertAlmostEqual(cmds.getAttr(f"{node}.smoothNormalDegrees"), 0.0, places=6)
 
     def test_enable_false_passthrough(self):
         """enable=false のとき inMesh がそのまま outMesh に渡されるかテスト"""
@@ -128,6 +130,22 @@ class TestAutoRemesherNode(unittest.TestCase):
         self.assertEqual(cmds.getAttr(f"{node}.modelType"), 1)
         self.assertTrue(cmds.getAttr(f"{node}.enable"))
         self.assertEqual(cmds.ls(selection=True), [node])
+
+    def test_create_remesh_node_with_sharp_and_smooth_params(self):
+        """sharp_edge_degrees / smooth_normal_degrees がノードのアトリビュートに反映されるかテスト"""
+        import ywta.mesh.autoremesher as autoremesher
+
+        cube = cmds.polyCube()[0]
+        cmds.select(cube)
+
+        node = autoremesher.create_remesh_node(
+            sharp_edge_degrees=45.0,
+            smooth_normal_degrees=30.0,
+        )
+
+        self.assertTrue(cmds.objExists(node))
+        self.assertAlmostEqual(cmds.getAttr(f"{node}.sharpEdgeDegrees"), 45.0, places=6)
+        self.assertAlmostEqual(cmds.getAttr(f"{node}.smoothNormalDegrees"), 30.0, places=6)
 
 
 if __name__ == "__main__":

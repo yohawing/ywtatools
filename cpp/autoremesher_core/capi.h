@@ -34,6 +34,8 @@ typedef struct YwtaRemeshParams {
     double scaling; // 0.0以下の場合は既定値 1.0 を使う（AutoRemesherは0.0だと結果が退化する）
     double adaptivity;
     int model_type; // YwtaModelType
+    double sharp_edge_degrees; // シャープエッジと判定する角度（度）。ライブラリ既定値は90.0
+    double smooth_normal_degrees; // 法線を平滑化する角度（度）。ライブラリ既定値は0.0
 } YwtaRemeshParams;
 
 // 進捗コールバック。tag は ywta_remesh() に渡した値がそのまま渡る。

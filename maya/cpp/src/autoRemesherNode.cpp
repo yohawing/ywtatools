@@ -53,6 +53,8 @@ MObject AutoRemesherNode::aTargetCount;
 MObject AutoRemesherNode::aAdaptivity;
 MObject AutoRemesherNode::aEdgeScaling;
 MObject AutoRemesherNode::aModelType;
+MObject AutoRemesherNode::aSharpEdgeDegrees;
+MObject AutoRemesherNode::aSmoothNormalDegrees;
 
 AutoRemesherNode::AutoRemesherNode() : cacheValid_(false), cachedInputHash_(0) {}
 
@@ -109,12 +111,30 @@ MStatus AutoRemesherNode::initialize() {
   eAttr.addField("HardSurface", AutoRemesherNode::kHardSurface);
   addAttribute(aModelType);
 
+  aSharpEdgeDegrees = nAttr.create("sharpEdgeDegrees", "sharpEdgeDegrees", MFnNumericData::kDouble,
+                                    90.0, &status);
+  CHECK_MSTATUS_AND_RETURN_IT(status);
+  nAttr.setKeyable(true);
+  nAttr.setMin(0.0);
+  nAttr.setMax(180.0);
+  addAttribute(aSharpEdgeDegrees);
+
+  aSmoothNormalDegrees = nAttr.create("smoothNormalDegrees", "smoothNormalDegrees",
+                                       MFnNumericData::kDouble, 0.0, &status);
+  CHECK_MSTATUS_AND_RETURN_IT(status);
+  nAttr.setKeyable(true);
+  nAttr.setMin(0.0);
+  nAttr.setMax(180.0);
+  addAttribute(aSmoothNormalDegrees);
+
   attributeAffects(aInMesh, aOutMesh);
   attributeAffects(aEnable, aOutMesh);
   attributeAffects(aTargetCount, aOutMesh);
   attributeAffects(aAdaptivity, aOutMesh);
   attributeAffects(aEdgeScaling, aOutMesh);
   attributeAffects(aModelType, aOutMesh);
+  attributeAffects(aSharpEdgeDegrees, aOutMesh);
+  attributeAffects(aSmoothNormalDegrees, aOutMesh);
 
   return MS::kSuccess;
 }
@@ -146,8 +166,11 @@ MStatus AutoRemesherNode::compute(const MPlug& plug, MDataBlock& data) {
   double adaptivity = data.inputValue(aAdaptivity).asDouble();
   double edgeScaling = data.inputValue(aEdgeScaling).asDouble();
   short modelType = data.inputValue(aModelType).asShort();
+  double sharpEdgeDegrees = data.inputValue(aSharpEdgeDegrees).asDouble();
+  double smoothNormalDegrees = data.inputValue(aSmoothNormalDegrees).asDouble();
 
-  status = remesh(inMesh, targetCount, adaptivity, edgeScaling, modelType, hOutput);
+  status = remesh(inMesh, targetCount, adaptivity, edgeScaling, modelType, sharpEdgeDegrees,
+                   smoothNormalDegrees, hOutput);
   CHECK_MSTATUS_AND_RETURN_IT(status);
 
   data.setClean(plug);
@@ -172,7 +195,8 @@ MStatus AutoRemesherNode::passthrough(const MObject& inMesh, MDataHandle& hOutpu
 }
 
 MStatus AutoRemesherNode::remesh(const MObject& inMesh, int targetCount, double adaptivity,
-                                 double edgeScaling, short modelType, MDataHandle& hOutput) {
+                                 double edgeScaling, short modelType, double sharpEdgeDegrees,
+                                 double smoothNormalDegrees, MDataHandle& hOutput) {
   MStatus status;
 
   MFnMesh inMeshFn(inMesh, &status);
@@ -193,7 +217,8 @@ MStatus AutoRemesherNode::remesh(const MObject& inMesh, int targetCount, double 
   }
 
   uint64_t inputHash = computeInputHash(points, triangleCounts, triangleVertices, targetCount,
-                                        adaptivity, edgeScaling, modelType);
+                                        adaptivity, edgeScaling, modelType, sharpEdgeDegrees,
+                                        smoothNormalDegrees);
 
   if (!(cacheValid_ && inputHash == cachedInputHash_)) {
     EnsureGeogramInitialized();
@@ -232,6 +257,8 @@ MStatus AutoRemesherNode::remesh(const MObject& inMesh, int targetCount, double 
     autoRemesher.setModelType(AutoRemesherNode::kHardSurface == modelType
                                   ? AutoRemesher::ModelType::HardSurface
                                   : AutoRemesher::ModelType::Organic);
+    autoRemesher.setSharpEdgeDegrees(sharpEdgeDegrees);
+    autoRemesher.setSmoothNormalDegrees(smoothNormalDegrees);
     autoRemesher.setProgressHandler(&AutoRemesherNode::progressHandler);
     autoRemesher.setTag(this);
 
@@ -307,7 +334,8 @@ uint64_t AutoRemesherNode::computeInputHash(const MPointArray& points,
                                             const MIntArray& triangleCounts,
                                             const MIntArray& triangleVertices, int targetCount,
                                             double adaptivity, double edgeScaling,
-                                            short modelType) {
+                                            short modelType, double sharpEdgeDegrees,
+                                            double smoothNormalDegrees) {
   uint64_t hash = 1469598103934665603ULL;  // FNV offset basis
   hash = HashCombine(hash, (uint64_t)points.length());
   for (unsigned int i = 0; i < points.length(); ++i) {
@@ -324,6 +352,8 @@ uint64_t AutoRemesherNode::computeInputHash(const MPointArray& points,
   hash = HashCombine(hash, HashDouble(adaptivity));
   hash = HashCombine(hash, HashDouble(edgeScaling));
   hash = HashCombine(hash, (uint64_t)modelType);
+  hash = HashCombine(hash, HashDouble(sharpEdgeDegrees));
+  hash = HashCombine(hash, HashDouble(smoothNormalDegrees));
   return hash;
 }
 

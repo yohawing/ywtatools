@@ -83,6 +83,8 @@ class FakeAutoRemesherDLL:
             params_ptr.contents.scaling,
             params_ptr.contents.adaptivity,
             params_ptr.contents.model_type,
+            params_ptr.contents.sharp_edge_degrees,
+            params_ptr.contents.smooth_normal_degrees,
         )
 
         if progress_cb:
@@ -171,17 +173,28 @@ class RemeshMarshalingTests(unittest.TestCase):
             scaling=0.5,
             adaptivity=0.75,
             model_type=binding.MODEL_TYPE_HARDSURFACE,
+            sharp_edge_degrees=45.0,
+            smooth_normal_degrees=15.0,
             progress_cb=lambda progress, message: progress_events.append((progress, message)),
         )
 
         # 入力側のマーシャリングが正しいか
         self.assertEqual(fake_dll.received_vertices, vertices)
         self.assertEqual(fake_dll.received_tris, triangles)
-        target_count, scaling, adaptivity, model_type = fake_dll.received_params
+        (
+            target_count,
+            scaling,
+            adaptivity,
+            model_type,
+            sharp_edge_degrees,
+            smooth_normal_degrees,
+        ) = fake_dll.received_params
         self.assertEqual(target_count, 1234)
         self.assertAlmostEqual(scaling, 0.5)
         self.assertAlmostEqual(adaptivity, 0.75)
         self.assertEqual(model_type, binding.MODEL_TYPE_HARDSURFACE)
+        self.assertAlmostEqual(sharp_edge_degrees, 45.0)
+        self.assertAlmostEqual(smooth_normal_degrees, 15.0)
 
         # 進捗コールバックが呼ばれたか
         self.assertEqual(len(progress_events), 1)

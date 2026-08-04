@@ -37,6 +37,8 @@ class AutoRemesherNode : public MPxNode {
   static MObject aAdaptivity;
   static MObject aEdgeScaling;
   static MObject aModelType;
+  static MObject aSharpEdgeDegrees;
+  static MObject aSmoothNormalDegrees;
 
   enum ModelType { kOrganic = 0, kHardSurface = 1 };
 
@@ -47,12 +49,14 @@ class AutoRemesherNode : public MPxNode {
   // autoremesher_core を呼び出してクアッドリメッシュを実行し、outMesh を構築する。
   // 失敗した場合は inMesh をそのままコピーする（passthrough にフォールバック）。
   MStatus remesh(const MObject& inMesh, int targetCount, double adaptivity, double edgeScaling,
-                 short modelType, MDataHandle& hOutput);
+                 short modelType, double sharpEdgeDegrees, double smoothNormalDegrees,
+                 MDataHandle& hOutput);
 
   // 入力トポロジ/頂点位置とパラメータからキャッシュキーとなるハッシュ値を計算する。
   static uint64_t computeInputHash(const MPointArray& points, const MIntArray& triangleCounts,
                                    const MIntArray& triangleVertices, int targetCount,
-                                   double adaptivity, double edgeScaling, short modelType);
+                                   double adaptivity, double edgeScaling, short modelType,
+                                   double sharpEdgeDegrees, double smoothNormalDegrees);
 
   // AutoRemesher::AutoRemesherProgressHandler 互換のコールバック。
   // AutoRemesher内部はTBBで並列化されている場合があり、呼び出しスレッドが

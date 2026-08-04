@@ -28,6 +28,8 @@ class YwtaRemeshParams(ctypes.Structure):
         ("scaling", ctypes.c_double),
         ("adaptivity", ctypes.c_double),
         ("model_type", ctypes.c_int),
+        ("sharp_edge_degrees", ctypes.c_double),
+        ("smooth_normal_degrees", ctypes.c_double),
     ]
 
 
@@ -178,6 +180,8 @@ def run_remesh(lib, flat_vertices: list[float], flat_indices: list[int], target_
         scaling=1.0,  # AutoRemesher本家GUIの既定値（0.0だと結果が退化する）
         adaptivity=1.0,
         model_type=YWTA_MODEL_TYPE_ORGANIC,
+        sharp_edge_degrees=90.0,  # ライブラリ既定値
+        smooth_normal_degrees=0.0,  # ライブラリ既定値
     )
 
     messages: list[str] = []

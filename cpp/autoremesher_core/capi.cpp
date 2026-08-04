@@ -123,6 +123,10 @@ int ywta_remesh(
             YWTA_MODEL_TYPE_HARD_SURFACE == params->model_type
                 ? AutoRemesher::ModelType::HardSurface
                 : AutoRemesher::ModelType::Organic);
+        // シャープエッジ/法線平滑化の角度（度）。呼び出し側（Python/Maya）が
+        // ライブラリ既定値（90.0 / 0.0）を明示的に渡す前提で常に設定する。
+        autoRemesher.setSharpEdgeDegrees(params->sharp_edge_degrees);
+        autoRemesher.setSmoothNormalDegrees(params->smooth_normal_degrees);
         if (nullptr != progress_cb) {
             autoRemesher.setTag(tag);
             autoRemesher.setProgressHandler(progress_cb);

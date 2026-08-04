@@ -34,6 +34,8 @@ class YwtaRemeshParams(ctypes.Structure):
         ("scaling", ctypes.c_double),
         ("adaptivity", ctypes.c_double),
         ("model_type", ctypes.c_int),
+        ("sharp_edge_degrees", ctypes.c_double),
+        ("smooth_normal_degrees", ctypes.c_double),
     ]
 
 
@@ -151,6 +153,8 @@ def remesh(
     scaling=1.0,
     adaptivity=1.0,
     model_type=MODEL_TYPE_ORGANIC,
+    sharp_edge_degrees=90.0,
+    smooth_normal_degrees=0.0,
     progress_cb=None,
 ):
     """AutoRemesherを実行してクアッドメッシュを生成する。
@@ -163,6 +167,8 @@ def remesh(
         scaling: エッジ長スケーリング。
         adaptivity: 勾配適応度（0.0〜1.0）。
         model_type: MODEL_TYPE_ORGANIC(0) または MODEL_TYPE_HARDSURFACE(1)。
+        sharp_edge_degrees: シャープエッジと判定する角度（度、ライブラリ既定値90.0）。
+        smooth_normal_degrees: 法線を平滑化する角度（度、ライブラリ既定値0.0）。
         progress_cb: ``callable(progress: float, message: str) -> None``。
             Noneの場合は進捗通知を行わない。
 
@@ -191,6 +197,8 @@ def remesh(
         scaling=float(scaling),
         adaptivity=float(adaptivity),
         model_type=int(model_type),
+        sharp_edge_degrees=float(sharp_edge_degrees),
+        smooth_normal_degrees=float(smooth_normal_degrees),
     )
 
     c_callback, _keep_alive = _make_progress_callback(progress_cb)

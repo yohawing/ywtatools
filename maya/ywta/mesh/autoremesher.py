@@ -47,6 +47,8 @@ def create_remesh_node(
     adaptivity: float = None,
     edge_scaling: float = None,
     model_type: int = None,
+    sharp_edge_degrees: float = None,
+    smooth_normal_degrees: float = None,
 ) -> str:
     """選択（または指定）されたメッシュに autoRemesherNode を接続し、
     リメッシュ結果を新しいオブジェクトとして生成する
@@ -65,6 +67,10 @@ def create_remesh_node(
             Noneの場合はノードのデフォルト値を使う。
         model_type: モデルタイプ（0=Organic, 1=HardSurface、autoRemesherNode.modelType）。
             Noneの場合はノードのデフォルト値を使う。
+        sharp_edge_degrees: シャープエッジと判定する角度（度、autoRemesherNode.sharpEdgeDegrees）。
+            Noneの場合はノードのデフォルト値（90.0）を使う。
+        smooth_normal_degrees: 法線を平滑化する角度（度、autoRemesherNode.smoothNormalDegrees）。
+            Noneの場合はノードのデフォルト値（0.0）を使う。
 
     Returns:
         作成された autoRemesherNode のノード名。失敗した場合は空文字列。
@@ -108,6 +114,10 @@ def create_remesh_node(
         cmds.setAttr(f"{node}.edgeScaling", edge_scaling)
     if model_type is not None:
         cmds.setAttr(f"{node}.modelType", model_type)
+    if sharp_edge_degrees is not None:
+        cmds.setAttr(f"{node}.sharpEdgeDegrees", sharp_edge_degrees)
+    if smooth_normal_degrees is not None:
+        cmds.setAttr(f"{node}.smoothNormalDegrees", smooth_normal_degrees)
 
     cmds.setAttr(f"{node}.enable", True)
 
@@ -131,7 +141,7 @@ def show_options():
     window = cmds.window(
         _OPTIONS_WINDOW_NAME,
         title="AutoRemesher Options",
-        widthHeight=(320, 200),
+        widthHeight=(320, 280),
         sizeable=False,
     )
 
@@ -161,6 +171,23 @@ def show_options():
     for item in MODEL_TYPE_ITEMS:
         cmds.menuItem(label=item)
 
+    sharp_edge_degrees_field = cmds.floatSliderGrp(
+        label="Sharp Edge Degrees",
+        field=True,
+        minValue=0.0,
+        maxValue=180.0,
+        value=90.0,
+        annotation="シャープエッジと判定する角度（度）",
+    )
+    smooth_normal_degrees_field = cmds.floatSliderGrp(
+        label="Smooth Normal Degrees",
+        field=True,
+        minValue=0.0,
+        maxValue=180.0,
+        value=0.0,
+        annotation="法線を平滑化する角度（度）",
+    )
+
     cmds.separator(height=10, style="in")
 
     def _on_create(*_args):
@@ -168,12 +195,18 @@ def show_options():
         adaptivity = cmds.floatSliderGrp(adaptivity_field, query=True, value=True)
         edge_scaling = cmds.floatFieldGrp(edge_scaling_field, query=True, value1=True)
         model_type = cmds.optionMenuGrp(model_type_field, query=True, select=True) - 1
+        sharp_edge_degrees = cmds.floatSliderGrp(sharp_edge_degrees_field, query=True, value=True)
+        smooth_normal_degrees = cmds.floatSliderGrp(
+            smooth_normal_degrees_field, query=True, value=True
+        )
 
         node = create_remesh_node(
             target_count=target_count,
             adaptivity=adaptivity,
             edge_scaling=edge_scaling,
             model_type=model_type,
+            sharp_edge_degrees=sharp_edge_degrees,
+            smooth_normal_degrees=smooth_normal_degrees,
         )
         if node and cmds.window(_OPTIONS_WINDOW_NAME, exists=True):
             cmds.deleteUI(_OPTIONS_WINDOW_NAME, window=True)

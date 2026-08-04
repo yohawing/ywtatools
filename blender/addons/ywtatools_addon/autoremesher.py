@@ -68,6 +68,22 @@ class YWTA_OT_autoremesh(Operator):
         default="ORGANIC",
     )
 
+    sharp_edge_degrees: FloatProperty(
+        name="シャープエッジ角度",
+        description="シャープエッジと判定する角度（度）",
+        default=90.0,
+        min=0.0,
+        max=180.0,
+    )
+
+    smooth_normal_degrees: FloatProperty(
+        name="法線平滑化角度",
+        description="法線を平滑化する角度（度）",
+        default=0.0,
+        min=0.0,
+        max=180.0,
+    )
+
     @classmethod
     def poll(cls, context):
         obj = context.active_object
@@ -83,6 +99,8 @@ class YWTA_OT_autoremesh(Operator):
         layout.prop(self, "adaptivity")
         layout.prop(self, "edge_scaling")
         layout.prop(self, "model_type")
+        layout.prop(self, "sharp_edge_degrees")
+        layout.prop(self, "smooth_normal_degrees")
 
     def execute(self, context):
         obj = context.active_object
@@ -109,6 +127,8 @@ class YWTA_OT_autoremesh(Operator):
                 scaling=self.edge_scaling,
                 adaptivity=self.adaptivity,
                 model_type=_MODEL_TYPE_VALUES[self.model_type],
+                sharp_edge_degrees=self.sharp_edge_degrees,
+                smooth_normal_degrees=self.smooth_normal_degrees,
             )
         except FileNotFoundError as e:
             self.report({"ERROR"}, str(e))
