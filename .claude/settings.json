@@ -2,11 +2,11 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|*.py",
+        "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "ruff format ."
+            "command": "python -c \"import json,sys,subprocess; d=json.load(sys.stdin); p=(d.get('tool_input') or {}).get('file_path',''); p.endswith('.py') and subprocess.run(['ruff','format',p])\""
           }
         ]
       }

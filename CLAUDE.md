@@ -95,7 +95,7 @@ ruff check .
 uvx nox -s lint
 ```
 
-`pyproject.toml` の `[tool.ruff]` で `fix = true` にしているため `ruff check` はファイルを自動修正します。既存コードの一括整形は行っていないため、lint は自分が触ったファイルに限定してください。
+既存コードには約380件のlintエラーが残っており、一括整形は行っていません。**リポジトリ全体への `ruff check --fix .` / `ruff format .` は禁止**（未コミットのWIP差分と整形差分が混ざる事故が過去に発生）。修正・整形は自分が触ったファイルに限定し、`ruff format <file>` のようにパスを明示して実行してください。
 
 ## コミット規律
 

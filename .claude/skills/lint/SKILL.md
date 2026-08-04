@@ -37,19 +37,15 @@ uvx nox -s lint -- maya/ywta/rig/
 # リントチェック
 ruff check .
 
-# リント + 自動修正
-ruff check --fix .
-
-# フォーマットチェック
+# フォーマットチェック（書き換えなし）
 ruff format --check .
 
-# フォーマット適用
-ruff format .
-
-# 特定ファイル/ディレクトリ
-ruff check maya/ywta/rig/
-ruff format blender/addons/ywtatools_addon/
+# 特定ファイル/ディレクトリ（修正・整形はパス明示で）
+ruff check --fix maya/ywta/rig/joint_size.py
+ruff format blender/addons/ywtatools_addon/shape_key_rename.py
 ```
+
+**警告**: リポジトリ全体への `ruff check --fix .` / `ruff format .` は実行禁止。既存コードに約380件のlintエラーが残っており、全体適用するとWIP差分と整形差分が混ざります。修正・整形は必ず対象パスを明示してください。
 
 ruff が未インストールの場合は `uvx ruff check .` のように `uvx` 経由で実行してください。
 
@@ -60,7 +56,7 @@ ruff が未インストールの場合は `uvx ruff check .` のように `uvx` 
 - **行の長さ**: 128文字
 - **対象**: Python 3.10以上（Maya 2024）
 - **select**: `E4, E7, E9, F`（既存コードへの diff 爆発を防ぐための最小構成）
-- **fix = true**: `ruff check` 実行時に自動修正が適用される
+- **fix は無効**（`ruff check` は報告のみ。修正は `--fix` をパス付きで明示）
 - **tests/** は `E402` を許容
 
 既存コードは一括整形していません。lint は自分が触ったファイルに限定して実行してください。

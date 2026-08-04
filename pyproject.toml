@@ -8,7 +8,8 @@ requires-python = ">=3.10"
 line-length = 128
 indent-width = 4
 target-version = "py310"
-fix = true
+# fix = true は既存コード384件のlintエラーが残っている間は危険（ruff checkが
+# リポジトリ全体を書き換えWIPと混ざる事故が発生済み）。修正は --fix で明示的に行う。
 exclude = [
     "maya/cpp",
     "build",
