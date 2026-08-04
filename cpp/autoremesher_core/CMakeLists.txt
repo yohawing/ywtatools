@@ -60,6 +60,16 @@ if(TARGET tbb_static)
     # 静的リンクしているにもかかわらず動的版 tbb.lib を要求してリンクエラーになる。
     # 明示的にCMakeでリンクするため、暗黙リンクは両側（tbb_static本体・利用側）で無効化する。
     target_compile_definitions(tbb_static PUBLIC __TBB_NO_IMPLICIT_LINKAGE=1)
+
+    if(NOT YWTA_AUTOREMESHER_BUILD_DLL)
+        # autoremesher_core を他プラグイン(Mayaノード等)へ静的に埋め込む場合、
+        # その最終バイナリ (ywtatools.mll 等) は自前の DllMain (Maya SDK の
+        # MFnPlugin.h が提供する) を持つため、tbb/src/tbb/tbb_main.cpp が定義する
+        # DllMain と多重定義リンクエラーになる。__TBB_SOURCE_DIRECTLY_INCLUDED を
+        # 立てるとtbb_main.cppはDllMainの定義を省略する（TBBがソースとして
+        # ホスト側に直接組み込まれるケース用の公式フラグ）。
+        target_compile_definitions(tbb_static PUBLIC __TBB_SOURCE_DIRECTLY_INCLUDED=1)
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------
@@ -233,21 +243,30 @@ set_target_properties(autoremesher_core PROPERTIES
 
 # ---------------------------------------------------------------------------
 # ywta_autoremesher (SHARED) - C ABI DLL
+#
+# maya/cpp が add_subdirectory() でこのディレクトリを取り込む際は、
+# autoremesher_core (静的lib) だけが必要で、このDLLは不要
+# （Mayaノードはコアを直接静的リンクするため）。呼び出し側で
+# YWTA_AUTOREMESHER_BUILD_DLL を OFF にすれば capi.cpp のビルドをスキップできる。
 # ---------------------------------------------------------------------------
-add_library(ywta_autoremesher SHARED
-    capi.h
-    capi.cpp
-)
+option(YWTA_AUTOREMESHER_BUILD_DLL "Build the ywta_autoremesher C ABI DLL (Blender/ctypes 用)" ON)
 
-target_link_libraries(ywta_autoremesher PRIVATE autoremesher_core)
+if(YWTA_AUTOREMESHER_BUILD_DLL)
+    add_library(ywta_autoremesher SHARED
+        capi.h
+        capi.cpp
+    )
 
-target_compile_definitions(ywta_autoremesher PRIVATE YWTA_AUTOREMESHER_BUILD_DLL)
+    target_link_libraries(ywta_autoremesher PRIVATE autoremesher_core)
 
-if(MSVC)
-    target_compile_options(ywta_autoremesher PRIVATE /bigobj)
+    target_compile_definitions(ywta_autoremesher PRIVATE YWTA_AUTOREMESHER_BUILD_DLL)
+
+    if(MSVC)
+        target_compile_options(ywta_autoremesher PRIVATE /bigobj)
+    endif()
+
+    set_target_properties(ywta_autoremesher PROPERTIES
+        FOLDER "autoremesher"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/output"
+    )
 endif()
-
-set_target_properties(ywta_autoremesher PROPERTIES
-    FOLDER "autoremesher"
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/output"
-)

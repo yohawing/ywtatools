@@ -1,6 +1,7 @@
 
 #include <maya/MFnPlugin.h>
 
+#include "autoRemesherNode.h"
 #include "demBonesCmd.h"
 #include "ikRigNode.h"
 #include "rbfNode.h"
@@ -27,12 +28,18 @@ MStatus initializePlugin(MObject obj) {
                                IKRigNode::initialize);
   CHECK_MSTATUS_AND_RETURN_IT(status);
 
+  status = plugin.registerNode(AutoRemesherNode::kName, AutoRemesherNode::id,
+                               AutoRemesherNode::creator, AutoRemesherNode::initialize);
+  CHECK_MSTATUS_AND_RETURN_IT(status);
+
   return status;
 }
 
 MStatus uninitializePlugin(MObject obj) {
   MStatus status;
   MFnPlugin plugin(obj);
+  status = plugin.deregisterNode(AutoRemesherNode::id);
+  CHECK_MSTATUS_AND_RETURN_IT(status);
   status = plugin.deregisterNode(IKRigNode::id);
   CHECK_MSTATUS_AND_RETURN_IT(status);
   status = plugin.deregisterCommand(DemBonesCmd::kName);
