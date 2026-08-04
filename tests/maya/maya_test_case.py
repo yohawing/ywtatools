@@ -5,10 +5,7 @@ Maya テストケースモジュール
 """
 
 import os
-import sys
 import unittest
-import tempfile
-import uuid
 import logging
 
 try:

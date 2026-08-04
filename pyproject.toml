@@ -24,3 +24,6 @@ select = ["E4", "E7", "E9", "F"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["E402"]
+# shortcuts.py は deprecated な再エクスポートハブ。import は他モジュールから
+# `from ywta.shortcuts import ...` で参照されるため F401 で削除してはならない。
+"maya/ywta/shortcuts.py" = ["F401", "E402"]

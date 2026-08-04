@@ -18,9 +18,7 @@ class ConfigSchema:
         self.validators: Dict[str, List[Callable]] = {}
         self.constraints: Dict[str, Dict[str, Any]] = {}
 
-    def add_validator(
-        self, key: str, validator: Callable[[Any], bool], error_message: str = ""
-    ) -> None:
+    def add_validator(self, key: str, validator: Callable[[Any], bool], error_message: str = "") -> None:
         """バリデーターを追加
 
         Args:
@@ -33,9 +31,7 @@ class ConfigSchema:
 
         def wrapped_validator(value):
             if not validator(value):
-                raise ValidationError(
-                    error_message or f"Validation failed for {key}: {value}"
-                )
+                raise ValidationError(error_message or f"Validation failed for {key}: {value}")
 
         self.validators[key].append(wrapped_validator)
 
@@ -77,9 +73,7 @@ class ConfigSchema:
 
         def type_validator(value):
             if not isinstance(value, expected_type):
-                raise ValidationError(
-                    f"{key} must be of type {expected_type.__name__}, got {type(value).__name__}"
-                )
+                raise ValidationError(f"{key} must be of type {expected_type.__name__}, got {type(value).__name__}")
 
         self.add_validator(key, lambda v: True, "")  # ダミー
         if key not in self.validators:
@@ -98,9 +92,7 @@ class ConfigSchema:
 
         def path_validator(value):
             if not isinstance(value, str):
-                raise ValidationError(
-                    f"{key} must be a string path, got {type(value).__name__}"
-                )
+                raise ValidationError(f"{key} must be a string path, got {type(value).__name__}")
 
             if must_exist and not os.path.exists(value):
                 raise ValidationError(f"{key} path does not exist: {value}")
@@ -188,6 +180,4 @@ def validate_file_extension(value: str, allowed_extensions: List[str]) -> bool:
     import os
 
     _, ext = os.path.splitext(value.lower())
-    return ext in [
-        e.lower() if e.startswith(".") else f".{e.lower()}" for e in allowed_extensions
-    ]
+    return ext in [e.lower() if e.startswith(".") else f".{e.lower()}" for e in allowed_extensions]

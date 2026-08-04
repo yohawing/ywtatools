@@ -5,7 +5,6 @@
 """
 
 import maya.cmds as cmds
-import maya.mel as mel
 
 
 def create_mesh_menu(parent_menu):
@@ -17,9 +16,7 @@ def create_mesh_menu(parent_menu):
     Returns:
         作成されたメニュー項目
     """
-    mesh_menu = cmds.menuItem(
-        subMenu=True, tearOff=True, parent=parent_menu, label="Mesh"
-    )
+    mesh_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=parent_menu, label="Mesh")
 
     # 頂点ロック関連
     cmds.menuItem(

@@ -1,6 +1,4 @@
 import maya.cmds as cmds
-import maya.api.OpenMaya as OpenMaya
-import ywta.shortcuts as shortcuts
 import ywta.rig.common as common
 from ywta.dge import dge
 import ywta.rig.twoboneik as twoboneik
@@ -46,28 +44,20 @@ class ArmRig(object):
         )
         self.local_rotation = "{}.localRotation".format(ik_control)
 
-        self.rotation_control = cmds.createNode(
-            "transform", name="{}_rotate_ctrl".format(self.two_bone_ik.end_joint)
-        )
+        self.rotation_control = cmds.createNode("transform", name="{}_rotate_ctrl".format(self.two_bone_ik.end_joint))
 
         common.snap_to(self.rotation_control, self.two_bone_ik.end_joint)
         if parent:
             cmds.parent(self.rotation_control, parent)
             common.freeze_to_parent_offset(self.rotation_control)
-        common.opm_parent_constraint(
-            self.two_bone_ik.mid_joint, self.rotation_control, maintain_offset=True
-        )
+        common.opm_parent_constraint(self.two_bone_ik.mid_joint, self.rotation_control, maintain_offset=True)
         common.lock_and_hide(self.rotation_control, "tsv")
 
         # Drive the wrist joint
-        wrist_ori = cmds.createNode(
-            "transform", name="{}_orient".format(self.two_bone_ik.end_joint)
-        )
+        wrist_ori = cmds.createNode("transform", name="{}_orient".format(self.two_bone_ik.end_joint))
         cmds.parent(wrist_ori, ik_control)
         common.snap_to(wrist_ori, self.two_bone_ik.end_joint)
-        ori = cmds.orientConstraint(
-            wrist_ori, self.rotation_control, self.two_bone_ik.end_joint
-        )[0]
+        ori = cmds.orientConstraint(wrist_ori, self.rotation_control, self.two_bone_ik.end_joint)[0]
         inv_ikfk = dge("1.0 - ikFk", ikFk="{}.ikFk".format(self.config_control))
         dge(
             "W1 = inv_ikfk * (1.0 - local)",
@@ -83,17 +73,10 @@ class ArmRig(object):
         )
 
     def __create_pivots(self, ik_control, pivots):
-        """
-        """
+        """ """
         hierarchy = {
             "ball_pivot": {
-                "heel_pivot_ctrl": {
-                    "out_pivot": {
-                        "in_pivot": {
-                            "toe_pivot_ctrl": {"toe_ctrl": None, "heel_ctrl": None}
-                        }
-                    }
-                }
+                "heel_pivot_ctrl": {"out_pivot": {"in_pivot": {"toe_pivot_ctrl": {"toe_ctrl": None, "heel_ctrl": None}}}}
             }
         }
         hierarchy = common.RigHierarchy(

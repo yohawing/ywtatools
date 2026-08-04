@@ -6,23 +6,15 @@ Configuration System Test
 
 import os
 import json
-import maya.cmds as cmds
-from pathlib import Path
 
 from ywta.test import TestCase
 from ywta.config.settings_manager import (
     SettingsManager,
     get_settings_manager,
-    get_setting,
     set_setting,
-    reset_setting,
-    export_settings,
-    import_settings,
-    save_settings,
     add_callback,
     remove_callback,
 )
-from ywta.config.base_config import ConfigValue, ValidationError
 
 
 class ConfigTests(TestCase):
@@ -140,9 +132,7 @@ class ConfigTests(TestCase):
     def test_callbacks(self):
         """コールバック機能のテスト"""
         # グローバルインスタンスを設定
-        global_settings = SettingsManager(
-            self.temp_user_config, self.temp_default_config
-        )
+        global_settings = SettingsManager(self.temp_user_config, self.temp_default_config)
         SettingsManager._instance = global_settings
 
         # コールバック関数

@@ -10,9 +10,8 @@ from __future__ import annotations
 import os
 import json
 import logging
-import shutil
 from pathlib import Path
-from typing import Any, Dict, Optional, Union, List, Tuple
+from typing import Any, Dict, Optional, Union, Tuple
 
 from .base_config import BaseConfig, ConfigValue
 
@@ -51,9 +50,7 @@ class SettingsManager(BaseConfig):
         if self.default_config_file.exists():
             self._load_json_file(self.default_config_file, self._default_config_data)
         else:
-            logger.warning(
-                f"デフォルト設定ファイルが見つかりません: {self.default_config_file}"
-            )
+            logger.warning(f"デフォルト設定ファイルが見つかりません: {self.default_config_file}")
 
         # ユーザー設定ファイルが存在しない場合は作成
         if not self.user_config_file.exists():
@@ -166,9 +163,7 @@ class SettingsManager(BaseConfig):
             )
         )
 
-    def _register_config_values_from_dict(
-        self, config_dict: Dict[str, Any], prefix: str = ""
-    ) -> None:
+    def _register_config_values_from_dict(self, config_dict: Dict[str, Any], prefix: str = "") -> None:
         """辞書から再帰的に設定値を登録"""
         for key, value in config_dict.items():
             full_key = f"{prefix}.{key}" if prefix else key
@@ -258,11 +253,7 @@ class SettingsManager(BaseConfig):
                 parent_key = ".".join(keys[:-1])
                 last_key = keys[-1]
                 parent = self._get_from_nested_dict(self._config_data, parent_key)
-                if (
-                    parent is not None
-                    and isinstance(parent, dict)
-                    and last_key in parent
-                ):
+                if parent is not None and isinstance(parent, dict) and last_key in parent:
                     del parent[last_key]
             self.save_config()
             logger.info(f"設定値 '{key}' をデフォルトにリセットしました")

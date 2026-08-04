@@ -39,9 +39,7 @@ class BlendshapeTargetRenamerUI:
         )
 
         # Main layout
-        main_layout = cmds.columnLayout(
-            adjustableColumn=True, rowSpacing=5, columnOffset=("both", 10)
-        )
+        main_layout = cmds.columnLayout(adjustableColumn=True, rowSpacing=5, columnOffset=("both", 10))
 
         # Title
         cmds.text(label="BlendShape Target Renamer", font="boldLabelFont", height=30)
@@ -64,17 +62,13 @@ class BlendshapeTargetRenamerUI:
         )
 
         cmds.text(label="BlendShape:")
-        self.blendshape_field = cmds.textField(
-            placeholderText="Select or enter blendshape node name"
-        )
+        self.blendshape_field = cmds.textField(placeholderText="Select or enter blendshape node name")
         cmds.button(label="Get Selected", command=self.get_selected_blendshape)
 
         cmds.setParent(main_layout)
 
         # Find & Replace section
-        cmds.frameLayout(
-            label="Find & Replace", collapsable=False, marginHeight=5, marginWidth=5
-        )
+        cmds.frameLayout(label="Find & Replace", collapsable=False, marginHeight=5, marginWidth=5)
 
         # Find text
         find_layout = cmds.rowLayout(
@@ -99,9 +93,7 @@ class BlendshapeTargetRenamerUI:
         cmds.setParent("..")
 
         # Options
-        options_layout = cmds.rowLayout(
-            numberOfColumns=2, columnWidth2=(150, 150), columnAlign2=("left", "left")
-        )
+        options_layout = cmds.rowLayout(numberOfColumns=2, columnWidth2=(150, 150), columnAlign2=("left", "left"))
         self.case_sensitive_checkbox = cmds.checkBox(label="Case Sensitive", value=True)
         self.regex_checkbox = cmds.checkBox(label="Use Regex", value=False)
         cmds.setParent("..")
@@ -121,9 +113,7 @@ class BlendshapeTargetRenamerUI:
             command=self.preview_rename,
             backgroundColor=(0.6, 0.8, 1.0),
         )
-        cmds.button(
-            label="Apply", command=self.apply_rename, backgroundColor=(0.8, 1.0, 0.6)
-        )
+        cmds.button(label="Apply", command=self.apply_rename, backgroundColor=(0.8, 1.0, 0.6))
         cmds.button(label="Refresh Targets", command=self.refresh_target_list)
 
         cmds.setParent(main_layout)
@@ -150,9 +140,7 @@ class BlendshapeTargetRenamerUI:
             marginWidth=5,
         )
 
-        self.result_text = cmds.scrollField(
-            height=80, editable=False, wordWrap=True, text="Ready to rename targets..."
-        )
+        self.result_text = cmds.scrollField(height=80, editable=False, wordWrap=True, text="Ready to rename targets...")
 
         # Show window
         cmds.showWindow(self.window)
@@ -183,9 +171,7 @@ class BlendshapeTargetRenamerUI:
             if blendshape:
                 cmds.textField(self.blendshape_field, edit=True, text=blendshape)
                 self.refresh_target_list()
-                self.show_result(
-                    f"BlendShape node '{blendshape}' found from selected geometry."
-                )
+                self.show_result(f"BlendShape node '{blendshape}' found from selected geometry.")
                 return
 
         self.show_result("No blendshape node found in selection.", error=True)
@@ -200,9 +186,7 @@ class BlendshapeTargetRenamerUI:
 
         if not cmds.objExists(blendshape):
             cmds.textScrollList(self.target_list, edit=True, removeAll=True)
-            self.show_result(
-                f"BlendShape node '{blendshape}' does not exist.", error=True
-            )
+            self.show_result(f"BlendShape node '{blendshape}' does not exist.", error=True)
             return
 
         if cmds.nodeType(blendshape) != "blendShape":
@@ -243,9 +227,7 @@ class BlendshapeTargetRenamerUI:
 
             # Simulate rename operation
             use_regex = cmds.checkBox(self.regex_checkbox, query=True, value=True)
-            case_sensitive = cmds.checkBox(
-                self.case_sensitive_checkbox, query=True, value=True
-            )
+            case_sensitive = cmds.checkBox(self.case_sensitive_checkbox, query=True, value=True)
 
             preview_results = []
 
@@ -304,18 +286,12 @@ class BlendshapeTargetRenamerUI:
 
         try:
             use_regex = cmds.checkBox(self.regex_checkbox, query=True, value=True)
-            case_sensitive = cmds.checkBox(
-                self.case_sensitive_checkbox, query=True, value=True
-            )
+            case_sensitive = cmds.checkBox(self.case_sensitive_checkbox, query=True, value=True)
 
             if use_regex:
-                renamed_targets = find_replace_target_names_regex(
-                    blendshape, find_text, replace_text
-                )
+                renamed_targets = find_replace_target_names_regex(blendshape, find_text, replace_text)
             else:
-                renamed_targets = find_replace_target_names(
-                    blendshape, find_text, replace_text, case_sensitive
-                )
+                renamed_targets = find_replace_target_names(blendshape, find_text, replace_text, case_sensitive)
 
             if renamed_targets:
                 result_lines = [f"Successfully renamed {len(renamed_targets)} targets:"]
@@ -337,9 +313,7 @@ class BlendshapeTargetRenamerUI:
             return False
 
         if not cmds.objExists(blendshape):
-            self.show_result(
-                f"BlendShape node '{blendshape}' does not exist.", error=True
-            )
+            self.show_result(f"BlendShape node '{blendshape}' does not exist.", error=True)
             return False
 
         if cmds.nodeType(blendshape) != "blendShape":

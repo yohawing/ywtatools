@@ -19,7 +19,6 @@ widget.show()
 from __future__ import absolute_import
 from __future__ import print_function
 
-import os
 
 from PySide2.QtCore import Signal
 from PySide2.QtWidgets import (
@@ -33,7 +32,6 @@ from PySide2.QtWidgets import (
 
 import maya.cmds as cmds
 
-import ywta.shortcuts as shortcuts
 from ywta.ui.stringcache import StringCache
 
 

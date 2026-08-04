@@ -32,11 +32,7 @@ def get_shape(node, intermediate=False):
             shapes = []
         for shape in shapes:
             is_intermediate = cmds.getAttr("{}.intermediateObject".format(shape))
-            if (
-                intermediate
-                and is_intermediate
-                and cmds.listConnections(shape, source=False)
-            ):
+            if intermediate and is_intermediate and cmds.listConnections(shape, source=False):
                 return shape
             elif not intermediate and not is_intermediate:
                 return shape

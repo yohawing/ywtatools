@@ -6,9 +6,7 @@ from ywta.dge import dge
 
 
 class SpineRig(object):
-    def __init__(
-        self, start_joint, end_joint, start_control, end_control, name="spine"
-    ):
+    def __init__(self, start_joint, end_joint, start_control, end_control, name="spine"):
         self.effector = None
         self.ik_handle = None
         self.start_joint = start_joint
@@ -29,9 +27,7 @@ class SpineRig(object):
             keyable=True,
         )
 
-        self.spline_chain, original_chain = common.duplicate_chain(
-            self.start_joint, self.end_joint, prefix="ikSpine_"
-        )
+        self.spline_chain, original_chain = common.duplicate_chain(self.start_joint, self.end_joint, prefix="ikSpine_")
 
         # Create the spline ik
         self.ik_handle, self.effector, self.curve = cmds.ikHandle(
@@ -46,17 +42,13 @@ class SpineRig(object):
         self.curve = cmds.rename(self.curve, "{}_crv".format(self.name))
 
         # Create the joints to skin the curve
-        curve_start_joint = cmds.duplicate(
-            self.start_joint, parentOnly=True, name="{}CurveStart_jnt".format(self.name)
-        )[0]
+        curve_start_joint = cmds.duplicate(self.start_joint, parentOnly=True, name="{}CurveStart_jnt".format(self.name))[0]
         start_parent = cmds.listRelatives(self.start_control, parent=True, path=True)
         if start_parent:
             cmds.parent(curve_start_joint, start_parent[0])
         common.opm_point_constraint(self.start_control, curve_start_joint)
 
-        curve_end_joint = cmds.duplicate(
-            self.end_joint, parentOnly=True, name="{}CurveEnd_jnt".format(self.name)
-        )[0]
+        curve_end_joint = cmds.duplicate(self.end_joint, parentOnly=True, name="{}CurveEnd_jnt".format(self.name))[0]
         cmds.parent(curve_end_joint, self.end_control)
         for node in [curve_start_joint, curve_end_joint]:
             cmds.setAttr("{}.v".format(node), 0)
@@ -85,9 +77,7 @@ class SpineRig(object):
         # Connect to joints
         for joint in self.spline_chain[1:]:
             tx = cmds.getAttr("{}.translateX".format(joint))
-            mdl = cmds.createNode(
-                "multDoubleLinear", name="{}Stretch_mdl".format(joint)
-            )
+            mdl = cmds.createNode("multDoubleLinear", name="{}Stretch_mdl".format(joint))
             cmds.setAttr("{}.input1".format(mdl), tx)
             cmds.connectAttr(scale, "{}.input2".format(mdl))
             cmds.connectAttr("{}.output".format(mdl), "{}.translateX".format(joint))
@@ -95,19 +85,11 @@ class SpineRig(object):
         joint_up = OpenMaya.MVector(0.0, 1.0, 0.0)
         start_joint_path = shortcuts.get_dag_path2(self.start_joint)
         start_control_path = shortcuts.get_dag_path2(self.start_control)
-        up_vector_start = (
-            joint_up
-            * start_joint_path.inclusiveMatrix()
-            * start_control_path.inclusiveMatrixInverse()
-        )
+        up_vector_start = joint_up * start_joint_path.inclusiveMatrix() * start_control_path.inclusiveMatrixInverse()
 
         end_joint_path = shortcuts.get_dag_path2(self.end_joint)
         end_control_path = shortcuts.get_dag_path2(self.end_control)
-        up_vector_end = (
-            joint_up
-            * end_joint_path.inclusiveMatrix()
-            * end_control_path.inclusiveMatrixInverse()
-        )
+        up_vector_end = joint_up * end_joint_path.inclusiveMatrix() * end_control_path.inclusiveMatrixInverse()
 
         # Setup advanced twist
         cmds.setAttr("{}.dTwistControlEnable".format(self.ik_handle), True)

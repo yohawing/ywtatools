@@ -1,10 +1,10 @@
-from math import e
 import maya.cmds as cmds
 import maya.api.OpenMaya as OpenMaya2
 import ywta.deform.blendshape as blendshape
 import ywta.mesh.colorset as colorset
 import ywta.shortcuts as shortcuts
 from ywta.ui.optionbox import OptionBox
+
 
 def blend_points_width_weights(source, target, weights):
 
@@ -17,13 +17,14 @@ def blend_points_width_weights(source, target, weights):
         raise RuntimeError("Weights must be the same length as target points")
 
     new_points = OpenMaya2.MPointArray()
-    for i,w in enumerate(weights):
+    for i, w in enumerate(weights):
         p = OpenMaya2.MPoint()
         p.x = source_points[i].x * w + target_points[i].x * (1 - w)
         p.y = source_points[i].y * w + target_points[i].y * (1 - w)
         p.z = source_points[i].z * w + target_points[i].z * (1 - w)
         new_points.append(p)
     return new_points
+
 
 def new_target_with_points(target_mesh, points, target_name=None):
 
@@ -45,6 +46,7 @@ def new_target_with_points(target_mesh, points, target_name=None):
     # 複製したshapeを削除
     cmds.delete(target_dup)
 
+
 def transfer_shape_with_colorset(source_mesh, target_mesh, is_use_colorset=None, is_add_blendshape_target=False):
     """ターゲットのカラーセットのリストを取得して、それぞれのカラーセットに対してシェイプを転送する"""
     if is_use_colorset:
@@ -62,9 +64,10 @@ def transfer_shape_with_colorset(source_mesh, target_mesh, is_use_colorset=None,
         target_fnmesh = shortcuts.get_mfnmesh(target_mesh)
         if is_add_blendshape_target:
             target_name = f"new_target_{source_mesh.split('|')[-1]}"
-            new_target_with_points( target_mesh, new_points, target_name)
+            new_target_with_points(target_mesh, new_points, target_name)
         else:
             target_fnmesh.setPoints(new_points)
+
 
 def exec_from_menu(*args, **kwargs):
     sel = cmds.ls(sl=True)
@@ -72,14 +75,18 @@ def exec_from_menu(*args, **kwargs):
         raise RuntimeError("Select source and target mesh.")
     source_mesh, target_mesh = sel
     kwargs = Options.get_kwargs()
-    transfer_shape_with_colorset(source_mesh, target_mesh,
-                                is_use_colorset=kwargs[Options.IS_USE_COLORSET],
-                                is_add_blendshape_target=kwargs[Options.IS_ADD_BLENDSHAPE_TARGET])
+    transfer_shape_with_colorset(
+        source_mesh,
+        target_mesh,
+        is_use_colorset=kwargs[Options.IS_USE_COLORSET],
+        is_add_blendshape_target=kwargs[Options.IS_ADD_BLENDSHAPE_TARGET],
+    )
 
 
 def display_menu_options(*args, **kwargs):
     options = Options("Transfer Shape Options")
     options.show()
+
 
 class Options(OptionBox):
     IS_USE_COLORSET = "is_use_colorset"

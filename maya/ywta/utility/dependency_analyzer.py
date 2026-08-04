@@ -23,7 +23,6 @@ from __future__ import print_function
 
 import os
 import re
-import sys
 import ast
 import logging
 from collections import defaultdict
@@ -222,9 +221,7 @@ def update_init_files(dependencies):
         else:
             # 新しい依存関係コメントを追加
             if content.strip():
-                updated_content = (
-                    content.rstrip() + "\n\n" + format_dependency_comment(deps) + "\n"
-                )
+                updated_content = content.rstrip() + "\n\n" + format_dependency_comment(deps) + "\n"
             else:
                 updated_content = format_dependency_comment(deps) + "\n"
 
@@ -271,9 +268,7 @@ def main():
         action="store_true",
         help="__init__.pyファイルに依存関係情報を追加します",
     )
-    parser.add_argument(
-        "--detect-cycles", "-c", action="store_true", help="循環依存を検出します"
-    )
+    parser.add_argument("--detect-cycles", "-c", action="store_true", help="循環依存を検出します")
 
     args = parser.parse_args()
 

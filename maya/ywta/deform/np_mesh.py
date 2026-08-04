@@ -77,11 +77,11 @@ class Mesh(object):
         shortcuts.set_points(mesh, points)
 
     def __sub__(self, other):
-        points = (self.points - other.points)
+        points = self.points - other.points
         return Mesh(points)
 
     def __add__(self, other):
-        points = (self.points + other.points)
+        points = self.points + other.points
         return Mesh(points)
 
 
@@ -119,8 +119,6 @@ class Mask(object):
 
     def __mul__(self, other):
         if not isinstance(other, Mask):
-            raise RuntimeError(
-                "Unable to multiply Mask with type {}".format(type(other))
-            )
+            raise RuntimeError("Unable to multiply Mask with type {}".format(type(other)))
         name = "{}_{}".format(self.name, other.name)
         return Mask(self.values * other.values, name)

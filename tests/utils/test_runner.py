@@ -9,8 +9,6 @@ import sys
 import unittest
 import argparse
 import logging
-import importlib
-from pathlib import Path
 
 from tests.common.test_settings import TestSettings
 
@@ -79,9 +77,7 @@ def run_maya_tests(test_dir=None, pattern="test_*.py"):
 
     # テストディレクトリが指定されていない場合はデフォルトを使用
     if test_dir is None:
-        test_dir = os.path.join(
-            TestSettings.get_project_root(), "tests", "maya", "unit"
-        )
+        test_dir = os.path.join(TestSettings.get_project_root(), "tests", "maya", "unit")
 
     # テストを検出して実行
     suite = discover_tests(test_dir, pattern)
@@ -103,9 +99,7 @@ def run_blender_tests(test_dir=None, pattern="test_*.py"):
 
     # テストディレクトリが指定されていない場合はデフォルトを使用
     if test_dir is None:
-        test_dir = os.path.join(
-            TestSettings.get_project_root(), "tests", "blender", "unit"
-        )
+        test_dir = os.path.join(TestSettings.get_project_root(), "tests", "blender", "unit")
 
     # テストを検出して実行
     suite = discover_tests(test_dir, pattern)
@@ -149,14 +143,10 @@ def main():
     )
 
     # 詳細レベルの指定
-    parser.add_argument(
-        "--verbose", "-v", action="count", default=1, help="詳細レベルを増やす"
-    )
+    parser.add_argument("--verbose", "-v", action="count", default=1, help="詳細レベルを増やす")
 
     # 出力バッファリングの指定
-    parser.add_argument(
-        "--no-buffer", action="store_true", help="出力バッファリングを無効にする"
-    )
+    parser.add_argument("--no-buffer", action="store_true", help="出力バッファリングを無効にする")
 
     args = parser.parse_args()
 
@@ -175,16 +165,12 @@ def main():
         test_dir = args.dir
     else:
         # デフォルトのテストディレクトリを環境とタイプに基づいて決定
-        test_dir = os.path.join(
-            TestSettings.get_project_root(), "tests", args.env, args.type
-        )
+        test_dir = os.path.join(TestSettings.get_project_root(), "tests", args.env, args.type)
 
     # 環境に応じたテスト実行
     if args.env == "maya":
         # Mayaのテスト実行はtest_runner.pyではなく、別のスクリプトで行うことをユーザーに知らせる
-        print(
-            "Mayaのテストは `python tests/run_maya_tests.py` を使用して実行してください。"
-        )
+        print("Mayaのテストは `python tests/run_maya_tests.py` を使用して実行してください。")
         # result = run_maya_tests(test_dir, args.pattern)
     elif args.env == "blender":
         result = run_blender_tests(test_dir, args.pattern)

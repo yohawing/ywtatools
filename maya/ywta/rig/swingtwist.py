@@ -62,14 +62,11 @@ from __future__ import print_function
 import logging
 
 import maya.cmds as cmds
-import maya.mel as mel
 import maya.api.OpenMaya as OpenMaya
 
 from ywta.ui.optionbox import OptionBox
 from ywta.settings import DOCUMENTATION_ROOT
 import ywta.settings as settings
-from ywta.dge import dge
-import ywta.shortcuts as shortcuts
 import math
 
 logger = logging.getLogger(__name__)
@@ -85,9 +82,7 @@ INV_SWING_OUTPUT = "invertedSwingOutput"
 HELP_URL = "{}/rig/swingtwist.html".format(DOCUMENTATION_ROOT)
 
 
-def create_swing_twist(
-    driver, driven, twist_weight=1.0, swing_weight=1.0, twist_axis=0
-):
+def create_swing_twist(driver, driven, twist_weight=1.0, swing_weight=1.0, twist_axis=0):
     """Create a node network to drive a transforms offsetParentMatrix from the
     decomposed swing/twist of another transform.
 
@@ -102,9 +97,7 @@ def create_swing_twist(
     """
     if settings.ENABLE_PLUGINS:
         cmds.loadPlugin("ywtatools", qt=True)
-        cmds.swingTwist(
-            driver, driven, twist=twist_weight, swing=swing_weight, twistAxis=twist_axis
-        )
+        cmds.swingTwist(driver, driven, twist=twist_weight, swing=swing_weight, twistAxis=twist_axis)
         return
     for attr in [TWIST_OUTPUT, INV_TWIST_OUTPUT, SWING_OUTPUT, INV_SWING_OUTPUT]:
         if not cmds.objExists("{}.{}".format(driver, attr)):
@@ -129,34 +122,22 @@ def create_swing_twist(
     swing_slerp = _create_slerp(driven, swing_weight, swing, inv_swing, SWING_WEIGHT)
 
     rotation = cmds.createNode("quatProd", name="{}_rotation".format(driver))
-    cmds.connectAttr(
-        "{}.outputQuat".format(twist_slerp), "{}.input1Quat".format(rotation)
-    )
-    cmds.connectAttr(
-        "{}.outputQuat".format(swing_slerp), "{}.input2Quat".format(rotation)
-    )
+    cmds.connectAttr("{}.outputQuat".format(twist_slerp), "{}.input1Quat".format(rotation))
+    cmds.connectAttr("{}.outputQuat".format(swing_slerp), "{}.input2Quat".format(rotation))
 
-    rotation_matrix = cmds.createNode(
-        "composeMatrix", name="{}_rotation_matrix".format(driver)
-    )
+    rotation_matrix = cmds.createNode("composeMatrix", name="{}_rotation_matrix".format(driver))
     cmds.setAttr("{}.useEulerRotation".format(rotation_matrix), 0)
-    cmds.connectAttr(
-        "{}.outputQuat".format(rotation), "{}.inputQuat".format(rotation_matrix)
-    )
+    cmds.connectAttr("{}.outputQuat".format(rotation), "{}.inputQuat".format(rotation_matrix))
 
     mult = cmds.createNode("multMatrix", name="{}_offset_parent_matrix".format(driven))
-    cmds.connectAttr(
-        "{}.outputMatrix".format(rotation_matrix), "{}.matrixIn[0]".format(mult)
-    )
+    cmds.connectAttr("{}.outputMatrix".format(rotation_matrix), "{}.matrixIn[0]".format(mult))
 
     pinv = OpenMaya.MMatrix(cmds.getAttr("{}.parentInverseMatrix[0]".format(driven)))
     m = OpenMaya.MMatrix(cmds.getAttr("{}.worldMatrix[0]".format(driven)))
     local_rest_matrix = m * pinv
     cmds.setAttr("{}.matrixIn[1]".format(mult), list(local_rest_matrix), type="matrix")
 
-    cmds.connectAttr(
-        "{}.matrixSum".format(mult), "{}.offsetParentMatrix".format(driven)
-    )
+    cmds.connectAttr("{}.matrixSum".format(mult), "{}.offsetParentMatrix".format(driven))
 
     # Zero out local xforms to prevent double xform
     for attr in ["{}{}".format(x, y) for x in ["t", "r", "jo"] for y in "xyz"]:
@@ -167,9 +148,7 @@ def create_swing_twist(
         if is_locked:
             cmds.setAttr("{}.{}".format(driven, attr), lock=True)
 
-    logger.info(
-        "Created swing twist network to drive {} from {}".format(driven, driver)
-    )
+    logger.info("Created swing twist network to drive {} from {}".format(driven, driver))
 
 
 def _twist_network_exists(driver):
@@ -202,9 +181,7 @@ def _create_twist_decomposition_network(driver, twist_axis):
     pinv = OpenMaya.MMatrix(cmds.getAttr(parent_inverse))
     m = OpenMaya.MMatrix(cmds.getAttr(world_matrix))
     inv_local_rest_matrix = (m * pinv).inverse()
-    cmds.setAttr(
-        "{}.matrixIn[2]".format(mult), list(inv_local_rest_matrix), type="matrix"
-    )
+    cmds.setAttr("{}.matrixIn[2]".format(mult), list(inv_local_rest_matrix), type="matrix")
 
     rotation = cmds.createNode("decomposeMatrix", name="{}_rotation".format(driver))
     cmds.connectAttr("{}.matrixSum".format(mult), "{}.inputMatrix".format(rotation))
@@ -301,17 +278,13 @@ class Options(OptionBox):
         function."""
         kwargs = {}
         if cmds.floatSliderGrp(Options.TWIST_WEIGHT_WIDGET, exists=True):
-            kwargs["twist_weight"] = cmds.floatSliderGrp(
-                Options.TWIST_WEIGHT_WIDGET, q=True, value=True
-            )
+            kwargs["twist_weight"] = cmds.floatSliderGrp(Options.TWIST_WEIGHT_WIDGET, q=True, value=True)
             cmds.optionVar(fv=(Options.TWIST_WEIGHT_WIDGET, kwargs["twist_weight"]))
         else:
             kwargs["twist_weight"] = cmds.optionVar(q=Options.TWIST_WEIGHT_WIDGET)
 
         if cmds.floatSliderGrp(Options.SWING_WEIGHT_WIDGET, exists=True):
-            kwargs["swing_weight"] = cmds.floatSliderGrp(
-                Options.SWING_WEIGHT_WIDGET, q=True, value=True
-            )
+            kwargs["swing_weight"] = cmds.floatSliderGrp(Options.SWING_WEIGHT_WIDGET, q=True, value=True)
             cmds.optionVar(fv=(Options.SWING_WEIGHT_WIDGET, kwargs["swing_weight"]))
         else:
             kwargs["twist_weight"] = cmds.optionVar(q=Options.TWIST_WEIGHT_WIDGET)

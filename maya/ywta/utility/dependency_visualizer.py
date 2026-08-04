@@ -14,10 +14,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
-import sys
 import logging
-from functools import partial
 
 try:
     from PySide6.QtCore import *
@@ -32,7 +29,6 @@ from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 import maya.cmds as cmds
 
 import ywta.utility.dependency_analyzer as analyzer
-import ywta.shortcuts as shortcuts
 
 logger = logging.getLogger(__name__)
 
@@ -135,9 +131,7 @@ class DependencyVisualizerWindow(MayaQWidgetBaseMixin, QDialog):
         update_options_layout.addWidget(self.module_list)
 
         # ラジオボタンの状態変更時の処理
-        self.update_all_radio.toggled.connect(
-            lambda checked: self.module_list.setEnabled(not checked)
-        )
+        self.update_all_radio.toggled.connect(lambda checked: self.module_list.setEnabled(not checked))
 
         # 更新ボタン
         update_button = QPushButton("__init__.pyファイルを更新")
@@ -168,9 +162,7 @@ class DependencyVisualizerWindow(MayaQWidgetBaseMixin, QDialog):
     def analyze_dependencies(self):
         """依存関係の分析を実行"""
         # 進捗ダイアログの表示
-        progress_dialog = QProgressDialog(
-            "依存関係を分析中...", "キャンセル", 0, 100, self
-        )
+        progress_dialog = QProgressDialog("依存関係を分析中...", "キャンセル", 0, 100, self)
         progress_dialog.setWindowTitle("分析中")
         progress_dialog.setWindowModality(Qt.WindowModal)
         progress_dialog.setValue(10)
@@ -298,9 +290,7 @@ class DependencyVisualizerWindow(MayaQWidgetBaseMixin, QDialog):
             return
 
         # 進捗ダイアログの表示
-        progress_dialog = QProgressDialog(
-            "__init__.pyファイルを更新中...", "キャンセル", 0, 100, self
-        )
+        progress_dialog = QProgressDialog("__init__.pyファイルを更新中...", "キャンセル", 0, 100, self)
         progress_dialog.setWindowTitle("更新中")
         progress_dialog.setWindowModality(Qt.WindowModal)
         progress_dialog.setValue(10)
@@ -313,18 +303,12 @@ class DependencyVisualizerWindow(MayaQWidgetBaseMixin, QDialog):
                 target_dependencies = self.dependencies
             else:
                 # 選択されたモジュールのみ更新
-                selected_modules = [
-                    item.text() for item in self.module_list.selectedItems()
-                ]
+                selected_modules = [item.text() for item in self.module_list.selectedItems()]
                 if not selected_modules:
                     cmds.warning("更新するモジュールが選択されていません")
                     return
 
-                target_dependencies = {
-                    module: deps
-                    for module, deps in self.dependencies.items()
-                    if module in selected_modules
-                }
+                target_dependencies = {module: deps for module, deps in self.dependencies.items() if module in selected_modules}
 
             progress_dialog.setValue(30)
 

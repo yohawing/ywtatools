@@ -3,20 +3,21 @@ import math
 
 # カスタムノードの定義
 
+
 class NodeVectorAngle(bpy.types.Node):
-    '''ベクトル間の角度を計算するノード'''
-    bl_idname = 'VectorAngleNodeType'
-    bl_label = 'Angle From Vector'
-    bl_icon = 'NODE'
+    """ベクトル間の角度を計算するノード"""
+
+    bl_idname = "VectorAngleNodeType"
+    bl_label = "Angle From Vector"
+    bl_icon = "NODE"
 
     # my_float_prop: bpy.props.FloatProperty(default=3.1415926)
 
-
     def init(self, context):
-        self.inputs.new('NodeSocketVector', "vector1")
-        self.inputs.new('NodeSocketVector', "vector2")
-        self.outputs.new('NodeSocketFloat', "degree")
-        self.outputs.new('NodeSocketFloat', "radian")
+        self.inputs.new("NodeSocketVector", "vector1")
+        self.inputs.new("NodeSocketVector", "vector2")
+        self.outputs.new("NodeSocketFloat", "degree")
+        self.outputs.new("NodeSocketFloat", "radian")
 
     def update(self):
         input1 = self.inputs["vector1"].default_value
@@ -45,7 +46,7 @@ class EXTRANODEGROUPWRAPPER_NG_group_wrapper(bpy.types.GeometryNodeCustomGroup):
     bl_label = "Group Wrapper"
 
     @classmethod
-    def poll(cls, context):  #mandatory with geonode
+    def poll(cls, context):  # mandatory with geonode
         """If this returns False, when trying to add the node from an operator you will get an error."""
         return True
 
@@ -63,7 +64,9 @@ class EXTRANODEGROUPWRAPPER_NG_group_wrapper(bpy.types.GeometryNodeCustomGroup):
         """generic update function. Called when the node tree is updated"""
         pass
 
-    def draw_label(self,):
+    def draw_label(
+        self,
+    ):
         """The return result of this is used shown as the label of the node"""
         if not self.node_tree:
             return "Pick a group!"
@@ -75,18 +78,19 @@ class EXTRANODEGROUPWRAPPER_NG_group_wrapper(bpy.types.GeometryNodeCustomGroup):
         # remove this if you don't want people to be able to change which node is selected
         layout.template_ID(self, "node_tree")
 
+
 # カスタムノードのカテゴリー登録
 class NODE_MT_category_GEO_EXTRA(bpy.types.Menu):
-
     bl_idname = "NODE_MT_category_GEO_EXTRA"
     bl_label = "Extra"
 
     @classmethod
     def poll(cls, context):
-        return (bpy.context.space_data.tree_type == "GeometryNodeTree")
+        return bpy.context.space_data.tree_type == "GeometryNodeTree"
 
     def draw(self, context):
         return None
+
 
 def extra_node_group_wrapper(self, context):
     """extend extra menu with new node"""
@@ -97,6 +101,7 @@ def extra_node_group_wrapper(self, context):
     op.type = NodeVectorAngle.bl_idname
     op.use_transform = True
 
+
 def extra_geonode_menu(self, context):
     """extend NODE_MT_add with new extra menu"""
     self.layout.menu(NODE_MT_category_GEO_EXTRA.bl_idname, text=NODE_MT_category_GEO_EXTRA.bl_label)
@@ -106,57 +111,59 @@ def extra_geonode_menu(self, context):
 def register_menus():
     """register extra menu, if not already, append item, if not already"""
 
-    #register new extra menu class if not exists already, perhaps another plugin already implemented it
+    # register new extra menu class if not exists already, perhaps another plugin already implemented it
     if "NODE_MT_category_GEO_EXTRA" not in bpy.types.__dir__():
         bpy.utils.register_class(NODE_MT_category_GEO_EXTRA)
 
-    #extend add menu with extra menu if not already, _dyn_ui_initialize() will get appended drawing functions of a menu
+    # extend add menu with extra menu if not already, _dyn_ui_initialize() will get appended drawing functions of a menu
     add_menu = bpy.types.NODE_MT_add
     if "extra_geonode_menu" not in [f.__name__ for f in add_menu._dyn_ui_initialize()]:
         add_menu.append(extra_geonode_menu)
 
-    #extend extra menu with our custom nodes if not already
+    # extend extra menu with our custom nodes if not already
     extra_menu = bpy.types.NODE_MT_category_GEO_EXTRA
     if "extra_node_group_wrapper" not in [f.__name__ for f in extra_menu._dyn_ui_initialize()]:
         extra_menu.append(extra_node_group_wrapper)
 
     return None
 
+
 def unregister_menus():
 
     add_menu = bpy.types.NODE_MT_add
     extra_menu = bpy.types.NODE_MT_category_GEO_EXTRA
 
-    #remove our custom function to extra menu
+    # remove our custom function to extra menu
     for f in extra_menu._dyn_ui_initialize().copy():
-        if (f.__name__ == "extra_node_group_wrapper"):
+        if f.__name__ == "extra_node_group_wrapper":
             extra_menu.remove(f)
 
-    #if extra menu is empty
+    # if extra menu is empty
     if len(extra_menu._dyn_ui_initialize()) == 1:
-
-        #remove our extra menu item draw fct add menu
+        # remove our extra menu item draw fct add menu
         for f in add_menu._dyn_ui_initialize().copy():
-            if (f.__name__ == "extra_geonode_menu"):
+            if f.__name__ == "extra_geonode_menu":
                 add_menu.remove(f)
 
-        #unregister extra menu
+        # unregister extra menu
         bpy.utils.unregister_class(extra_menu)
 
     return None
+
 
 classes = [
     EXTRANODEGROUPWRAPPER_NG_group_wrapper,
     NodeVectorAngle,
 ]
 
+
 def register():
 
-    #classes
+    # classes
     for cls in classes:
         bpy.utils.register_class(cls)
 
-    #extend add menu
+    # extend add menu
     register_menus()
 
     return None
@@ -164,14 +171,15 @@ def register():
 
 def unregister():
 
-    #extend add menu
+    # extend add menu
     unregister_menus()
 
-    #classes
+    # classes
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
 
     return None
+
 
 if __name__ == "__main__":
     register()

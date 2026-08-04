@@ -18,9 +18,6 @@ YWTA_ROOT_DIR = str(Path(__file__).parent.parent.absolute())
 if YWTA_ROOT_DIR not in sys.path:
     sys.path.insert(0, YWTA_ROOT_DIR)
 
-from tests.common.test_settings import TestSettings
-from tests.utils.test_runner import run_maya_tests
-
 
 def get_maya_location(maya_version: int) -> Path:
     """Mayaがインストールされている場所を取得します。
@@ -94,9 +91,7 @@ def main():
     # プロジェクトルートを取
     mayapy_path = mayapy(args.maya)
 
-    maya_unit_test = os.path.join(
-        YWTA_ROOT_DIR, "maya", "ywta", "test", "maya_unit_test.py"
-    )
+    maya_unit_test = os.path.join(YWTA_ROOT_DIR, "maya", "ywta", "test", "maya_unit_test.py")
 
     # mayapyを使用してテストを実行
     command = [

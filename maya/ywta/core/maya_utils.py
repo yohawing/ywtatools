@@ -11,7 +11,6 @@ from __future__ import print_function
 
 import logging
 
-import maya.cmds as cmds
 import maya.OpenMaya as OpenMaya
 import maya.OpenMayaAnim as OpenMayaAnim
 import maya.api.OpenMaya as OpenMaya2

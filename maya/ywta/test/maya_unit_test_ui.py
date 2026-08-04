@@ -15,7 +15,6 @@ from __future__ import print_function
 
 import logging
 import os
-import sys
 import traceback
 import unittest
 from ywta.reloadmodules import RollbackImporter
@@ -80,16 +79,12 @@ class MayaTestRunnerDialog(MayaQWidgetBaseMixin, QMainWindow):
         action.setToolTip("Run all tests.")
 
         action = toolbar.addAction("Run Selected Tests")
-        action.setIcon(
-            QIcon(QPixmap(os.path.join(ICON_DIR, "ywta_run_selected_tests.png")))
-        )
+        action.setIcon(QIcon(QPixmap(os.path.join(ICON_DIR, "ywta_run_selected_tests.png"))))
         action.setToolTip("Run all selected tests.")
         action.triggered.connect(self.run_selected_tests)
 
         action = toolbar.addAction("Run Failed Tests")
-        action.setIcon(
-            QIcon(QPixmap(os.path.join(ICON_DIR, "ywta_run_failed_tests.png")))
-        )
+        action.setIcon(QIcon(QPixmap(os.path.join(ICON_DIR, "ywta_run_failed_tests.png"))))
         action.setToolTip("Run all failed tests.")
         action.triggered.connect(self.run_failed_tests)
 
@@ -128,9 +123,7 @@ class MayaTestRunnerDialog(MayaQWidgetBaseMixin, QMainWindow):
     def expand_tree(self, root_node):
         """Expands all the collapsed elements in a tree starting at the root_node"""
         parent = root_node.parent()
-        parent_idx = (
-            self.model.createIndex(parent.row(), 0, parent) if parent else QModelIndex()
-        )
+        parent_idx = self.model.createIndex(parent.row(), 0, parent) if parent else QModelIndex()
         index = self.model.index(root_node.row(), 0, parent_idx)
         self.test_view.setExpanded(index, True)
         for child in root_node.children:
@@ -379,9 +372,7 @@ class TestTreeModel(QAbstractItemModel):
         :param stream: A stream object with write functionality to capture the test output.
         :param test_suite: The TestSuite to run.
         """
-        runner = unittest.TextTestRunner(
-            stream=stream, verbosity=2, resultclass=maya_unit_test.TestResult
-        )
+        runner = unittest.TextTestRunner(stream=stream, verbosity=2, resultclass=maya_unit_test.TestResult)
         runner.failfast = False
         runner.buffer = maya_unit_test.Settings.buffer_output
         result = runner.run(test_suite)

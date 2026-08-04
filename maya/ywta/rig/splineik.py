@@ -3,9 +3,7 @@ import ywta.shortcuts as shortcuts
 
 
 def create_spine(start_joint, end_joint, lower_control, upper_control, name="spine"):
-    spline_chain, original_chain = shortcuts.duplicate_chain(
-        start_joint, end_joint, prefix="ikSpine_"
-    )
+    spline_chain, original_chain = shortcuts.duplicate_chain(start_joint, end_joint, prefix="ikSpine_")
 
     # Create the spline ik
     ikh, effector, curve = cmds.ikHandle(
@@ -20,27 +18,19 @@ def create_spine(start_joint, end_joint, lower_control, upper_control, name="spi
     curve = cmds.rename(curve, "{0}_crv".format(name))
 
     # Create the joints to skin the curve
-    curve_start_joint = cmds.duplicate(
-        start_joint, parentOnly=True, name="{0}CurveStart_jnt".format(name)
-    )
+    curve_start_joint = cmds.duplicate(start_joint, parentOnly=True, name="{0}CurveStart_jnt".format(name))
     cmds.parent(curve_start_joint, lower_control)
-    curve_end_joint = cmds.duplicate(
-        end_joint, parentOnly=True, name="{0}CurveEnd_jnt".format(name)
-    )
+    curve_end_joint = cmds.duplicate(end_joint, parentOnly=True, name="{0}CurveEnd_jnt".format(name))
     cmds.parent(curve_end_joint, upper_control)
 
     # Skin curve
-    cmds.skinCluster(
-        curve_start_joint, curve_end_joint, curve, name="{0}_scl".format(name), tsb=True
-    )
+    cmds.skinCluster(curve_start_joint, curve_end_joint, curve, name="{0}_scl".format(name), tsb=True)
 
     # Create stretch network
     curve_info = cmds.arclen(curve, constructionHistory=True)
     mdn = cmds.createNode("multiplyDivide", name="{0}Stretch_mdn".format(name))
     cmds.connectAttr("{0}.arcLength".format(curve_info), "{0}.input1X".format(mdn))
-    cmds.setAttr(
-        "{0}.input2X".format(mdn), cmds.getAttr("{0}.arcLength".format(curve_info))
-    )
+    cmds.setAttr("{0}.input2X".format(mdn), cmds.getAttr("{0}.arcLength".format(curve_info)))
     cmds.setAttr("{0}.operation".format(mdn), 2)  # Divide
 
     # Connect to joints
@@ -61,12 +51,8 @@ def create_spine(start_joint, end_joint, lower_control, upper_control, name="spi
     cmds.setAttr("{0}.dWorldUpVectorEndX".format(ikh), 0)
     cmds.setAttr("{0}.dWorldUpVectorEndY".format(ikh), 1)
     cmds.setAttr("{0}.dWorldUpVectorEndZ".format(ikh), 0)
-    cmds.connectAttr(
-        "{0}.worldMatrix[0]".format(lower_control), "{0}.dWorldUpMatrix".format(ikh)
-    )
-    cmds.connectAttr(
-        "{0}.worldMatrix[0]".format(upper_control), "{0}.dWorldUpMatrixEnd".format(ikh)
-    )
+    cmds.connectAttr("{0}.worldMatrix[0]".format(lower_control), "{0}.dWorldUpMatrix".format(ikh))
+    cmds.connectAttr("{0}.worldMatrix[0]".format(upper_control), "{0}.dWorldUpMatrixEnd".format(ikh))
 
     # Constrain original chain back to spline chain
     for ik_joint, joint in zip(spline_chain, original_chain):

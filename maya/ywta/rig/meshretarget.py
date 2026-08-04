@@ -8,7 +8,7 @@ Example Usage
     retarget("source_body", "new_body", ["shirt", "pants"], rbf=RBF.linear)
 
 """
-import math
+
 import time
 import numpy as np
 from scipy.spatial.distance import cdist
@@ -45,9 +45,7 @@ def retarget(source, target, shapes, rbf=None, radius=0.5, stride=1):
         h = np.bmat([[dist, identity, points]])
         deformed = np.asarray(np.dot(h, weights))
         points = [OpenMaya.MPoint(*p) for p in deformed]
-        dupe = cmds.duplicate(
-            shape, name="{}_{}_{}".format(shape, radius, rbf.__name__)
-        )[0]
+        dupe = cmds.duplicate(shape, name="{}_{}_{}".format(shape, radius, rbf.__name__))[0]
         set_points(dupe, points)
 
     end_time = time.time()

@@ -1,5 +1,3 @@
-import unittest
-import os
 import maya.cmds as cmds
 import ywta.deform.blendshape as bs
 
@@ -99,9 +97,7 @@ class BlendShapeTests(TestCase):
         bs.add_target(blendshape, target3)
 
         # Test case-sensitive replacement
-        renamed = bs.find_replace_target_names(
-            blendshape, "prefix_", "new_", case_sensitive=True
-        )
+        renamed = bs.find_replace_target_names(blendshape, "prefix_", "new_", case_sensitive=True)
 
         # Verify renamed targets
         targets = bs.get_target_list(blendshape)
@@ -128,9 +124,7 @@ class BlendShapeTests(TestCase):
         bs.add_target(blendshape, target2)
 
         # Test case-insensitive replacement
-        renamed = bs.find_replace_target_names(
-            blendshape, "prefix", "NEW", case_sensitive=False
-        )
+        renamed = bs.find_replace_target_names(blendshape, "prefix", "NEW", case_sensitive=False)
 
         # Verify renamed targets
         targets = bs.get_target_list(blendshape)
@@ -158,9 +152,7 @@ class BlendShapeTests(TestCase):
         bs.add_target(blendshape, target3)
 
         # Test regex replacement (swap left/right)
-        renamed = bs.find_replace_target_names_regex(
-            blendshape, r"(left|right)_(.+)", r"side_\2_\1"
-        )
+        renamed = bs.find_replace_target_names_regex(blendshape, r"(left|right)_(.+)", r"side_\2_\1")
 
         # Verify renamed targets
         targets = bs.get_target_list(blendshape)

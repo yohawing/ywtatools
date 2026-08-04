@@ -1,10 +1,6 @@
 import maya.cmds as cmds
-import maya.api.OpenMaya as OpenMaya
-import ywta.shortcuts as shortcuts
 import ywta.rig.common as common
-from ywta.dge import dge
 import ywta.rig.twoboneik as twoboneik
-import ywta.rig.spaceswitch as spaceswitch
 
 reload(common)
 reload(twoboneik)
@@ -35,9 +31,7 @@ class LegRig(object):
             cmds.setAttr("{}.v".format(self.group), 0)
             common.lock_and_hide(self.group, "trsv")
 
-        self.__create_ik(
-            ik_control, pole_vector, global_scale_attr, pivots, scale_stretch, parent
-        )
+        self.__create_ik(ik_control, pole_vector, global_scale_attr, pivots, scale_stretch, parent)
         self.__create_fk()
 
     def __create_ik(
@@ -113,17 +107,10 @@ class LegRig(object):
         )
 
     def __create_pivots(self, ik_control, pivots):
-        """
-        """
+        """ """
         hierarchy = {
             "ball_pivot": {
-                "heel_pivot_ctrl": {
-                    "out_pivot": {
-                        "in_pivot": {
-                            "toe_pivot_ctrl": {"toe_ctrl": None, "heel_ctrl": None}
-                        }
-                    }
-                }
+                "heel_pivot_ctrl": {"out_pivot": {"in_pivot": {"toe_pivot_ctrl": {"toe_ctrl": None, "heel_ctrl": None}}}}
             }
         }
         hierarchy = common.RigHierarchy(
@@ -167,15 +154,11 @@ class LegRig(object):
         self.hierarchy = hierarchy
 
     def __create_fk(self):
-        ik_switch = cmds.listConnections(
-            "{}.ikBlend".format(self.two_bone_ik.ik_handle), d=False, plugs=True
-        )[0]
+        ik_switch = cmds.listConnections("{}.ikBlend".format(self.two_bone_ik.ik_handle), d=False, plugs=True)[0]
         for ikh in [self.ik_handle_ball, self.ik_handle_toe]:
             if ikh:
                 cmds.connectAttr(ik_switch, "{}.ikBlend".format(ikh))
-        self.ball_fk_ctrl = cmds.createNode(
-            "transform", name="{}_fk_ctrl".format(self.ball_joint)
-        )
+        self.ball_fk_ctrl = cmds.createNode("transform", name="{}_fk_ctrl".format(self.ball_joint))
         common.snap_to(self.ball_fk_ctrl, self.ball_joint)
         common.lock_and_hide(self.ball_fk_ctrl, "sv")
         cmds.parent(self.ball_fk_ctrl, self.two_bone_ik.end_fk_control)
@@ -194,7 +177,9 @@ class LegRig(object):
             common.snap_to(ori_target, self.ball_joint)
 
             ori = cmds.orientConstraint(
-                self.ball_fk_ctrl, ori_target, self.ball_joint,
+                self.ball_fk_ctrl,
+                ori_target,
+                self.ball_joint,
             )[0]
             cmds.connectAttr(ik_switch, "{}.{}W1".format(ori, ori_target))
 

@@ -48,8 +48,7 @@ def show():
 
 
 class RunScriptWindow(MayaQWidgetBaseMixin, QMainWindow):
-    """The RunScriptWindow allows the user to browse for and run Python scripts on disk.
-    """
+    """The RunScriptWindow allows the user to browse for and run Python scripts on disk."""
 
     def __init__(self, parent=None):
         super(RunScriptWindow, self).__init__(parent)
@@ -85,9 +84,7 @@ class RunScriptWindow(MayaQWidgetBaseMixin, QMainWindow):
         self.file_tree_view.setColumnHidden(1, True)
         self.file_tree_view.setColumnHidden(2, True)
         self.file_tree_view.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.file_tree_view.customContextMenuRequested.connect(
-            self.on_file_tree_context_menu
-        )
+        self.file_tree_view.customContextMenuRequested.connect(self.on_file_tree_context_menu)
         self.file_tree_view.doubleClicked.connect(self.on_file_tree_double_clicked)
         splitter.addWidget(self.file_tree_view)
 
@@ -117,9 +114,7 @@ class RunScriptWindow(MayaQWidgetBaseMixin, QMainWindow):
 
     def create_context_menu(self, path, pos):
         menu = QMenu()
-        menu.addAction(
-            QAction("Run Script", self, triggered=partial(self.run_script, path))
-        )
+        menu.addAction(QAction("Run Script", self, triggered=partial(self.run_script, path)))
         menu.exec_(pos)
 
     def run_script(self, path):

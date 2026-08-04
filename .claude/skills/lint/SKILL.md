@@ -45,7 +45,7 @@ ruff check --fix maya/ywta/rig/joint_size.py
 ruff format blender/addons/ywtatools_addon/shape_key_rename.py
 ```
 
-**警告**: リポジトリ全体への `ruff check --fix .` / `ruff format .` は実行禁止。既存コードに約380件のlintエラーが残っており、全体適用するとWIP差分と整形差分が混ざります。修正・整形は必ず対象パスを明示してください。
+**警告**: 未コミットのWIP差分がある間は、リポジトリ全体への `ruff check --fix .` / `ruff format .` を実行しない（WIP差分と整形差分が混ざる）。修正・整形は必ず対象パスを明示すること。自動修正できないエラーが約280件残っている（F403/F405 のワイルドカードimport等）。`maya/ywta/shortcuts.py` は再エクスポートハブのため F401/E402 除外（import を削除しない）。
 
 ruff が未インストールの場合は `uvx ruff check .` のように `uvx` 経由で実行してください。
 

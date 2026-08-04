@@ -1,8 +1,6 @@
-import os
 from six import string_types
 import maya.cmds as cmds
 import maya.OpenMaya as OpenMaya
-import maya.OpenMayaAnim as OpenMayaAnim
 
 import ywta.shortcuts as shortcuts
 import ywta.deform.np_mesh as np_mesh
@@ -17,12 +15,7 @@ def get_blendshape_node(geometry):
     """
     geometry = shortcuts.get_shape(geometry)
     history = cmds.listHistory(geometry, il=2, pdo=False) or []
-    blendshapes = [
-        x
-        for x in history
-        if cmds.nodeType(x) == "blendShape"
-        and cmds.blendShape(x, q=True, g=True)[0] == geometry
-    ]
+    blendshapes = [x for x in history if cmds.nodeType(x) == "blendShape" and cmds.blendShape(x, q=True, g=True)[0] == geometry]
     if blendshapes:
         return blendshapes[0]
     else:
@@ -50,9 +43,7 @@ def get_target_index(blendshape, target):
         alias = cmds.aliasAttr("{}.w[{}]".format(blendshape, i), q=True)
         if alias == target:
             return i
-    raise RuntimeError(
-        "Target {} does not exist on blendShape {}".format(target, blendshape)
-    )
+    raise RuntimeError("Target {} does not exist on blendShape {}".format(target, blendshape))
 
 
 def add_target(blendshape, target_mesh_name, new_target_name=None):
@@ -64,9 +55,7 @@ def add_target(blendshape, target_mesh_name, new_target_name=None):
         index = index[-1] + 1 if index else 0
 
     base_shape = cmds.blendShape(blendshape, q=True, g=True)[0]
-    cmds.blendShape(
-        blendshape, edit=True, target=(base_shape, index, target_mesh_name, 1.0)
-    )
+    cmds.blendShape(blendshape, edit=True, target=(base_shape, index, target_mesh_name, 1.0))
 
     if new_target_name:
         cmds.aliasAttr(new_target_name, "{}.w[{}]".format(blendshape, index))
@@ -76,9 +65,7 @@ def add_target(blendshape, target_mesh_name, new_target_name=None):
 
 def get_target_list(blendshape):
     indices = cmds.getAttr("{}.w".format(blendshape), mi=True) or []
-    targets = [
-        cmds.aliasAttr("{}.w[{}]".format(blendshape, i), q=True) for i in indices
-    ]
+    targets = [cmds.aliasAttr("{}.w[{}]".format(blendshape, i), q=True) for i in indices]
     return targets
 
 
@@ -88,18 +75,14 @@ def get_target_index(blendshape, target):
         alias = cmds.aliasAttr("{}.w[{}]".format(blendshape, i), q=True)
         if alias == target:
             return i
-    raise RuntimeError(
-        "Target {} does not exist on blendShape {}".format(target, blendshape)
-    )
+    raise RuntimeError("Target {} does not exist on blendShape {}".format(target, blendshape))
 
 
 def set_target_weights(blendshape, target, weights):
     index = get_target_index(blendshape, target)
     for i, w in enumerate(weights):
         cmds.setAttr(
-            "{}.inputTarget[0].inputTargetGroup[{}].targetWeights[{}]".format(
-                blendshape, index, i
-            ),
+            "{}.inputTarget[0].inputTargetGroup[{}].targetWeights[{}]".format(blendshape, index, i),
             w,
         )
 
@@ -186,9 +169,7 @@ def transfer_shapes(source, destination, blendshape=None):
             try:
                 # 新しいブレンドシェイプノードのターゲットを名前で確認
                 if cmds.attributeQuery(t, node=new_blendshape, exists=True):
-                    cmds.connectAttr(
-                        "{}.{}".format(blendshape, t), "{}.{}".format(new_blendshape, t)
-                    )
+                    cmds.connectAttr("{}.{}".format(blendshape, t), "{}.{}".format(new_blendshape, t))
                 else:
                     # 名前でターゲットが見つからない場合はインデックスを使用
                     cmds.connectAttr(
@@ -317,9 +298,7 @@ def find_replace_target_names(blendshape, find_text, replace_text, case_sensitiv
                 # Case insensitive replacement
                 import re
 
-                new_name = re.sub(
-                    re.escape(find_text), replace_text, target, flags=re.IGNORECASE
-                )
+                new_name = re.sub(re.escape(find_text), replace_text, target, flags=re.IGNORECASE)
             else:
                 continue
 

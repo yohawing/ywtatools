@@ -53,6 +53,7 @@ API
     control.mirror_curve(new_node, mirrored)
 
 """
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -132,9 +133,7 @@ def import_curves(file_path=None, tag_as_controller=False):
     """
     controls = load_curves(file_path)
 
-    transforms = [
-        curve.create(curve.transform, tag_as_controller) for curve in controls
-    ]
+    transforms = [curve.create(curve.transform, tag_as_controller) for curve in controls]
     return transforms
 
 
@@ -191,9 +190,7 @@ def _get_new_transform_name(base):
 class CurveShape(object):
     """Represents the data required to build a nurbs curve shape"""
 
-    def __init__(
-        self, transform=None, cvs=None, degree=3, form=0, knots=None, color=None
-    ):
+    def __init__(self, transform=None, cvs=None, degree=3, form=0, knots=None, color=None):
         self.cvs = cvs
         self.degree = degree
         self.form = form
@@ -360,9 +357,7 @@ def rotate_components(rx, ry, rz, nodes=None):
         nodes = cmds.ls(sl=True) or []
     for node in nodes:
         pivot = cmds.xform(node, q=True, rp=True, ws=True)
-        cmds.rotate(
-            rx, ry, rz, "{0}.cv[*]".format(node), r=True, p=pivot, os=True, fo=True
-        )
+        cmds.rotate(rx, ry, rz, "{0}.cv[*]".format(node), r=True, p=pivot, os=True, fo=True)
 
 
 def mirror_curve(source, destination):
@@ -417,10 +412,6 @@ def get_control_paths_in_library():
 
     :return: List of file paths
     """
-    controls = [
-        os.path.splitext(x)[0]
-        for x in os.listdir(CONTROLS_DIRECTORY)
-        if x.endswith(".json")
-    ]
+    controls = [os.path.splitext(x)[0] for x in os.listdir(CONTROLS_DIRECTORY) if x.endswith(".json")]
     controls.sort()
     return controls

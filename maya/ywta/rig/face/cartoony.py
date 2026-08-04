@@ -52,9 +52,7 @@ ATTRIBUTES = [
     {"name": "funneler", "tokens": [Side.left_right]},
     {
         "name": "jaw",
-        "tokens": [
-            [Direction.in_out, Direction.left_right, Direction.twist, Direction.up_down]
-        ],
+        "tokens": [[Direction.in_out, Direction.left_right, Direction.twist, Direction.up_down]],
     },
     {
         "name": "lipCorner",
@@ -89,15 +87,11 @@ ATTRIBUTES = [
     },
     {
         "name": "mouth",
-        "tokens": [
-            [Direction.in_out, Direction.left_right, Direction.twist, Direction.up_down]
-        ],
+        "tokens": [[Direction.in_out, Direction.left_right, Direction.twist, Direction.up_down]],
     },
     {
         "name": "nose",
-        "tokens": [
-            [Direction.in_out, Direction.left_right, Direction.twist, Direction.up_down]
-        ],
+        "tokens": [[Direction.in_out, Direction.left_right, Direction.twist, Direction.up_down]],
     },
     {"name": "noseRotate", "tokens": [[Direction.up_down]]},
     {"name": "noseTip", "tokens": [[Direction.left_right, Direction.up_down]]},
@@ -147,30 +141,20 @@ class DrivenAnimationNode(object):
 
     def create(self):
         self.anim_node = cmds.createNode("transform", name=self.name)
-        self.driven_node = cmds.createNode(
-            "transform", name="{}_driven".format(self.name)
-        )
+        self.driven_node = cmds.createNode("transform", name="{}_driven".format(self.name))
         for attr in ["{}{}".format(x, y) for x in "trs" for y in "xyz"] + ["v"]:
             cmds.setAttr("{}.{}".format(self.anim_node, attr), lock=True, keyable=False)
-            cmds.setAttr(
-                "{}.{}".format(self.driven_node, attr), lock=True, keyable=False
-            )
+            cmds.setAttr("{}.{}".format(self.driven_node, attr), lock=True, keyable=False)
 
         for attr in ATTRIBUTES:
             names = get_name_combinations(attr["name"], attr.get("tokens", []))
             for name in names:
                 cmds.addAttr(self.anim_node, ln=name, keyable=True, at="float")
                 cmds.addAttr(self.driven_node, ln=name, keyable=True, at="float")
-                blend = cmds.createNode(
-                    "blendWeighted", name="{}_blendWeighted".format(name)
-                )
-                cmds.connectAttr(
-                    "{}.{}".format(self.anim_node, name), "{}.input[0]".format(blend)
-                )
+                blend = cmds.createNode("blendWeighted", name="{}_blendWeighted".format(name))
+                cmds.connectAttr("{}.{}".format(self.anim_node, name), "{}.input[0]".format(blend))
                 cmds.setAttr("{}.weight[0]".format(blend), 1.0)
-                cmds.connectAttr(
-                    "{}.output".format(blend), "{}.{}".format(self.driven_node, name)
-                )
+                cmds.connectAttr("{}.output".format(blend), "{}.{}".format(self.driven_node, name))
                 self.blend_weighted[name] = blend
 
     def get_blend_weighted(self, name):
@@ -196,11 +180,7 @@ class DrivenAnimationNode(object):
         """
         blend = self.get_blend_weighted(target)
         index = cmds.getAttr("{}.input".format(blend), mi=True)[-1] + 1
-        source = (
-            driver
-            if cmds.objExists(driver)
-            else "{}.{}".format(self.driven_node, driver)
-        )
+        source = driver if cmds.objExists(driver) else "{}.{}".format(self.driven_node, driver)
         connect_attribute(
             source,
             "{}.input[{}]".format(blend, index),

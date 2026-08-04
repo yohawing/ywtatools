@@ -126,24 +126,17 @@ def bake_deformed_to_blendshape():
             cmds.currentTime(frame)
 
             # Create blendshape target
-            target_name = add_blendshape_target_with_frame(
-                target_mesh, source_mesh, frame
-            )
+            target_name = add_blendshape_target_with_frame(target_mesh, source_mesh, frame)
 
             if target_name:
                 created_targets.append(target_name)
                 # Set keyframes for this target
-                _set_target_keyframes(
-                    blendshape_name, target_name, frame, start_frame, end_frame
-                )
+                _set_target_keyframes(blendshape_name, target_name, frame, start_frame, end_frame)
 
         # Restore original time
         cmds.currentTime(current_time)
 
-        print(
-            f"Successfully baked {len(created_targets)} blendshape targets "
-            f"from frame {start_frame} to {end_frame}"
-        )
+        print(f"Successfully baked {len(created_targets)} blendshape targets from frame {start_frame} to {end_frame}")
 
     except Exception as e:
         cmds.error(f"Failed to bake deformed mesh to blendshape: {str(e)}")
@@ -206,17 +199,14 @@ def set_keyframe_blendshape_per_frame():
         cmds.currentTime(current_time)
 
         print(
-            f"Set keyframes for {len(target_list)} blendshape targets, "
-            f"one target per frame from {start_frame} to {max_frame}"
+            f"Set keyframes for {len(target_list)} blendshape targets, one target per frame from {start_frame} to {max_frame}"
         )
 
     except Exception as e:
         cmds.error(f"Failed to set blendshape keyframes: {str(e)}")
 
 
-def _set_target_keyframes(
-    blendshape_name, target_name, frame, start_frame=None, end_frame=None
-):
+def _set_target_keyframes(blendshape_name, target_name, frame, start_frame=None, end_frame=None):
     """
     Set keyframes for a blendshape target.
 

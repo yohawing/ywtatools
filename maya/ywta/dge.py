@@ -170,6 +170,7 @@ After::
     )
 
 """
+
 from pyparsing import (
     Literal,
     Word,
@@ -178,20 +179,15 @@ from pyparsing import (
     alphas,
     alphanums,
     Regex,
-    ParseException,
     CaselessKeyword,
     Suppress,
     delimitedList,
     oneOf,
-    infixNotation,
-    opAssoc,
-    ParseResults,
     Optional,
     FollowedBy,
 )
 import maya.cmds as cmds
 import math
-import operator
 from six import string_types
 
 _parser = None
@@ -277,15 +273,9 @@ class DGParser(object):
         expr = Forward()
         expr_list = delimitedList(Group(expr))
         # add parse action that replaces the function identifier with a (name, number of args) tuple
-        fn_call = (ident + lpar - Group(expr_list) + rpar).setParseAction(
-            lambda t: t.insert(0, (t.pop(0), len(t[0])))
-        )
+        fn_call = (ident + lpar - Group(expr_list) + rpar).setParseAction(lambda t: t.insert(0, (t.pop(0), len(t[0]))))
         atom = (
-            addop[...]
-            + (
-                (fn_call | pi | e | fnumber | ident).setParseAction(self.push_first)
-                | Group(lpar + expr + rpar)
-            )
+            addop[...] + ((fn_call | pi | e | fnumber | ident).setParseAction(self.push_first) | Group(lpar + expr + rpar))
         ).setParseAction(self.push_unary_minus)
 
         # by defining exponentiation as "atom [ ^ factor ]..." instead of "atom [ ^ atom ]...", we get right-to-left
@@ -295,9 +285,7 @@ class DGParser(object):
         term = factor + (multop + factor).setParseAction(self.push_first)[...]
         expr <<= term + (addop + term).setParseAction(self.push_first)[...]
         comparison = expr + (comparison_op + expr).setParseAction(self.push_first)[...]
-        ternary = (
-            comparison + (qm + expr + colon + expr).setParseAction(self.push_first)[...]
-        )
+        ternary = comparison + (qm + expr + colon + expr).setParseAction(self.push_first)[...]
         assignment = Optional(assignment_op).setParseAction(self.push_last) + ternary
 
         self.bnf = assignment
@@ -329,9 +317,7 @@ class DGParser(object):
         self.expr_stack = []
         self.assignment_stack = []
         self.results = self.bnf.parseString(expression_string, True)
-        self.container = (
-            cmds.container(name=container, current=True) if container else None
-        )
+        self.container = cmds.container(name=container, current=True) if container else None
         self.created_nodes = {}
         stack = self.expr_stack[:] + self.assignment_stack[:]
         result = self.evaluate_stack(stack)
@@ -368,9 +354,7 @@ class DGParser(object):
             condition = self.evaluate_stack(s)
             second_term = self.evaluate_stack(s)
             first_term = self.evaluate_stack(s)
-            note = "{} {} {} ? {} : {}".format(
-                first_term, self.conditionals[condition], second_term, if_true, if_false
-            )
+            note = "{} {} {} ? {} : {}".format(first_term, self.conditionals[condition], second_term, if_true, if_false)
 
             return self.get_op_result(
                 note,
@@ -451,17 +435,13 @@ class DGParser(object):
                 else:
                     if in_attr == "input3D":
                         for x in "xyz":
-                            cmds.connectAttr(
-                                v, "{}.{}[{}].input3D{}".format(pma, in_attr, i, x)
-                            )
+                            cmds.connectAttr(v, "{}.{}[{}].input3D{}".format(pma, in_attr, i, x))
                     else:
                         cmds.connectAttr(v, "{}.{}[{}]".format(pma, in_attr, i))
             else:
                 if in_attr == "input3D":
                     for x in "xyz":
-                        cmds.setAttr(
-                            "{}.{}[{}].input3D{}".format(pma, in_attr, i, x), v
-                        )
+                        cmds.setAttr("{}.{}[{}].input3D{}".format(pma, in_attr, i, x), v)
                 else:
                     cmds.setAttr("{}.{}[{}]".format(pma, in_attr, i), v)
         return "{}.{}".format(pma, out_attr)
@@ -535,11 +515,7 @@ class DGParser(object):
             # Unlikely for a static value to be clamped, but it should still work
             for x in "RGB":
                 cmds.setAttr("{}.input{}".format(clamp, x), value)
-        return (
-            "{}.output".format(clamp)
-            if value_count == 3
-            else "{}.outputR".format(clamp)
-        )
+        return "{}.output".format(clamp) if value_count == 3 else "{}.outputR".format(clamp)
 
     def condition(self, first_term, second_term, operation, if_true, if_false):
         node = cmds.createNode("condition")
@@ -562,11 +538,7 @@ class DGParser(object):
                         cmds.connectAttr(v, "{}.{}{}".format(node, attr, x))
             else:
                 cmds.setAttr("{}.{}R".format(node, attr), v)
-        return (
-            "{}.outColor".format(node)
-            if value_count == 3
-            else "{}.outColorR".format(node)
-        )
+        return "{}.outColor".format(node) if value_count == 3 else "{}.outColorR".format(node)
 
     def lerp(self, a, b, t):
         node = cmds.createNode("blendTwoAttr")
@@ -680,9 +652,7 @@ class DGParser(object):
 
     def publish_container_attributes(self):
         self.add_notes(self.container, self.expression_string)
-        external_connections = cmds.container(
-            self.container, q=True, connectionList=True
-        )
+        external_connections = cmds.container(self.container, q=True, connectionList=True)
         external_connections = set(external_connections)
         container_nodes = set(cmds.container(self.container, q=True, nodeList=True))
         for var, value in self.kwargs.items():

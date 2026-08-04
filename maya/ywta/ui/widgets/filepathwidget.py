@@ -43,9 +43,7 @@ class FilePathWidget(QWidget):
     directory = 2
     path_changed = Signal(str)
 
-    def __init__(
-        self, label=None, file_mode=any_file, file_filter=None, name=None, parent=None
-    ):
+    def __init__(self, label=None, file_mode=any_file, file_filter=None, name=None, parent=None):
         """Constructor
 
         :param label: Optional label text.

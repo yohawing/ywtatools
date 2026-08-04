@@ -12,7 +12,6 @@ from __future__ import print_function
 import logging
 import os
 
-import maya.cmds as cmds
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,7 @@ logger = logging.getLogger(__name__)
 try:
     from PySide6.QtCore import QSettings
 except ImportError:
-    from PySide2.QtCore import QSettings
+    pass
 
 
 class BaseTreeNode(object):

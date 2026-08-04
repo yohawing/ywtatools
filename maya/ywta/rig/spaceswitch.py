@@ -22,16 +22,14 @@ Example Usage
     spaceswitch.switch_space(pole_vector_control, "space", 1, create_keys=False)
 
 """
+
 import maya.cmds as cmds
 import maya.api.OpenMaya as OpenMaya
 from ywta.dge import dge
-import ywta.rig.common as common
 import ywta.shortcuts as shortcuts
 
 
-def create_space_switch(
-    node, drivers, switch_attribute=None, use_translate=True, use_rotate=True
-):
+def create_space_switch(node, drivers, switch_attribute=None, use_translate=True, use_rotate=True):
     """Creates a space switch network.
 
     The network uses the offsetParentMatrix attribute and does not create any
@@ -50,14 +48,10 @@ def create_space_switch(
     cmds.addAttr(node, ln=switch_attribute, at="enum", en=":".join(names), keyable=True)
 
     # Create attribute to toggle translation in the matrices
-    enable_translate_attr = _create_bool_attribute(
-        node, "{}UseTranslate".format(switch_attribute), use_translate
-    )
+    enable_translate_attr = _create_bool_attribute(node, "{}UseTranslate".format(switch_attribute), use_translate)
 
     # Create attribute to toggle rotation in the matrices
-    enable_rotate_attr = _create_bool_attribute(
-        node, "{}UseRotate".format(switch_attribute), use_rotate
-    )
+    enable_rotate_attr = _create_bool_attribute(node, "{}UseRotate".format(switch_attribute), use_rotate)
 
     blend = cmds.createNode("blendMatrix", name="{}_spaceswitch".format(node))
 
@@ -84,30 +78,28 @@ def create_space_switch(
 
         # Connect the translation, rotation toggles
         cmds.connectAttr(enable_translate_attr, "{}.useTranslate".format(target_attr))
-        cmds.connectAttr(enable_rotate_attr, "{}.useRotate".format(target_attr, i))
+        cmds.connectAttr(
+            enable_rotate_attr,
+            "{}.useRotate".format(
+                target_attr,
+            ),
+        )
 
-    cmds.connectAttr(
-        "{}.outputMatrix".format(blend), "{}.offsetParentMatrix".format(node)
-    )
+    cmds.connectAttr("{}.outputMatrix".format(blend), "{}.offsetParentMatrix".format(node))
 
 
 def _create_bool_attribute(node, attribute, default_value):
-    cmds.addAttr(
-        node, ln=attribute, at="bool", defaultValue=default_value, keyable=True
-    )
+    cmds.addAttr(node, ln=attribute, at="bool", defaultValue=default_value, keyable=True)
     return "{}.{}".format(node, attribute)
 
 
 def _connect_driver_matrix_network(blend, node, driver, index, to_parent_local):
     # The multMatrix node will calculate the transformation to blend to when driven
     # by this driver transform
-    mult = cmds.createNode(
-        "multMatrix", name="spaceswitch_{}_to_{}".format(node, driver)
-    )
+    mult = cmds.createNode("multMatrix", name="spaceswitch_{}_to_{}".format(node, driver))
 
-    offset = (
-         shortcuts.get_dag_path2(node).exclusiveMatrix()
-         * OpenMaya.MMatrix(cmds.getAttr("{}.worldInverseMatrix[0]".format(driver)))
+    offset = shortcuts.get_dag_path2(node).exclusiveMatrix() * OpenMaya.MMatrix(
+        cmds.getAttr("{}.worldInverseMatrix[0]".format(driver))
     )
     cmds.setAttr("{}.matrixIn[0]".format(mult), list(offset), type="matrix")
 
@@ -116,9 +108,7 @@ def _connect_driver_matrix_network(blend, node, driver, index, to_parent_local):
     if to_parent_local:
         cmds.connectAttr(to_parent_local, "{}.matrixIn[2]".format(mult))
 
-    cmds.connectAttr(
-        "{}.matrixSum".format(mult), "{}.target[{}].targetMatrix".format(blend, index)
-    )
+    cmds.connectAttr("{}.matrixSum".format(mult), "{}.target[{}].targetMatrix".format(blend, index))
 
 
 def switch_space(node, attribute, space, create_keys=False):

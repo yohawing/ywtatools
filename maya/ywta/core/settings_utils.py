@@ -100,13 +100,9 @@ def _get_file_path(file_filter, key, file_mode):
     if key is not None:
         start_directory = get_setting(key, start_directory)
 
-    file_path = cmds.fileDialog2(
-        fileMode=file_mode, startingDirectory=start_directory, fileFilter=file_filter
-    )
+    file_path = cmds.fileDialog2(fileMode=file_mode, startingDirectory=start_directory, fileFilter=file_filter)
     if key is not None and file_path:
         file_path = file_path[0]
-        directory = (
-            file_path if os.path.isdir(file_path) else os.path.dirname(file_path)
-        )
+        directory = file_path if os.path.isdir(file_path) else os.path.dirname(file_path)
         set_setting(key, directory)
     return file_path

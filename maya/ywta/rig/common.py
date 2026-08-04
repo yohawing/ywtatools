@@ -58,6 +58,7 @@ class RigHierarchy(object):
 
     next = __next__  # for Python 2
 
+
 def _create_parent_method(node):
     def func(nodes_to_parent):
         cmds.parent(nodes_to_parent, node)
@@ -240,9 +241,7 @@ def local_offset(node):
     offset = OpenMaya.MMatrix(cmds.getAttr("{}.worldMatrix[0]".format(node)))
     parent = cmds.listRelatives(node, parent=True, path=True)
     if parent:
-        pinv = OpenMaya.MMatrix(
-            cmds.getAttr("{}.worldInverseMatrix[0]".format(parent[0]))
-        )
+        pinv = OpenMaya.MMatrix(cmds.getAttr("{}.worldInverseMatrix[0]".format(parent[0])))
         offset *= pinv
     return offset
 
@@ -312,9 +311,7 @@ def place_pole_vector(start, mid, end, pole_vector, offset=None):
     cmds.xform(pole_vector, ws=True, t=list(pos))
 
 
-def opm_parent_constraint(
-    driver, driven, maintain_offset=False, freeze=True, segment_scale_compensate=True
-):
+def opm_parent_constraint(driver, driven, maintain_offset=False, freeze=True, segment_scale_compensate=True):
     """Create a parent constraint effect with offsetParentMatrix.
 
     :param driver: Target transforms
@@ -377,23 +374,17 @@ def opm_constraint(
     :param segment_scale_compensate: True to remove the resulting scale and shear
     :return: The multMatrix node used in the network
     """
-    mult = cmds.createNode(
-        "multMatrix", name="{}_offset_parent_constraint_mult_matrix".format(driven)
-    )
+    mult = cmds.createNode("multMatrix", name="{}_offset_parent_constraint_mult_matrix".format(driven))
 
     if maintain_offset:
         if freeze:
             offset = OpenMaya.MMatrix(cmds.getAttr("{}.worldMatrix[0]".format(driven)))
         else:
             offset = shortcuts.get_dag_path2(driven).exclusiveMatrix()
-        offset *= OpenMaya.MMatrix(
-            cmds.getAttr("{}.worldInverseMatrix[0]".format(driver))
-        )
+        offset *= OpenMaya.MMatrix(cmds.getAttr("{}.worldInverseMatrix[0]".format(driver)))
         cmds.setAttr("{}.matrixIn[0]".format(mult), list(offset), type="matrix")
 
-    pick = cmds.createNode(
-        "pickMatrix", name="{}_offset_parent_constraint_pick".format(driven)
-    )
+    pick = cmds.createNode("pickMatrix", name="{}_offset_parent_constraint_pick".format(driven))
     cmds.connectAttr("{}.worldMatrix[0]".format(driver), "{}.inputMatrix".format(pick))
     cmds.setAttr("{}.useTranslate".format(pick), use_translate)
     cmds.setAttr("{}.useRotate".format(pick), use_rotate)
@@ -403,16 +394,12 @@ def opm_constraint(
     cmds.connectAttr("{}.outputMatrix".format(pick), "{}.matrixIn[1]".format(mult))
     parent = cmds.listRelatives(driven, parent=True, path=True)
     if parent:
-        cmds.connectAttr(
-            "{}.worldInverseMatrix[0]".format(parent[0]), "{}.matrixIn[2]".format(mult)
-        )
+        cmds.connectAttr("{}.worldInverseMatrix[0]".format(parent[0]), "{}.matrixIn[2]".format(mult))
     if freeze:
         freeze_to_parent_offset(driven)
 
     if segment_scale_compensate:
-        pick = cmds.createNode(
-            "pickMatrix", name="{}_segment_scale_compensate".format(driven)
-        )
+        pick = cmds.createNode("pickMatrix", name="{}_segment_scale_compensate".format(driven))
         cmds.setAttr("{}.useScale".format(pick), False)
         cmds.setAttr("{}.useShear".format(pick), False)
         cmds.connectAttr("{}.matrixSum".format(mult), "{}.inputMatrix".format(pick))
@@ -424,9 +411,7 @@ def opm_constraint(
     return mult
 
 
-def opm_aim_constraint(
-    driver, driven, maintain_offset=False, freeze=True, aim_vector=None, up_vector=None
-):
+def opm_aim_constraint(driver, driven, maintain_offset=False, freeze=True, aim_vector=None, up_vector=None):
     """Create a parent constraint effect with offsetParentMatrix.
 
     :param driver: Target transforms
@@ -441,21 +426,15 @@ def opm_aim_constraint(
     cmds.setAttr("{}.primary.primaryInputAxis".format(aim), *aim_vector)
     cmds.setAttr("{}.secondary.secondaryInputAxis".format(aim), *up_vector)
 
-    cmds.connectAttr(
-        "{}.worldMatrix[0]".format(driver), "{}.primary.primaryTargetMatrix".format(aim)
-    )
+    cmds.connectAttr("{}.worldMatrix[0]".format(driver), "{}.primary.primaryTargetMatrix".format(aim))
 
     input_mult = cmds.createNode("multMatrix")
     parent = cmds.listRelatives(driven, parent=True, path=True)
     m = OpenMaya.MMatrix(cmds.getAttr("{}.worldMatrix[0]".format(driven)))
     if parent:
-        pinv = OpenMaya.MMatrix(
-            cmds.getAttr("{}.worldInverseMatrix[0]".format(parent[0]))
-        )
+        pinv = OpenMaya.MMatrix(cmds.getAttr("{}.worldInverseMatrix[0]".format(parent[0])))
         m = m * pinv
-        cmds.connectAttr(
-            "{}.worldMatrix[0]".format(parent[0]), "{}.matrixIn[1]".format(input_mult)
-        )
+        cmds.connectAttr("{}.worldMatrix[0]".format(parent[0]), "{}.matrixIn[1]".format(input_mult))
     cmds.setAttr("{}.matrixIn[0]".format(input_mult), list(m), type="matrix")
     cmds.connectAttr("{}.matrixSum".format(input_mult), "{}.inputMatrix".format(aim))
 
@@ -464,33 +443,23 @@ def opm_aim_constraint(
     if maintain_offset:
         offset = OpenMaya.MMatrix(cmds.getAttr("{}.worldMatrix[0]".format(driven)))
         if not freeze:
-            offset *= OpenMaya.MMatrix(
-                cmds.getAttr("{}.matrix".format(driven))
-            ).inverse()
-        offset *= OpenMaya.MMatrix(
-            cmds.getAttr("{}.worldInverseMatrix[0]".format(driver))
-        )
+            offset *= OpenMaya.MMatrix(cmds.getAttr("{}.matrix".format(driven))).inverse()
+        offset *= OpenMaya.MMatrix(cmds.getAttr("{}.worldInverseMatrix[0]".format(driver)))
         cmds.setAttr("{}.matrixIn[0]".format(mult), list(offset), type="matrix")
 
     cmds.connectAttr("{}.outputMatrix".format(aim), "{}.matrixIn[1]".format(mult))
     if parent:
-        cmds.connectAttr(
-            "{}.worldInverseMatrix[0]".format(parent[0]), "{}.matrixIn[2]".format(mult)
-        )
+        cmds.connectAttr("{}.worldInverseMatrix[0]".format(parent[0]), "{}.matrixIn[2]".format(mult))
 
     if freeze:
         freeze_to_parent_offset(driven)
 
-    cmds.connectAttr(
-        "{}.matrixSum".format(mult), "{}.offsetParentMatrix".format(driven)
-    )
+    cmds.connectAttr("{}.matrixSum".format(mult), "{}.offsetParentMatrix".format(driven))
 
 
 def shift_mult_matrix_inputs(node, shift):
     if cmds.nodeType(node) != "multMatrix":
-        raise RuntimeError(
-            "{} is not a multMatrix node.  Unable to shift inputs.".format(node)
-        )
+        raise RuntimeError("{} is not a multMatrix node.  Unable to shift inputs.".format(node))
     if shift == 0:
         return
     indices = cmds.getAttr("{}.matrixIn".format(node), mi=True)

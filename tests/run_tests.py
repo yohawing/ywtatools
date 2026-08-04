@@ -16,7 +16,6 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from tests.run_maya_tests import run_maya_tests
-from tests.run_blender_tests import run_blender_tests
 
 
 def main():

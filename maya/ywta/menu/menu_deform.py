@@ -5,7 +5,6 @@
 """
 
 import maya.cmds as cmds
-import maya.mel as mel
 
 
 def create_deform_menu(parent_menu):
@@ -17,9 +16,7 @@ def create_deform_menu(parent_menu):
     Returns:
         作成されたメニュー項目
     """
-    deform_menu = cmds.menuItem(
-        subMenu=True, tearOff=True, parent=parent_menu, label="Deform"
-    )
+    deform_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=parent_menu, label="Deform")
 
     # スキニング関連
     cmds.menuItem(parent=deform_menu, divider=True, dividerLabel="Skinning")

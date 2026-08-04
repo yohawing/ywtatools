@@ -25,7 +25,6 @@ Example Usage
 from PySide2.QtCore import Qt, QRect, QPoint
 from PySide2.QtGui import QBrush, QColor, QPolygon, QPainter, QPalette, QPen
 from PySide2.QtWidgets import QGroupBox, QVBoxLayout, QScrollArea, QSizePolicy, QWidget
-import os.path
 
 
 class AccordionItem(QGroupBox):
@@ -69,9 +68,7 @@ class AccordionItem(QGroupBox):
 
     def mousePressEvent(self, event):
         # determine if the expand/collapse should occur
-        if event.button() == Qt.LeftButton and self.expandCollapseRect().contains(
-            event.pos()
-        ):
+        if event.button() == Qt.LeftButton and self.expandCollapseRect().contains(event.pos()):
             self._clicked = True
             event.accept()
         else:

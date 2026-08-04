@@ -59,4 +59,3 @@ def lockAttributes():
             cmds.setAttr("{}.{}".format(transform, attr), lock=True)
 
     print("選択したトランスフォームノードの属性をロックしました。")
-

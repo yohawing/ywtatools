@@ -221,9 +221,7 @@ def insert_joints(joints=None, joint_count=1):
     for joint in joints:
         children = cmds.listRelatives(joint, children=True, type="joint")
         if not children:
-            raise RuntimeError(
-                "Joint {} needs a child in order to insert joints".format(joint)
-            )
+            raise RuntimeError("Joint {} needs a child in order to insert joints".format(joint))
 
         name = joint
         end_joint = children[0]
@@ -272,12 +270,8 @@ def tpose_arm(shoulder, elbow, wrist, hand_aim=None, hand_up=None, length_scale=
     path_shoulder = shortcuts.get_dag_path2(shoulder)
     path_elbow = shortcuts.get_dag_path2(elbow)
 
-    a_gr = OpenMaya.MTransformationMatrix(path_shoulder.inclusiveMatrix()).rotation(
-        asQuaternion=True
-    )
-    b_gr = OpenMaya.MTransformationMatrix(path_elbow.inclusiveMatrix()).rotation(
-        asQuaternion=True
-    )
+    a_gr = OpenMaya.MTransformationMatrix(path_shoulder.inclusiveMatrix()).rotation(asQuaternion=True)
+    b_gr = OpenMaya.MTransformationMatrix(path_elbow.inclusiveMatrix()).rotation(asQuaternion=True)
     ac = (c - a).normal()
     d = (b - (a + (ac * ((b - a) * ac)))).normal()
 
@@ -320,12 +314,8 @@ def two_bone_ik(a, b, c, d, t, pv, a_gr, b_gr):
     ac_at_0 = math.acos(clamp((c - a).normal() * (t - a).normal(), -1.0, 1.0))
 
     # Get desired interior angles
-    ac_ab_1 = math.acos(
-        clamp((lcb * lcb - lab * lab - lat * lat) / (-2.0 * lab * lat), -1.0, 1.0)
-    )
-    ba_bc_1 = math.acos(
-        clamp((lat * lat - lab * lab - lcb * lcb) / (-2.0 * lab * lcb), -1.0, 1.0)
-    )
+    ac_ab_1 = math.acos(clamp((lcb * lcb - lab * lab - lat * lat) / (-2.0 * lab * lat), -1.0, 1.0))
+    ba_bc_1 = math.acos(clamp((lat * lat - lab * lab - lcb * lcb) / (-2.0 * lab * lcb), -1.0, 1.0))
     axis0 = ((c - a) ^ d).normal()
     axis1 = ((c - a) ^ (t - a)).normal()
 

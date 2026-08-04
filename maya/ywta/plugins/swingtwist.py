@@ -88,21 +88,15 @@ class SwingTwistNode(OpenMayaMPx.MPxNode):
         n_attr = OpenMaya.MFnNumericAttribute()
         u_attr = OpenMaya.MFnUnitAttribute()
 
-        cls.output_rotation_x = u_attr.create(
-            "outRotateX", "outRotateX", OpenMaya.MFnUnitAttribute.kAngle
-        )
+        cls.output_rotation_x = u_attr.create("outRotateX", "outRotateX", OpenMaya.MFnUnitAttribute.kAngle)
         u_attr.setWritable(False)
         u_attr.setStorable(False)
 
-        cls.output_rotation_y = u_attr.create(
-            "outRotateY", "outRotateY", OpenMaya.MFnUnitAttribute.kAngle
-        )
+        cls.output_rotation_y = u_attr.create("outRotateY", "outRotateY", OpenMaya.MFnUnitAttribute.kAngle)
         u_attr.setWritable(False)
         u_attr.setStorable(False)
 
-        cls.output_rotation_z = u_attr.create(
-            "outRotateZ", "outRotateZ", OpenMaya.MFnUnitAttribute.kAngle
-        )
+        cls.output_rotation_z = u_attr.create("outRotateZ", "outRotateZ", OpenMaya.MFnUnitAttribute.kAngle)
         u_attr.setWritable(False)
         u_attr.setStorable(False)
 
@@ -117,18 +111,14 @@ class SwingTwistNode(OpenMayaMPx.MPxNode):
         n_attr.setStorable(False)
         cls.addAttribute(cls.output_rotation)
 
-        cls.twist_weight = n_attr.create(
-            "twist", "twist", OpenMaya.MFnNumericData.kFloat, 1.0
-        )
+        cls.twist_weight = n_attr.create("twist", "twist", OpenMaya.MFnNumericData.kFloat, 1.0)
         n_attr.setKeyable(True)
         n_attr.setMin(-1.0)
         n_attr.setMax(1.0)
         cls.addAttribute(cls.twist_weight)
         cls.attribute_affects(cls.twist_weight)
 
-        cls.swing_weight = n_attr.create(
-            "swing", "swing", OpenMaya.MFnNumericData.kFloat, 1.0
-        )
+        cls.swing_weight = n_attr.create("swing", "swing", OpenMaya.MFnNumericData.kFloat, 1.0)
         n_attr.setKeyable(True)
         n_attr.setMin(-1.0)
         n_attr.setMax(1.0)
@@ -147,15 +137,9 @@ class SwingTwistNode(OpenMayaMPx.MPxNode):
         cls.addAttribute(cls.matrix)
         cls.attribute_affects(cls.matrix)
 
-        cls.joint_orient_x = u_attr.create(
-            "jointOrientX", "jointOrientX", OpenMaya.MFnUnitAttribute.kAngle
-        )
-        cls.joint_orient_y = u_attr.create(
-            "jointOrientY", "jointOrientY", OpenMaya.MFnUnitAttribute.kAngle
-        )
-        cls.joint_orient_z = u_attr.create(
-            "jointOrientZ", "jointOrientZ", OpenMaya.MFnUnitAttribute.kAngle
-        )
+        cls.joint_orient_x = u_attr.create("jointOrientX", "jointOrientX", OpenMaya.MFnUnitAttribute.kAngle)
+        cls.joint_orient_y = u_attr.create("jointOrientY", "jointOrientY", OpenMaya.MFnUnitAttribute.kAngle)
+        cls.joint_orient_z = u_attr.create("jointOrientZ", "jointOrientZ", OpenMaya.MFnUnitAttribute.kAngle)
         cls.joint_orient = n_attr.create(
             "jointOrient",
             "jointOrient",
@@ -166,15 +150,9 @@ class SwingTwistNode(OpenMayaMPx.MPxNode):
         cls.addAttribute(cls.joint_orient)
         cls.attribute_affects(cls.joint_orient)
 
-        cls.rotate_axis_x = u_attr.create(
-            "rotateAxisX", "rotateAxisX", OpenMaya.MFnUnitAttribute.kAngle
-        )
-        cls.rotate_axis_y = u_attr.create(
-            "rotateAxisY", "rotateAxisY", OpenMaya.MFnUnitAttribute.kAngle
-        )
-        cls.rotate_axis_z = u_attr.create(
-            "rotateAxisZ", "rotateAxisZ", OpenMaya.MFnUnitAttribute.kAngle
-        )
+        cls.rotate_axis_x = u_attr.create("rotateAxisX", "rotateAxisX", OpenMaya.MFnUnitAttribute.kAngle)
+        cls.rotate_axis_y = u_attr.create("rotateAxisY", "rotateAxisY", OpenMaya.MFnUnitAttribute.kAngle)
+        cls.rotate_axis_z = u_attr.create("rotateAxisZ", "rotateAxisZ", OpenMaya.MFnUnitAttribute.kAngle)
         cls.rotate_axis = n_attr.create(
             "rotateAxis",
             "rotateAxis",
@@ -222,8 +200,7 @@ class SwingTwistNode(OpenMayaMPx.MPxNode):
             for x in [self.joint_orient_x, self.joint_orient_y, self.joint_orient_z]
         ]
         rotate_axis = [
-            h_rotate_axis.child(x).asAngle().asDegrees()
-            for x in [self.rotate_axis_x, self.rotate_axis_y, self.rotate_axis_z]
+            h_rotate_axis.child(x).asAngle().asDegrees() for x in [self.rotate_axis_x, self.rotate_axis_y, self.rotate_axis_z]
         ]
 
         # Get the input rotation quaternion
@@ -231,15 +208,11 @@ class SwingTwistNode(OpenMayaMPx.MPxNode):
 
         # Take out the joint orient and rotate axis from the rotation quaternion
         joint_orient = [math.radians(x) for x in joint_orient]
-        joint_orient = OpenMaya.MEulerRotation(
-            joint_orient[0], joint_orient[1], joint_orient[2]
-        )
+        joint_orient = OpenMaya.MEulerRotation(joint_orient[0], joint_orient[1], joint_orient[2])
         joint_orient = joint_orient.asQuaternion()
 
         rotate_axis = [math.radians(x) for x in rotate_axis]
-        rotate_axis = OpenMaya.MEulerRotation(
-            rotate_axis[0], rotate_axis[1], rotate_axis[2]
-        )
+        rotate_axis = OpenMaya.MEulerRotation(rotate_axis[0], rotate_axis[1], rotate_axis[2])
         rotate_axis = rotate_axis.asQuaternion()
 
         rotation = rotate_axis.inverse() * rotation * joint_orient.inverse()
@@ -247,10 +220,7 @@ class SwingTwistNode(OpenMayaMPx.MPxNode):
 
         # Calculate swing
         target_vector = [
-            OpenMaya.MVector(
-                rotation_matrix(x, 0), rotation_matrix(x, 1), rotation_matrix(x, 2)
-            )
-            for x in range(3)
+            OpenMaya.MVector(rotation_matrix(x, 0), rotation_matrix(x, 1), rotation_matrix(x, 2)) for x in range(3)
         ][twist_axis]
         reference_vector = [
             OpenMaya.MVector.xAxis,
@@ -262,10 +232,9 @@ class SwingTwistNode(OpenMayaMPx.MPxNode):
         twist = rotation * swing.inverse()
         twist_matrix = twist.asMatrix()
         # Calculate twist
-        target_vector = [
-            OpenMaya.MVector(twist_matrix(x, 0), twist_matrix(x, 1), twist_matrix(x, 2))
-            for x in [1, 2, 0]
-        ][twist_axis]
+        target_vector = [OpenMaya.MVector(twist_matrix(x, 0), twist_matrix(x, 1), twist_matrix(x, 2)) for x in [1, 2, 0]][
+            twist_axis
+        ]
         reference_vector = [
             OpenMaya.MVector.yAxis,
             OpenMaya.MVector.zAxis,
@@ -333,18 +302,10 @@ class SwingTwistCommand(OpenMayaMPx.MPxCommand):
     @classmethod
     def command_syntax(cls):
         syntax = OpenMaya.MSyntax()
-        syntax.addFlag(
-            cls.name_flag_short, cls.name_flag_long, OpenMaya.MSyntax.kString
-        )
-        syntax.addFlag(
-            cls.swing_flag_short, cls.swing_flag_long, OpenMaya.MSyntax.kDouble
-        )
-        syntax.addFlag(
-            cls.twist_flag_short, cls.twist_flag_long, OpenMaya.MSyntax.kDouble
-        )
-        syntax.addFlag(
-            cls.twistaxis_flag_short, cls.twistaxis_flag_long, OpenMaya.MSyntax.kLong
-        )
+        syntax.addFlag(cls.name_flag_short, cls.name_flag_long, OpenMaya.MSyntax.kString)
+        syntax.addFlag(cls.swing_flag_short, cls.swing_flag_long, OpenMaya.MSyntax.kDouble)
+        syntax.addFlag(cls.twist_flag_short, cls.twist_flag_long, OpenMaya.MSyntax.kDouble)
+        syntax.addFlag(cls.twistaxis_flag_short, cls.twistaxis_flag_long, OpenMaya.MSyntax.kLong)
         syntax.setObjectType(OpenMaya.MSyntax.kSelectionList, 2, 2)
         syntax.useSelectionAsDefault(True)
         syntax.enableEdit(False)
@@ -386,28 +347,18 @@ class SwingTwistCommand(OpenMayaMPx.MPxCommand):
         fn_driven = OpenMaya.MFnDagNode(path_driven)
 
         # Set the swing weight
-        swing = (
-            arg_data.flagArgumentDouble(self.swing_flag_short, 0)
-            if arg_data.isFlagSet(self.swing_flag_short)
-            else 1.0
-        )
+        swing = arg_data.flagArgumentDouble(self.swing_flag_short, 0) if arg_data.isFlagSet(self.swing_flag_short) else 1.0
         plug_swing = fn_node.findPlug(SwingTwistNode.swing_weight, False)
         self._dgmod.newPlugValueFloat(plug_swing, swing)
 
         # Set the twist weight
-        twist = (
-            arg_data.flagArgumentDouble(self.twist_flag_short, 0)
-            if arg_data.isFlagSet(self.twist_flag_short)
-            else 1.0
-        )
+        twist = arg_data.flagArgumentDouble(self.twist_flag_short, 0) if arg_data.isFlagSet(self.twist_flag_short) else 1.0
         plug_twist = fn_node.findPlug(SwingTwistNode.twist_weight, False)
         self._dgmod.newPlugValueFloat(plug_twist, twist)
 
         # Set the twist axis
         twist_axis = (
-            arg_data.flagArgumentInt(self.twistaxis_flag_short, 0)
-            if arg_data.isFlagSet(self.twistaxis_flag_short)
-            else 0
+            arg_data.flagArgumentInt(self.twistaxis_flag_short, 0) if arg_data.isFlagSet(self.twistaxis_flag_short) else 0
         )
         plug_twist_axis = fn_node.findPlug(SwingTwistNode.twist_axis, False)
         self._dgmod.newPlugValueShort(plug_twist_axis, twist_axis)
@@ -441,9 +392,7 @@ class SwingTwistCommand(OpenMayaMPx.MPxCommand):
         plug_rotate.connectedTo(connected_plugs, True, False)
         if connected_plugs.length():
             raise RuntimeError(
-                "Cannot create swingTwist because {0} already has incoming connections.".format(
-                    plug_rotate.name()
-                )
+                "Cannot create swingTwist because {0} already has incoming connections.".format(plug_rotate.name())
             )
         self._dgmod.connect(plug_output_rotate, plug_rotate)
         return self.redoIt()

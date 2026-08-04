@@ -7,15 +7,12 @@ import ywta.shortcuts as shortcuts
 
 import logging
 import os
-import re
-import webbrowser
 
 from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 
 from PySide2.QtCore import *
 from PySide2.QtGui import *
 from PySide2.QtWidgets import *
-import ywta.shortcuts as shortcuts
 
 from ywta.ui.widgets.mayanodewidget import MayaNodeWidget
 from ywta.ui.widgets.filepathwidget import FilePathWidget
@@ -115,9 +112,7 @@ def attach_skeletons(source_joints, target_joints):
             raise RuntimeError("Joint {} does not exist".format(target_joints[i]))
 
         if j:
-            cmds.connectAttr(
-                "{}.worldMatrix[0]".format(j), "{}.inMatrix[{}]".format(node, i)
-            )
+            cmds.connectAttr("{}.worldMatrix[0]".format(j), "{}.inMatrix[{}]".format(node, i))
             path = shortcuts.get_dag_path2(j)
             rest_matrix = list(path.inclusiveMatrix())
             cmds.setAttr("{}.inRestMatrix[{}]".format(node, i), *rest_matrix, type="matrix")
@@ -176,9 +171,7 @@ class IKRigWindow(MayaQWidgetBaseMixin, QMainWindow):
         splitter.addWidget(self.correspondence_widget)
 
         self.export_options = ExportOptionsWidget(self)
-        self.fbx_browser = FBXFileBrowser(
-            self.correspondence_widget, self.export_options, self
-        )
+        self.fbx_browser = FBXFileBrowser(self.correspondence_widget, self.export_options, self)
         bottom_splitter = QSplitter(orientation=Qt.Horizontal)
         bottom_splitter.addWidget(self.fbx_browser)
         self.accordion = AccordionWidget()
@@ -249,9 +242,7 @@ class SkeletonDefinitionWidget(QWidget):
         layout = QFormLayout(self)
         layout.setSpacing(500)
         for part in Parts():
-            setattr(
-                self, part, MayaNodeWidget(name="{}.{}".format(name, part), parent=self)
-            )
+            setattr(self, part, MayaNodeWidget(name="{}.{}".format(name, part), parent=self))
             widget = getattr(self, part)
             label = part.replace("_", " ").title()
             layout.addRow(label, widget)
@@ -273,9 +264,7 @@ class ExportOptionsWidget(QWidget):
         layout.addRow("Search:", self.search)
         self.replace = QLineEdit()
         layout.addRow("Replace:", self.replace)
-        self.export_directory = FilePathWidget(
-            file_mode=FilePathWidget.directory, name="ikrig.export", parent=self
-        )
+        self.export_directory = FilePathWidget(file_mode=FilePathWidget.directory, name="ikrig.export", parent=self)
         layout.addRow("Export Directory:", self.export_directory)
 
     def get_export_path(self, path):
@@ -328,9 +317,7 @@ class FBXFileBrowser(QWidget):
         self.file_tree_view.setColumnHidden(1, True)
         self.file_tree_view.setColumnHidden(2, True)
         self.file_tree_view.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.file_tree_view.customContextMenuRequested.connect(
-            self.on_file_tree_context_menu
-        )
+        self.file_tree_view.customContextMenuRequested.connect(self.on_file_tree_context_menu)
         self.file_tree_view.doubleClicked.connect(self.on_file_tree_double_clicked)
         self.file_tree_view.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.file_tree_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -382,11 +369,7 @@ class FBXFileBrowser(QWidget):
         indices = self.file_tree_view.selectedIndexes()
         if not indices:
             return []
-        paths = [
-            self.file_model.fileInfo(idx).absoluteFilePath()
-            for idx in indices
-            if idx.column() == 0
-        ]
+        paths = [self.file_model.fileInfo(idx).absoluteFilePath() for idx in indices if idx.column() == 0]
         return paths
 
     def retarget_selected(self):

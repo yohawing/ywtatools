@@ -95,7 +95,7 @@ ruff check .
 uvx nox -s lint
 ```
 
-既存コードには約380件のlintエラーが残っており、一括整形は行っていません。**リポジトリ全体への `ruff check --fix .` / `ruff format .` は禁止**（未コミットのWIP差分と整形差分が混ざる事故が過去に発生）。修正・整形は自分が触ったファイルに限定し、`ruff format <file>` のようにパスを明示して実行してください。
+既存コードは safe fix + format 適用済みだが、自動修正できないlintエラーが約280件残っている（大半はワイルドカードimport由来の F403/F405、ほか E722/F841/F821 など）。未コミットのWIP差分がある間は、**リポジトリ全体への `ruff check --fix .` / `ruff format .` を実行しない**（WIP差分と整形差分が混ざる事故が過去に発生）。修正・整形は `ruff format <file>` のようにパスを明示して実行すること。`maya/ywta/shortcuts.py` は再エクスポートハブのため F401/E402 を除外している（import を削除しない）。
 
 ## コミット規律
 

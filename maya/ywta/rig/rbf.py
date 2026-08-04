@@ -26,11 +26,7 @@ class RBF(object):
             # Store the current output values because they may be different once
             # connected
             output_values = [cmds.getAttr(x) for x in outputs] if outputs else None
-            output_rotations = (
-                [cmds.getAttr("{}.r".format(x))[0] for x in output_transforms]
-                if output_transforms
-                else None
-            )
+            output_rotations = [cmds.getAttr("{}.r".format(x))[0] for x in output_transforms] if output_transforms else None
 
         node.set_inputs(inputs)
         node.set_outputs(outputs)
@@ -82,9 +78,7 @@ class RBF(object):
         input_count = cmds.getAttr("{}.inputValueCount".format(self.name))
         if i >= input_count:
             raise RuntimeError("Invalid input index")
-        connection = cmds.listConnections(
-            "{}.inputValue[{}]".format(self.name, i), d=False, plugs=True
-        )
+        connection = cmds.listConnections("{}.inputValue[{}]".format(self.name, i), d=False, plugs=True)
         return connection[0] if connection else None
 
     def set_input_transforms(self, input_transforms):
@@ -97,20 +91,14 @@ class RBF(object):
             cmds.setAttr("{}.inputQuatCount".format(self.name), 0)
             return
         for i, transform in enumerate(input_transforms):
-            rotation = cmds.createNode(
-                "decomposeMatrix", name="{}_rotation".format(transform)
-            )
-            cmds.connectAttr(
-                "{}.matrix".format(transform), "{}.inputMatrix".format(rotation)
-            )
+            rotation = cmds.createNode("decomposeMatrix", name="{}_rotation".format(transform))
+            cmds.connectAttr("{}.matrix".format(transform), "{}.inputMatrix".format(rotation))
             cmds.connectAttr(
                 "{}.outputQuat".format(rotation),
                 "{}.inputQuat[{}]".format(self.name, i),
             )
             q = cmds.getAttr("{}.outputQuat".format(rotation))[0]
-            cmds.setAttr(
-                "{}.inputRestQuat[{}]".format(self.name, i), *q, type="double4"
-            )
+            cmds.setAttr("{}.inputRestQuat[{}]".format(self.name, i), *q, type="double4")
         cmds.setAttr("{}.inputQuatCount".format(self.name), len(input_transforms))
         # TODO: Reshuffle samples if inputs are being re-used
 
@@ -118,17 +106,13 @@ class RBF(object):
         current_output_transforms = self.output_transforms()
         # Disconnect existing transforms
         for i, node in enumerate(current_output_transforms):
-            cmds.disconnectAttr(
-                "{}.outputRotate[{}]".format(self.name, i), "{}.r".format(node)
-            )
+            cmds.disconnectAttr("{}.outputRotate[{}]".format(self.name, i), "{}.r".format(node))
 
         if not output_transforms:
             cmds.setAttr("{}.outputQuatCount".format(self.name), 0)
             return
         for i, node in enumerate(output_transforms):
-            cmds.connectAttr(
-                "{}.outputRotate[{}]".format(self.name, i), "{}.r".format(node)
-            )
+            cmds.connectAttr("{}.outputRotate[{}]".format(self.name, i), "{}.r".format(node))
         cmds.setAttr("{}.outputQuatCount".format(self.name), len(output_transforms))
 
     def input_transforms(self):
@@ -147,15 +131,11 @@ class RBF(object):
             raise RuntimeError("Invalid input index")
         # Traverse connections to the transform
         # inputQuat <- decomposeMatrix <- transform
-        connection = cmds.listConnections(
-            "{}.inputQuat[{}]".format(self.name, i), d=False
-        )
+        connection = cmds.listConnections("{}.inputQuat[{}]".format(self.name, i), d=False)
 
         if not connection or cmds.nodeType(connection[0]) != "decomposeMatrix":
             return None
-        connection = cmds.listConnections(
-            "{}.inputMatrix".format(connection[0]), d=False
-        )
+        connection = cmds.listConnections("{}.inputMatrix".format(connection[0]), d=False)
         return connection[0] if connection else None
 
     def output_transforms(self):
@@ -172,9 +152,7 @@ class RBF(object):
         output_count = cmds.getAttr("{}.outputQuatCount".format(self.name))
         if i >= output_count:
             raise RuntimeError("Invalid output index")
-        connection = cmds.listConnections(
-            "{}.outputRotate[{}]".format(self.name, i), s=False
-        )
+        connection = cmds.listConnections("{}.outputRotate[{}]".format(self.name, i), s=False)
         return connection[0] if connection else None
 
     def set_outputs(self, outputs):
@@ -187,9 +165,7 @@ class RBF(object):
             cmds.setAttr("{}.outputValueCount".format(self.name), 0)
             return
         for i, attribute in enumerate(outputs):
-            cmds.connectAttr(
-                "{}.outputValue[{}]".format(self.name, i), attribute, f=True
-            )
+            cmds.connectAttr("{}.outputValue[{}]".format(self.name, i), attribute, f=True)
         cmds.setAttr("{}.outputValueCount".format(self.name), len(outputs))
         # TODO: Reshuffle samples if outputs are being re-used
 
@@ -207,9 +183,7 @@ class RBF(object):
         output_count = cmds.getAttr("{}.outputValueCount".format(self.name))
         if i >= output_count:
             raise RuntimeError("Invalid output index")
-        connection = cmds.listConnections(
-            "{}.outputValue[{}]".format(self.name, i), s=False, plugs=True
-        )
+        connection = cmds.listConnections("{}.outputValue[{}]".format(self.name, i), s=False, plugs=True)
         return connection[0] if connection else None
 
     def add_sample(
@@ -236,9 +210,7 @@ class RBF(object):
 
         input_transforms = self.input_transforms()
         if input_rotations is None:
-            input_rotations = [
-                cmds.getAttr("{}.r".format(x))[0] for x in input_transforms
-            ]
+            input_rotations = [cmds.getAttr("{}.r".format(x))[0] for x in input_transforms]
 
         # Convert euler to quat
         input_rotations = euler_to_quat(input_rotations, input_transforms)
@@ -255,34 +227,20 @@ class RBF(object):
         output_transforms = self.output_transforms()
         if output_rotations is None:
             # Use existing values
-            output_rotations = [
-                cmds.getAttr("{}.r".format(x))[0] for x in output_transforms
-            ]
+            output_rotations = [cmds.getAttr("{}.r".format(x))[0] for x in output_transforms]
         output_rotations = euler_to_quat(output_rotations, output_transforms)
 
         indices = cmds.getAttr("{}.sample".format(self.name), mi=True) or []
         idx = indices[-1] + 1 if indices else 0
         cmds.setAttr("{}.sample[{}].rotationType".format(self.name, idx), rotation_type)
         for i, v in enumerate(input_values):
-            cmds.setAttr(
-                "{}.sample[{}].sampleInputValue[{}]".format(self.name, idx, i), v
-            )
+            cmds.setAttr("{}.sample[{}].sampleInputValue[{}]".format(self.name, idx, i), v)
         for i, v in enumerate(output_values):
-            cmds.setAttr(
-                "{}.sample[{}].sampleOutputValue[{}]".format(self.name, idx, i), v
-            )
+            cmds.setAttr("{}.sample[{}].sampleOutputValue[{}]".format(self.name, idx, i), v)
         for i, v in enumerate(input_rotations):
-            cmds.setAttr(
-                "{}.sample[{}].sampleInputQuat[{}]".format(self.name, idx, i),
-                *v,
-                type="double4"
-            )
+            cmds.setAttr("{}.sample[{}].sampleInputQuat[{}]".format(self.name, idx, i), *v, type="double4")
         for i, v in enumerate(output_rotations):
-            cmds.setAttr(
-                "{}.sample[{}].sampleOutputQuat[{}]".format(self.name, idx, i),
-                *v,
-                type="double4"
-            )
+            cmds.setAttr("{}.sample[{}].sampleOutputQuat[{}]".format(self.name, idx, i), *v, type="double4")
 
         return idx
 
@@ -304,17 +262,13 @@ class RBF(object):
                 continue
             sample_is_same = True
             for i, v1 in enumerate(input_values):
-                v2 = cmds.getAttr(
-                    "{}.sample[{}].sampleInputValue[{}]".format(self.name, idx, i)
-                )
+                v2 = cmds.getAttr("{}.sample[{}].sampleInputValue[{}]".format(self.name, idx, i))
                 if math.fabs(v1 - v2) > threshold:
                     sample_is_same = False
                     break
 
             for i, v1 in enumerate(input_rotations):
-                v2 = cmds.getAttr(
-                    "{}.sample[{}].sampleInputQuat[{}]".format(self.name, idx, i)
-                )[0]
+                v2 = cmds.getAttr("{}.sample[{}].sampleInputQuat[{}]".format(self.name, idx, i))[0]
                 q1 = OpenMaya.MQuaternion(*v1)
                 q2 = OpenMaya.MQuaternion(*v2)
                 d = quaternion_distance(q1, q2)

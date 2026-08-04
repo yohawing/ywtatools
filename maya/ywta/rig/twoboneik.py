@@ -1,6 +1,6 @@
 """Two bone stretchy soft ik setup"""
+
 import maya.cmds as cmds
-import maya.api.OpenMaya as OpenMaya
 import ywta.shortcuts as shortcuts
 import ywta.rig.common as common
 from ywta.dge import dge
@@ -35,15 +35,11 @@ class TwoBoneIk(object):
         """
         self.__create_config_control(parent)
 
-        self.__create_ik(
-            ik_control, pole_vector, soft_ik_parent, global_scale_attr, scale_stretch
-        )
+        self.__create_ik(ik_control, pole_vector, soft_ik_parent, global_scale_attr, scale_stretch)
         self.__create_fk(parent)
 
     def __create_config_control(self, parent):
-        self.config_control = cmds.createNode(
-            "transform", name="{}_config_ctrl".format(self.name)
-        )
+        self.config_control = cmds.createNode("transform", name="{}_config_ctrl".format(self.name))
         if parent:
             cmds.parent(self.config_control, parent)
         common.opm_parent_constraint(self.end_joint, self.config_control)
@@ -57,9 +53,7 @@ class TwoBoneIk(object):
             keyable=True,
         )
 
-    def __create_ik(
-        self, ik_control, pole_vector, soft_ik_parent, global_scale_attr, scale_stretch
-    ):
+    def __create_ik(self, ik_control, pole_vector, soft_ik_parent, global_scale_attr, scale_stretch):
         self.ik_handle = cmds.ikHandle(
             name="{}_ikh".format(self.name),
             solver="ikRPsolver",
@@ -157,9 +151,7 @@ class TwoBoneIk(object):
         # s = softIk attribute
         # t = stretch attribute
         softik_scale = dge(
-            "x > (1.0 - softIk)"
-            "? (1.0 - softIk) + softIk * (1.0 - exp(-(x - (1.0 - softIk)) / softIk)) "
-            ": x",
+            "x > (1.0 - softIk)? (1.0 - softIk) + softIk * (1.0 - exp(-(x - (1.0 - softIk)) / softIk)) : x",
             container="{}_softik".format(self.name),
             x=length_ratio,
             softIk=softik,
@@ -199,30 +191,22 @@ class TwoBoneIk(object):
 
         # Drive the soft ik transform
         aim = cmds.createNode("aimMatrix")
-        cmds.connectAttr(
-            "{}.worldMatrix[0]".format(self.start_loc), "{}.inputMatrix".format(aim)
-        )
+        cmds.connectAttr("{}.worldMatrix[0]".format(self.start_loc), "{}.inputMatrix".format(aim))
         cmds.connectAttr(
             "{}.worldMatrix[0]".format(self.end_loc),
             "{}.primary.primaryTargetMatrix".format(aim),
         )
         mult = cmds.createNode("multMatrix")
-        cmds.connectAttr(
-            "{}.outputMatrix".format(compose_matrix), "{}.matrixIn[0]".format(mult)
-        )
+        cmds.connectAttr("{}.outputMatrix".format(compose_matrix), "{}.matrixIn[0]".format(mult))
         cmds.connectAttr("{}.outputMatrix".format(aim), "{}.matrixIn[1]".format(mult))
         parent = cmds.listRelatives(self.soft_ik, parent=True, path=True)[0]
         if parent:
-            cmds.connectAttr(
-                "{}.worldInverseMatrix[0]".format(parent), "{}.matrixIn[2]".format(mult)
-            )
+            cmds.connectAttr("{}.worldInverseMatrix[0]".format(parent), "{}.matrixIn[2]".format(mult))
         pick = cmds.createNode("pickMatrix")
         cmds.connectAttr("{}.matrixSum".format(mult), "{}.inputMatrix".format(pick))
         for attr in ["Scale", "Shear", "Rotate"]:
             cmds.setAttr("{}.use{}".format(pick, attr), 0)
-        cmds.connectAttr(
-            "{}.outputMatrix".format(pick), "{}.offsetParentMatrix".format(self.soft_ik)
-        )
+        cmds.connectAttr("{}.outputMatrix".format(pick), "{}.offsetParentMatrix".format(self.soft_ik))
         cmds.setAttr("{}.t".format(self.soft_ik), 0, 0, 0)
 
     def __create_fk(self, parent):
@@ -240,9 +224,7 @@ class TwoBoneIk(object):
             common.freeze_to_parent_offset(control)
             parent = control
             ori = cmds.orientConstraint(control, joint)[0]
-            cmds.connectAttr(
-                "{}.ikFk".format(self.config_control), "{}.{}W0".format(ori, control)
-            )
+            cmds.connectAttr("{}.ikFk".format(self.config_control), "{}.{}W0".format(ori, control))
 
             # Drive visibility
             visibility = "{}.v".format(control)
@@ -279,16 +261,13 @@ class TwoBoneIk(object):
             )
 
             mult = cmds.createNode("multMatrix")
-            cmds.connectAttr(
-                "{}.outputMatrix".format(compose), "{}.matrixIn[0]".format(mult)
-            )
+            cmds.connectAttr("{}.outputMatrix".format(compose), "{}.matrixIn[0]".format(mult))
             cmds.setAttr(
                 "{}.matrixIn[1]".format(mult),
                 cmds.getAttr("{}.offsetParentMatrix".format(control)),
                 type="matrix",
             )
             cmds.connectAttr(
-                "{}.matrixSum".format(mult), "{}.offsetParentMatrix".format(control),
+                "{}.matrixSum".format(mult),
+                "{}.offsetParentMatrix".format(control),
             )
-
-

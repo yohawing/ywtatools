@@ -19,15 +19,9 @@ class SkeletonTests(TestCase):
         cmds.parent(j1, self.group)
 
         cmds.joint(j1, e=True, oj="xyz", secondaryAxisOrient="yup", ch=True, zso=True)
-        self.translates = [
-            cmds.getAttr("{0}.t".format(x))[0] for x in cmds.ls(type="joint")
-        ]
-        self.rotates = [
-            cmds.getAttr("{0}.r".format(x))[0] for x in cmds.ls(type="joint")
-        ]
-        self.orients = [
-            cmds.getAttr("{0}.jo".format(x))[0] for x in cmds.ls(type="joint")
-        ]
+        self.translates = [cmds.getAttr("{0}.t".format(x))[0] for x in cmds.ls(type="joint")]
+        self.rotates = [cmds.getAttr("{0}.r".format(x))[0] for x in cmds.ls(type="joint")]
+        self.orients = [cmds.getAttr("{0}.jo".format(x))[0] for x in cmds.ls(type="joint")]
 
     def test_get_and_rebuild_data(self):
         data = skeleton.dumps(self.group)

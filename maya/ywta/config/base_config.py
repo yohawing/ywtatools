@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import json
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Union, Type, TypeVar, Generic
+from typing import Any, Dict, Optional, Union, TypeVar, Generic
 from pathlib import Path
 import logging
 
@@ -218,9 +218,7 @@ class BaseConfig(ABC):
                 if file_path.suffix.lower() == ".json":
                     self._config_data = json.load(f)
                 else:
-                    raise ConfigError(
-                        f"Unsupported config file format: {file_path.suffix}, only .json is supported"
-                    )
+                    raise ConfigError(f"Unsupported config file format: {file_path.suffix}, only .json is supported")
 
             logger.info(f"Config loaded from: {file_path}")
 
@@ -259,9 +257,7 @@ class BaseConfig(ABC):
                 if file_path.suffix.lower() == ".json":
                     json.dump(config_data, f, indent=2, ensure_ascii=False)
                 else:
-                    raise ConfigError(
-                        f"Unsupported config file format: {file_path.suffix}, only .json is supported"
-                    )
+                    raise ConfigError(f"Unsupported config file format: {file_path.suffix}, only .json is supported")
 
             logger.info(f"Config saved to: {file_path}")
 
@@ -292,11 +288,7 @@ class BaseConfig(ABC):
     def _merge_dict(self, target: dict, source: dict) -> None:
         """辞書を再帰的にマージ"""
         for key, value in source.items():
-            if (
-                key in target
-                and isinstance(target[key], dict)
-                and isinstance(value, dict)
-            ):
+            if key in target and isinstance(target[key], dict) and isinstance(value, dict):
                 self._merge_dict(target[key], value)
             else:
                 target[key] = value

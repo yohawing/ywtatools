@@ -43,9 +43,7 @@ def main():
     )
 
     # 出力バッファリングの指定
-    parser.add_argument(
-        "--no-buffer", action="store_true", help="出力バッファリングを無効にする"
-    )
+    parser.add_argument("--no-buffer", action="store_true", help="出力バッファリングを無効にする")
 
     args = parser.parse_args()
 
@@ -59,9 +57,7 @@ def main():
         test_dir = args.dir
     else:
         # デフォルトのテストディレクトリをタイプに基づいて決定
-        test_dir = os.path.join(
-            TestSettings.get_project_root(), "tests", "blender", args.type
-        )
+        test_dir = os.path.join(TestSettings.get_project_root(), "tests", "blender", args.type)
 
     # Blender用のテスト実行
     result = run_blender_tests(test_dir, args.pattern)

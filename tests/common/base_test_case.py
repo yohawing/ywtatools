@@ -6,13 +6,8 @@
 """
 
 import os
-import sys
 import unittest
 import shutil
-import tempfile
-import uuid
-import logging
-from pathlib import Path
 
 from tests.common.test_settings import TestSettings
 
@@ -165,9 +160,7 @@ class BaseTestCase(unittest.TestCase):
         """
         self.assertEqual(set(first.keys()), set(second.keys()), msg)
         for key in first:
-            if isinstance(first[key], (float, int)) and isinstance(
-                second[key], (float, int)
-            ):
+            if isinstance(first[key], (float, int)) and isinstance(second[key], (float, int)):
                 self.assertAlmostEqual(first[key], second[key], places, msg, delta)
             elif isinstance(first[key], list) and isinstance(second[key], list):
                 self.assertListAlmostEqual(first[key], second[key], places, msg, delta)

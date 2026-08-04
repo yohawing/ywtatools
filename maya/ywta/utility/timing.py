@@ -15,6 +15,7 @@ Example Usage
     Section.print_timing()
 
 """
+
 import functools
 import time
 from collections import OrderedDict

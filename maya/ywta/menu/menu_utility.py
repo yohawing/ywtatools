@@ -5,7 +5,6 @@
 """
 
 import maya.cmds as cmds
-import maya.mel as mel
 
 
 def create_utility_menu(parent_menu):
@@ -17,9 +16,7 @@ def create_utility_menu(parent_menu):
     Returns:
         作成されたメニュー項目
     """
-    utility_menu = cmds.menuItem(
-        subMenu=True, tearOff=True, parent=parent_menu, label="Utility"
-    )
+    utility_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=parent_menu, label="Utility")
 
     # テスト・開発関連
     cmds.menuItem(parent=utility_menu, divider=True, dividerLabel="Test")

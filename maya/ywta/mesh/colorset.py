@@ -12,6 +12,7 @@ def create_colorset(mesh, name, colors):
     cmds.polyColorSet(mesh, create=True, colorSet=name, clamped=True, representation="RGB")
     mesh_fn.setVertexColors(colors, vertices)
 
+
 def get_colorset(mesh_name, colorset_name):
     dag = shortcuts.get_dag_path2(mesh_name)
     dag.extendToShape()
@@ -20,9 +21,11 @@ def get_colorset(mesh_name, colorset_name):
 
     return mesh_fn.mesh_fn.getColors(colorset_name)
 
+
 def get_colorset_list(mesh_name):
     colorsets = cmds.polyColorSet(mesh_name, q=True, allColorSets=True)
     return colorsets
+
 
 def get_weights_from_colorset(mesh_name, colorset=None):
     # カラーセットの値を取得して、それをウェイトとして返す
@@ -38,7 +41,7 @@ def get_weights_from_colorset(mesh_name, colorset=None):
     weights = [0] * len(points)
 
     for i, id in enumerate(vertices[1]):
-        #average of rgb
+        # average of rgb
         weights[id] = (colors[id].r + colors[id].g + colors[id].b) / 3
         # weights[id] *= weights[id]
 

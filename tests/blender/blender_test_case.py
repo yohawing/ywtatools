@@ -4,13 +4,8 @@ Blender テストケースモジュール
 このモジュールは、Blender環境でのテスト実行のための基底クラスを提供します。
 """
 
-import os
-import sys
 import unittest
-import tempfile
-import uuid
 import logging
-from pathlib import Path
 
 try:
     import bpy
@@ -80,7 +75,7 @@ class BlenderTestCase(BaseTestCase):
 
         try:
             # アドオンが既に有効かチェック
-            if not addon_name in bpy.context.preferences.addons:
+            if addon_name not in bpy.context.preferences.addons:
                 bpy.ops.preferences.addon_enable(module=addon_name)
                 cls.addons_enabled.add(addon_name)
             return True

@@ -219,8 +219,6 @@ class ControlWindow(shortcuts.SingletonWindowMixin, MayaQWidgetBaseMixin, QMainW
             if button == QMessageBox.Yes:
                 for item in items:
                     text = item.text()
-                    control_file = os.path.join(
-                        CONTROLS_DIRECTORY, "{0}.json".format(text)
-                    )
+                    control_file = os.path.join(CONTROLS_DIRECTORY, "{0}.json".format(text))
                     os.remove(control_file)
                 self.populate_controls()

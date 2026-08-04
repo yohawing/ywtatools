@@ -1,5 +1,4 @@
 import maya.cmds as cmds
-import math
 
 # 複数のBoneと複数のControllerを取得する
 # ボーンごとにPointConstraintを作成する
@@ -15,7 +14,7 @@ for bone in bones:
     # boneのPositionを取得
     bone_pos = cmds.xform(bone, query=True, translation=True, worldSpace=True)
     # controllersとBoneをPointConstraintで結ぶ
-    
+
     distances = []
     for i, ctl in enumerate(controllers):
         ctl_pos = cmds.xform(ctl, query=True, translation=True, worldSpace=True)
@@ -23,7 +22,7 @@ for bone in bones:
         distances.append(y_dist)
 
     for i, ctl in enumerate(controllers):
-        ratio = 1- distances[i] / sum(distances)
+        ratio = 1 - distances[i] / sum(distances)
         # 距離に応じて、Controllerごとに重みを設定
         # cmds.setAttr(f"{constraint[0]}.{ctl}W{str(i)}", ratio)
-        constraint = cmds.pointConstraint(ctl, bone, weight=ratio,  maintainOffset=True)
+        constraint = cmds.pointConstraint(ctl, bone, weight=ratio, maintainOffset=True)

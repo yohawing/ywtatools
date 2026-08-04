@@ -3,8 +3,6 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-import os
-import re
 
 import maya.cmds as cmds
 
@@ -32,9 +30,7 @@ def create_transform_stack(node, suffixes=None):
         transform = cmds.createNode("transform", name=name)
         stack_transforms.append(transform)
         cmds.addAttr(transform, ln=STACK_ATTRIBUTE, at="message")
-        cmds.connectAttr(
-            "{}.message".format(node), "{}.{}".format(transform, STACK_ATTRIBUTE)
-        )
+        cmds.connectAttr("{}.message".format(node), "{}.{}".format(transform, STACK_ATTRIBUTE))
         cmds.delete(cmds.parentConstraint(node, transform))
         if previous_parent:
             cmds.parent(transform, previous_parent)
