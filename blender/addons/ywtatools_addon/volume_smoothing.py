@@ -8,7 +8,7 @@ import sys
 import bmesh
 import bpy
 from bpy_extras import view3d_utils
-from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty
+from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 from bpy.types import Operator
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
@@ -39,15 +39,143 @@ _BRUSH_MODE_ITEMS = (
     ("BUMPS", "Remove Bumps", "頂点法線方向だけに移動して凹凸を除去", 2),
 )
 
+_RAIL_CORNER_DOT = -0.8660254037844386
+_WEIGHT_EPSILON = 1.0e-8
+
 
 def _is_closed_mesh(bm) -> bool:
     """全エッジがちょうど2面を共有する閉メッシュか判定する。"""
     return bool(bm.faces) and all(len(edge.link_faces) == 2 for edge in bm.edges)
 
 
-def _is_selection_boundary(vertex) -> bool:
+def _is_selection_boundary(vertex, selected_indices=None) -> bool:
     """未選択領域またはメッシュ境界に接する頂点か判定する。"""
-    return any(len(edge.link_faces) != 2 or not edge.other_vert(vertex).select for edge in vertex.link_edges)
+    if selected_indices is None:
+        return any(
+            len(edge.link_faces) != 2 or not edge.other_vert(vertex).select
+            for edge in vertex.link_edges
+        )
+    return any(
+        len(edge.link_faces) != 2
+        or edge.other_vert(vertex).index not in selected_indices
+        for edge in vertex.link_edges
+    )
+
+
+def _vertex_group_weights(obj, bm, group_name):
+    """指定Vertex Groupを頂点ごとの連続ウェイトへ変換する。"""
+    if not group_name:
+        return None
+    try:
+        group = obj.vertex_groups.get(group_name)
+    except (AttributeError, TypeError):
+        return [0.0] * len(bm.verts)
+    if group is None:
+        return [0.0] * len(bm.verts)
+
+    weights = []
+    for vertex in bm.verts:
+        try:
+            value = float(group.weight(vertex.index))
+        except (RuntimeError, ValueError):
+            value = 0.0
+        value = max(0.0, min(1.0, value))
+        weights.append(value)
+    return weights
+
+
+def _selection_weights(bm):
+    """現在の頂点／面選択を0または1のマスクへ変換する。"""
+    try:
+        edge_select_mode = bool(bpy.context.tool_settings.mesh_select_mode[1])
+    except (AttributeError, TypeError, IndexError):
+        edge_select_mode = False
+    if edge_select_mode and any(edge.select for edge in bm.edges):
+        # EDGE選択はrail指定として扱い、非表示頂点以外を連続maskの対象にする。
+        selected = {vertex.index for vertex in bm.verts if not vertex.hide}
+        return [1.0 if vertex.index in selected else 0.0 for vertex in bm.verts], selected
+    selected = {vertex.index for vertex in bm.verts if vertex.select}
+    if not selected:
+        selected = {vertex.index for face in bm.faces if face.select for vertex in face.verts}
+    return [1.0 if vertex.index in selected else 0.0 for vertex in bm.verts], selected
+
+
+def _crease_layer(bm):
+    """Blender世代差を吸収してエッジcreaseレイヤーを取得する。"""
+    try:
+        return bm.edges.layers.float.get("crease_edge")
+    except AttributeError:
+        return None
+
+
+def _edge_is_rail_candidate(edge, crease_layer, include_selected_edges):
+    """hard edge、seam、crease、EDGE選択をrail候補として判定する。"""
+    if include_selected_edges and edge.select:
+        return True
+    if edge.seam:
+        return True
+    if crease_layer is not None:
+        try:
+            if float(edge[crease_layer]) > _WEIGHT_EPSILON:
+                return True
+        except (KeyError, TypeError, ValueError):
+            pass
+    # 開境界のhard edgeは既存のpreserve_boundaryで固定し、内部edgeだけを
+    # rail候補にする。明示的なEDGE選択・seam・creaseは境界でも上で許可する。
+    return len(edge.link_faces) == 2 and not edge.smooth
+
+
+def _rail_constraints(bm, include_selected_edges=None):
+    """rail候補をchain内部の方向制約と固定端点へ分類する。
+
+    戻り値は頂点ごとの制約モードとobject-space方向ベクトル。候補辺の次数が
+    2で、かつ直線に近い頂点だけがRAIL_LINEとなり、端点・分岐・cornerはFIXED
+    になる。方向はRustソルバーへそのまま渡せる局所接線である。
+    """
+    if include_selected_edges is None:
+        try:
+            include_selected_edges = bool(bpy.context.tool_settings.mesh_select_mode[1])
+        except (AttributeError, TypeError, IndexError):
+            include_selected_edges = False
+
+    crease_layer = _crease_layer(bm)
+    adjacency = {vertex.index: [] for vertex in bm.verts}
+    for edge in bm.edges:
+        if not _edge_is_rail_candidate(edge, crease_layer, include_selected_edges):
+            continue
+        first, second = edge.verts
+        adjacency[first.index].append(second)
+        adjacency[second.index].append(first)
+
+    modes = [binding.CONSTRAINT_FREE] * len(bm.verts)
+    directions = [Vector((0.0, 0.0, 1.0)) for _ in bm.verts]
+    for vertex in bm.verts:
+        neighbours = adjacency.get(vertex.index, ())
+        if not neighbours:
+            continue
+        if len(neighbours) != 2:
+            modes[vertex.index] = binding.CONSTRAINT_FIXED
+            continue
+        first, second = neighbours
+        first_direction = first.co - vertex.co
+        second_direction = second.co - vertex.co
+        if first_direction.length_squared <= _WEIGHT_EPSILON or second_direction.length_squared <= _WEIGHT_EPSILON:
+            modes[vertex.index] = binding.CONSTRAINT_FIXED
+            continue
+        first_direction.normalize()
+        second_direction.normalize()
+        # 直線上では2本の外向きベクトルが反対向きになる。角度が鋭い
+        # cornerは固定し、chain内部だけをrail方向へ射影する。
+        if first_direction.dot(second_direction) > _RAIL_CORNER_DOT:
+            modes[vertex.index] = binding.CONSTRAINT_FIXED
+            continue
+        tangent = first_direction - second_direction
+        if tangent.length_squared <= _WEIGHT_EPSILON:
+            modes[vertex.index] = binding.CONSTRAINT_FIXED
+            continue
+        modes[vertex.index] = binding.CONSTRAINT_RAIL_LINE
+        directions[vertex.index] = tangent.normalized()
+    return modes, directions
 
 
 def _geodesic_brush_weights(
@@ -166,13 +294,23 @@ class YWTA_OT_volume_smooth(Operator):
         description="未選択領域または開境界に接する選択頂点を固定します",
         default=True,
     )
+    preserve_rails: BoolProperty(
+        name="Railを保持",
+        description="hard edge、seam、crease、EDGE選択を連続したrailとして保持します",
+        default=True,
+    )
+    mask_vertex_group: StringProperty(
+        name="Mask Vertex Group",
+        description="連続マスクに使うVertex Group。空欄なら現在の頂点選択を使います",
+        default="",
+    )
 
     @classmethod
     def poll(cls, context):
         obj = context.active_object
         return obj is not None and obj.type == "MESH" and obj.mode == "EDIT"
 
-    def draw(self, _context):
+    def draw(self, context):
         layout = self.layout
         layout.prop(self, "mode")
         layout.prop(self, "iterations")
@@ -185,6 +323,8 @@ class YWTA_OT_volume_smooth(Operator):
         layout.prop(self, "preserve_volume")
         layout.prop(self, "normal_only")
         layout.prop(self, "preserve_boundary")
+        layout.prop(self, "preserve_rails")
+        layout.prop_search(self, "mask_vertex_group", context.active_object, "vertex_groups")
 
     def execute(self, context):
         obj = context.active_object
@@ -197,26 +337,45 @@ class YWTA_OT_volume_smooth(Operator):
         bm.verts.ensure_lookup_table()
         bm.verts.index_update()
         bm.normal_update()
-        selected = [vertex for vertex in bm.verts if vertex.select]
-        if not selected:
+        group_weights = _vertex_group_weights(obj, bm, self.mask_vertex_group)
+        if group_weights is None:
+            weights, selected_indices = _selection_weights(bm)
+        else:
+            weights = group_weights
+            selected_indices = {
+                vertex.index for vertex, weight in zip(bm.verts, weights) if weight > _WEIGHT_EPSILON
+            }
+        if not selected_indices:
             self.report({"WARNING"}, "スムージングする頂点を選択してください")
             return {"CANCELLED"}
 
         positions = [component for vertex in bm.verts for component in vertex.co]
         edges = [index for edge in bm.edges for index in (edge.verts[0].index, edge.verts[1].index)]
-        weights = [1.0 if vertex.select else 0.0 for vertex in bm.verts]
+        rail_modes, rail_directions = _rail_constraints(bm) if self.preserve_rails else (
+            [binding.CONSTRAINT_FREE] * len(bm.verts),
+            [Vector((0.0, 0.0, 1.0)) for _ in bm.verts],
+        )
         constraint_modes = []
         directions = []
         for vertex in bm.verts:
-            fixed = not vertex.select or (self.preserve_boundary and _is_selection_boundary(vertex))
+            fixed = vertex.index not in selected_indices
+            if self.preserve_boundary and _is_selection_boundary(vertex, selected_indices):
+                fixed = True
+            if self.preserve_rails and rail_modes[vertex.index] == binding.CONSTRAINT_FIXED:
+                fixed = True
             if fixed:
                 constraint_modes.append(binding.CONSTRAINT_FIXED)
+            elif self.preserve_rails and rail_modes[vertex.index] == binding.CONSTRAINT_RAIL_LINE:
+                constraint_modes.append(binding.CONSTRAINT_RAIL_LINE)
             elif self.normal_only:
                 constraint_modes.append(binding.CONSTRAINT_NORMAL_ONLY)
             else:
                 constraint_modes.append(binding.CONSTRAINT_FREE)
-            normal = vertex.normal.normalized() if vertex.normal.length_squared > 0.0 else (0.0, 0.0, 1.0)
-            directions.extend(normal)
+            if constraint_modes[-1] == binding.CONSTRAINT_RAIL_LINE:
+                directions.extend(rail_directions[vertex.index])
+            else:
+                normal = vertex.normal.normalized() if vertex.normal.length_squared > 0.0 else Vector((0.0, 0.0, 1.0))
+                directions.extend(normal)
         if all(mode == binding.CONSTRAINT_FIXED for mode in constraint_modes):
             self.report({"WARNING"}, "境界固定後に移動可能な選択頂点がありません")
             return {"CANCELLED"}

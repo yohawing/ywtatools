@@ -12,7 +12,10 @@ import maya.cmds as cmds
 
 from ywta.mesh.volume_smoothing import (
     VolumeSmoothingBrushContext,
+    _apply_rail_constraints,
     _geodesic_brush_weights,
+    _mesh_rail_edges,
+    _shape_selection,
     activate_volume_smooth_brush,
 )
 
@@ -92,7 +95,7 @@ class TestVolumeSmoothing(unittest.TestCase):
         before_volume = _signed_volume(shape, triangles)
 
         cmds.select(cube, replace=True)
-        cmds.ywtaVolumeSmooth()
+        cmds.ywtaVolumeSmooth(preserveRails=False)
         after = _points(shape)
         after_volume = _signed_volume(shape, triangles)
 
@@ -120,6 +123,22 @@ class TestVolumeSmoothing(unittest.TestCase):
             if index not in {12}:
                 self.assertEqual(before[index], after[index])
 
+    def test_face_selection_smooths_only_panel_interior(self):
+        """面選択を頂点マスクへ変換し、選択境界を崩さず内側だけ均す。"""
+        mesh, _ = cmds.polyPlane(name="facePanelPlane", subdivisionsX=4, subdivisionsY=4)
+        shape = cmds.listRelatives(mesh, shapes=True, noIntermediate=True)[0]
+        cmds.xform(f"{shape}.vtx[12]", objectSpace=True, translation=(0.0, 0.0, 1.0))
+        before = _points(shape)
+        cmds.select([f"{shape}.f[{index}]" for index in (5, 6, 9, 10)], replace=True)
+
+        cmds.ywtaVolumeSmooth(preserveRails=False)
+        after = _points(shape)
+
+        self.assertNotEqual(before[12], after[12])
+        for index in range(len(before)):
+            if index != 12:
+                self.assertEqual(before[index], after[index])
+
     def test_closed_partial_selection_preserves_volume(self):
         """閉メッシュの部分選択でも固定点を保ったまま体積を補正する。"""
         mesh, _ = cmds.polySphere(name="partialVolumeSphere", subdivisionsX=12, subdivisionsY=8)
@@ -131,7 +150,7 @@ class TestVolumeSmoothing(unittest.TestCase):
 
         # 0番頂点を未選択の固定点として残し、残りを処理する。
         cmds.select(f"{shape}.vtx[1:{vertex_count - 1}]", replace=True)
-        cmds.ywtaVolumeSmooth(iterations=5, strength=0.3, volumeCorrection=1.0)
+        cmds.ywtaVolumeSmooth(iterations=5, strength=0.3, volumeCorrection=1.0, preserveRails=False)
         after = _points(shape)
 
         self.assertEqual(before[0], after[0])
@@ -148,6 +167,79 @@ class TestVolumeSmoothing(unittest.TestCase):
         after = _points(shape)
         self.assertEqual(len(before), len(after))
         self.assertTrue(all(all(math.isfinite(value) for value in point) for point in after))
+
+    def test_soft_selection_becomes_continuous_vertex_weights(self):
+        """Maya Soft Selectionのfalloffを二値化せずRustウェイトへ渡す。"""
+        mesh, _ = cmds.polyPlane(name="softSelectionPlane", subdivisionsX=6, subdivisionsY=6)
+        shape = cmds.listRelatives(mesh, shapes=True, noIntermediate=True)[0]
+        previous_enabled = cmds.softSelect(query=True, softSelectEnabled=True)
+        previous_distance = cmds.softSelect(query=True, softSelectDistance=True)
+        try:
+            cmds.softSelect(softSelectEnabled=True, softSelectDistance=1.5)
+            cmds.select(f"{shape}.vtx[24]", replace=True)
+            _path, _positions, _edges, _triangles, _closed, selected, weights, _rails = _shape_selection()
+        finally:
+            cmds.softSelect(softSelectEnabled=previous_enabled, softSelectDistance=previous_distance)
+
+        influenced = [weight for weight in weights if 0.0 < weight < 1.0]
+        self.assertEqual(weights[24], 1.0)
+        self.assertTrue(influenced)
+        self.assertGreater(len(selected), 1)
+
+    def test_rail_chain_uses_tangent_and_fixes_endpoints(self):
+        """railの内部頂点だけをRailLineにし、端点は固定する。"""
+        positions = [0.0, 0.0, 0.0, 1.0, 0.1, 0.0, 2.0, 0.0, 0.0]
+        weights = [1.0, 1.0, 1.0]
+        modes = [0, 0, 0]
+
+        directions = _apply_rail_constraints(positions, [0, 1, 1, 2], weights, modes)
+
+        self.assertEqual(modes[0], 1)
+        self.assertEqual(modes[1], 3)
+        self.assertEqual(modes[2], 1)
+        self.assertEqual(weights[0], 0.0)
+        self.assertGreater(abs(directions[3]), 0.99)
+        self.assertLess(abs(directions[4]), 1.0e-8)
+
+    def test_selected_edge_is_collected_as_rail(self):
+        """明示選択したedgeをhard/creaseと同じrail候補として扱う。"""
+        mesh, _ = cmds.polyPlane(name="selectedRailPlane", subdivisionsX=3, subdivisionsY=3)
+        shape = cmds.listRelatives(mesh, shapes=True, noIntermediate=True)[0]
+        cmds.polySoftEdge(f"{shape}.e[*]", angle=180.0)
+        cmds.select(f"{shape}.e[5]", replace=True)
+
+        _path, _positions, _edges, _triangles, _closed, selected, weights, rails = _shape_selection()
+
+        self.assertEqual(len(selected), len(weights))
+        self.assertEqual(len(rails), 2)
+
+    def test_hard_and_crease_edges_are_collected_as_rails(self):
+        """Maya固有のhard edgeとcrease値をrail候補へ変換する。"""
+        mesh, _ = cmds.polyPlane(name="hardCreaseRailPlane", subdivisionsX=3, subdivisionsY=3)
+        shape = cmds.listRelatives(mesh, shapes=True, noIntermediate=True)[0]
+        cmds.polySoftEdge(f"{shape}.e[*]", angle=180.0)
+        selection = om2.MSelectionList()
+        selection.add(shape)
+        mesh_fn = om2.MFnMesh(selection.getDagPath(0))
+        interior_edges = []
+        for edge_id in range(mesh_fn.numEdges):
+            first, second = mesh_fn.getEdgeVertices(edge_id)
+            face_uses = sum(
+                first in mesh_fn.getPolygonVertices(face) and second in mesh_fn.getPolygonVertices(face)
+                for face in range(mesh_fn.numPolygons)
+            )
+            if face_uses == 2:
+                interior_edges.append(edge_id)
+        hard_edge, crease_edge = interior_edges[:2]
+        cmds.polySoftEdge(f"{shape}.e[{hard_edge}]", angle=0.0)
+        cmds.polyCrease(f"{shape}.e[{crease_edge}]", value=2.0)
+        mesh_fn = om2.MFnMesh(selection.getDagPath(0))
+
+        rails = _mesh_rail_edges(mesh_fn, set())
+        rail_pairs = {tuple(sorted(pair)) for pair in zip(rails[::2], rails[1::2])}
+
+        self.assertIn(tuple(sorted(mesh_fn.getEdgeVertices(hard_edge))), rail_pairs)
+        self.assertIn(tuple(sorted(mesh_fn.getEdgeVertices(crease_edge))), rail_pairs)
 
     def test_solver_failure_does_not_modify_mesh(self):
         """Rust側の入力拒否時は元メッシュへ座標を書き戻さない。"""

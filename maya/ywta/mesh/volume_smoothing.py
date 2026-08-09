@@ -36,6 +36,8 @@ DEFAULT_MODE = _binding.MODE_HC
 DEFAULT_ITERATIONS = 5
 DEFAULT_STRENGTH = 0.3
 DEFAULT_VOLUME_CORRECTION = 1.0
+DEFAULT_PRESERVE_RAILS = True
+_RAIL_CORNER_DOT = -0.8660254037844386
 
 
 def _attribute_value(value):
@@ -43,8 +45,34 @@ def _attribute_value(value):
     return value() if callable(value) else value
 
 
+def _rich_vertex_weights(shape_path, vertex_count):
+    """Maya Soft Selectionを頂点ごとの連続ウェイトとして取得する。"""
+    try:
+        selection = om2.MGlobal.getRichSelection().getSelection()
+    except RuntimeError:
+        return {}
+
+    weights = {}
+    for item_index in range(selection.length()):
+        try:
+            dag_path, component = selection.getComponent(item_index)
+        except (AttributeError, RuntimeError, TypeError):
+            continue
+        if dag_path.node().hasFn(om2.MFn.kTransform):
+            dag_path.extendToShape()
+        if dag_path.fullPathName() != shape_path or component.apiType() != om2.MFn.kMeshVertComponent:
+            continue
+        component_fn = om2.MFnSingleIndexedComponent(component)
+        for local_index, vertex in enumerate(component_fn.getElements()):
+            vertex = int(vertex)
+            if 0 <= vertex < vertex_count:
+                influence = component_fn.weight(local_index).influence if component_fn.hasWeights else 1.0
+                weights[vertex] = max(weights.get(vertex, 0.0), float(influence))
+    return weights
+
+
 def _shape_selection():
-    """現在の選択からメッシュ形状、頂点集合、object-space座標を取得する。"""
+    """現在の選択からメッシュ形状、連続ウェイト、選択エッジを取得する。"""
     selection = om2.MGlobal.getActiveSelectionList()
     if selection.length() != 1:
         raise RuntimeError("メッシュを1つだけ選択してください")
@@ -67,21 +95,50 @@ def _shape_selection():
         raise RuntimeError("メッシュに頂点がありません")
 
     component_is_null = _attribute_value(getattr(component, "isNull", True))
+    selected_edges = set()
     if component_is_null:
         selected = set(range(vertex_count))
+        selection_weights = [1.0] * vertex_count
     else:
         api_type = _attribute_value(getattr(component, "apiType", None))
-        if api_type != om2.MFn.kMeshVertComponent:
-            raise RuntimeError("頂点コンポーネントを選択してください")
-        selected = {int(index) for index in om2.MFnSingleIndexedComponent(component).getElements()}
-        selected = {index for index in selected if 0 <= index < vertex_count}
+        component_fn = om2.MFnSingleIndexedComponent(component)
+        elements = {int(index) for index in component_fn.getElements()}
+        if api_type == om2.MFn.kMeshVertComponent:
+            rich_weights = _rich_vertex_weights(dag_path.fullPathName(), vertex_count)
+            selected = {index for index in elements if 0 <= index < vertex_count}
+            selected.update(index for index, weight in rich_weights.items() if weight > 0.0)
+            selection_weights = [rich_weights.get(index, 1.0 if index in elements else 0.0) for index in range(vertex_count)]
+        elif api_type == om2.MFn.kMeshEdgeComponent:
+            selected_edges = {index for index in elements if 0 <= index < mesh_fn.numEdges}
+            selected = set(range(vertex_count))
+            selection_weights = [1.0] * vertex_count
+        elif api_type == om2.MFn.kMeshPolygonComponent:
+            selected = {
+                int(vertex)
+                for face in elements
+                if 0 <= face < mesh_fn.numPolygons
+                for vertex in mesh_fn.getPolygonVertices(face)
+            }
+            selection_weights = [1.0 if index in selected else 0.0 for index in range(vertex_count)]
+        else:
+            raise RuntimeError("メッシュ、頂点、エッジ、または面を選択してください")
 
     positions = []
     for point in points:
         positions.extend((float(point.x), float(point.y), float(point.z)))
 
     edges, triangles, closed = _mesh_topology(mesh_fn)
-    return dag_path.fullPathName(), positions, edges, triangles, closed, selected
+    rail_edges = _mesh_rail_edges(mesh_fn, selected_edges)
+    return (
+        dag_path.fullPathName(),
+        positions,
+        edges,
+        triangles,
+        closed,
+        selected,
+        selection_weights,
+        rail_edges,
+    )
 
 
 def _mesh_topology(mesh_fn):
@@ -111,8 +168,38 @@ def _mesh_topology(mesh_fn):
     return edge_values, triangles, is_closed
 
 
-def _constraints(vertex_count, edges, selected):
-    """未選択頂点と選択境界を固定するRust制約配列を作る。"""
+def _mesh_rail_edges(mesh_fn, selected_edge_ids):
+    """hard edge、crease、明示選択エッジを頂点ペアで返す。"""
+    try:
+        crease_ids, crease_values = mesh_fn.getCreaseEdges()
+        creased = {int(edge) for edge, value in zip(crease_ids, crease_values) if float(value) > 0.0}
+    except RuntimeError:
+        creased = set()
+
+    face_counts, face_indices = mesh_fn.getVertices()
+    edge_use_counts = {}
+    offset = 0
+    for raw_count in face_counts:
+        count = int(raw_count)
+        vertices = [int(index) for index in face_indices[offset : offset + count]]
+        offset += count
+        for first, second in zip(vertices, vertices[1:] + vertices[:1]):
+            edge = (min(first, second), max(first, second))
+            edge_use_counts[edge] = edge_use_counts.get(edge, 0) + 1
+
+    rail_edges = []
+    for edge_id in range(mesh_fn.numEdges):
+        first, second = mesh_fn.getEdgeVertices(edge_id)
+        edge = (min(int(first), int(second)), max(int(first), int(second)))
+        auto_hard = edge_use_counts.get(edge, 0) == 2 and not mesh_fn.isEdgeSmooth(edge_id)
+        if edge_id not in selected_edge_ids and edge_id not in creased and not auto_hard:
+            continue
+        rail_edges.extend((int(first), int(second)))
+    return rail_edges
+
+
+def _constraints(vertex_count, edges, selected, selection_weights=None):
+    """未選択頂点と選択境界を固定し、連続ウェイトを保持する。"""
     neighbours = [set() for _ in range(vertex_count)]
     for first, second in zip(edges[::2], edges[1::2]):
         neighbours[first].add(second)
@@ -120,8 +207,51 @@ def _constraints(vertex_count, edges, selected):
 
     free = {vertex for vertex in selected if all(neighbour in selected for neighbour in neighbours[vertex])}
     modes = [_binding.CONSTRAINT_FREE if vertex in free else _binding.CONSTRAINT_FIXED for vertex in range(vertex_count)]
-    weights = [1.0 if vertex in free else 0.0 for vertex in range(vertex_count)]
+    source_weights = selection_weights or [1.0] * vertex_count
+    weights = [float(source_weights[vertex]) if vertex in free else 0.0 for vertex in range(vertex_count)]
     return weights, modes, free
+
+
+def _apply_rail_constraints(positions, rail_edges, weights, modes):
+    """rail chain内部を接線移動へ制限し、端点・分岐・鋭角を固定する。"""
+    vertex_count = len(positions) // 3
+    neighbours = [set() for _ in range(vertex_count)]
+    for first, second in zip(rail_edges[::2], rail_edges[1::2]):
+        neighbours[first].add(second)
+        neighbours[second].add(first)
+
+    directions = [0.0] * len(positions)
+    for vertex, rail_neighbours in enumerate(neighbours):
+        if not rail_neighbours or modes[vertex] == _binding.CONSTRAINT_FIXED:
+            continue
+        if len(rail_neighbours) != 2:
+            modes[vertex] = _binding.CONSTRAINT_FIXED
+            weights[vertex] = 0.0
+            continue
+        first, second = sorted(rail_neighbours)
+        origin = positions[vertex * 3 : vertex * 3 + 3]
+        vectors = []
+        for neighbour in (first, second):
+            vector = [positions[neighbour * 3 + axis] - origin[axis] for axis in range(3)]
+            length = math.sqrt(sum(value * value for value in vector))
+            if length <= 1.0e-12:
+                vectors = []
+                break
+            vectors.append([value / length for value in vector])
+        if len(vectors) != 2 or sum(a * b for a, b in zip(*vectors)) > _RAIL_CORNER_DOT:
+            modes[vertex] = _binding.CONSTRAINT_FIXED
+            weights[vertex] = 0.0
+            continue
+        tangent = [vectors[0][axis] - vectors[1][axis] for axis in range(3)]
+        length = math.sqrt(sum(value * value for value in tangent))
+        if length <= 1.0e-12:
+            modes[vertex] = _binding.CONSTRAINT_FIXED
+            weights[vertex] = 0.0
+            continue
+        modes[vertex] = _binding.CONSTRAINT_RAIL_LINE
+        for axis in range(3):
+            directions[vertex * 3 + axis] = tangent[axis] / length
+    return directions
 
 
 def _apply_points(shape_path, flat_positions):
@@ -143,14 +273,16 @@ def _compute_result(
     iterations=DEFAULT_ITERATIONS,
     strength=DEFAULT_STRENGTH,
     volume_correction=DEFAULT_VOLUME_CORRECTION,
+    preserve_rails=DEFAULT_PRESERVE_RAILS,
 ):
     """選択メッシュをRustで処理し、Undo用の前後座標を返す。"""
-    shape_path, before, edges, triangles, closed, selected = _shape_selection()
+    shape_path, before, edges, triangles, closed, selected, selection_weights, rail_edges = _shape_selection()
     vertex_count = len(before) // 3
     if not selected:
         return shape_path, before, list(before)
 
-    weights, modes, _free = _constraints(vertex_count, edges, selected)
+    weights, modes, _free = _constraints(vertex_count, edges, selected, selection_weights)
+    directions = _apply_rail_constraints(before, rail_edges, weights, modes) if preserve_rails else None
     # Rust側は固定点を含む閉メッシュの体積補正に対応している。
     correction = float(volume_correction) if closed else 0.0
     try:
@@ -164,6 +296,7 @@ def _compute_result(
             triangles=triangles if correction > 0.0 else None,
             vertex_weights=weights,
             constraint_modes=modes,
+            constraint_directions=directions,
         )
     except Exception as error:
         # DLLエラーをMayaのコマンド失敗へ変換し、書き戻しは行わない。
@@ -180,6 +313,7 @@ def smooth_selected_mesh(**kwargs):
         "iterations": kwargs.pop("iterations", DEFAULT_ITERATIONS),
         "strength": kwargs.pop("strength", DEFAULT_STRENGTH),
         "volumeCorrection": kwargs.pop("volumeCorrection", DEFAULT_VOLUME_CORRECTION),
+        "preserveRails": kwargs.pop("preserveRails", DEFAULT_PRESERVE_RAILS),
     }
     if kwargs:
         raise TypeError(f"未対応の引数です: {', '.join(sorted(kwargs))}")
@@ -215,6 +349,7 @@ class VolumeSmoothingCommand(om2.MPxCommand):
         syntax.addFlag("-i", "-iterations", om2.MSyntax.kLong)
         syntax.addFlag("-s", "-strength", om2.MSyntax.kDouble)
         syntax.addFlag("-v", "-volumeCorrection", om2.MSyntax.kDouble)
+        syntax.addFlag("-pr", "-preserveRails", om2.MSyntax.kBoolean)
         return syntax
 
     def isUndoable(self):
@@ -228,11 +363,13 @@ class VolumeSmoothingCommand(om2.MPxCommand):
         iterations = database.flagArgumentInt("-i", 0) if database.isFlagSet("-i") else DEFAULT_ITERATIONS
         strength = database.flagArgumentDouble("-s", 0) if database.isFlagSet("-s") else DEFAULT_STRENGTH
         volume_correction = database.flagArgumentDouble("-v", 0) if database.isFlagSet("-v") else DEFAULT_VOLUME_CORRECTION
+        preserve_rails = database.flagArgumentBool("-pr", 0) if database.isFlagSet("-pr") else DEFAULT_PRESERVE_RAILS
         self._shape_path, self._before, self._after = _compute_result(
             mode=mode,
             iterations=iterations,
             strength=strength,
             volume_correction=volume_correction,
+            preserve_rails=preserve_rails,
         )
         _apply_points(self._shape_path, self._after)
 
@@ -353,7 +490,7 @@ class _BrushSessionCache:
     @classmethod
     def from_active_selection(cls):
         """現在の選択からキャッシュを構築する。"""
-        shape_path, positions, edges, triangles, closed, selected = _shape_selection()
+        shape_path, positions, edges, triangles, closed, selected, _weights, _rails = _shape_selection()
         selection = om2.MSelectionList()
         selection.add(shape_path)
         dag_path = selection.getDagPath(0)

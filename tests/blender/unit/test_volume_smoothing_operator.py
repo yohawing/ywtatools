@@ -3,6 +3,7 @@
 import os
 import sys
 import unittest
+from unittest import mock
 
 import bmesh
 import bpy
@@ -149,6 +150,211 @@ class VolumeSmoothingOperatorTests(unittest.TestCase):
             )
 
             self.assertTrue(any((after.co - start).length > 1.0e-6 for after, start in zip(bm.verts, before)))
+        finally:
+            bm.free()
+
+    def test_vertex_group_is_continuous_mask_for_normal_operator(self):
+        """指定Vertex Groupの連続ウェイトを通常オペレータへ渡す。"""
+        obj = self._create_edit_mesh(
+            "WeightedMask",
+            [(0.0, 0.0, 0.0), (2.0, 0.0, 0.0), (0.0, 1.0, 0.5)],
+            [(0, 1, 2)],
+        )
+        bpy.ops.object.mode_set(mode="OBJECT")
+        group = obj.vertex_groups.new(name="SmoothingMask")
+        group.add([0, 1, 2], 0.0, "REPLACE")
+        group.add([0], 1.0, "REPLACE")
+        group.add([1], 0.5, "REPLACE")
+        obj.vertex_groups.active_index = group.index
+        bpy.ops.object.mode_set(mode="EDIT")
+
+        captured = {}
+
+        def fake_smooth(positions, _edges, **kwargs):
+            captured.update(kwargs)
+            return list(positions)
+
+        with mock.patch.object(volume_smoothing.binding, "smooth", side_effect=fake_smooth):
+            result = bpy.ops.ywta.volume_smooth(
+                mode="HC",
+                iterations=1,
+                preserve_volume=False,
+                preserve_boundary=False,
+                preserve_rails=False,
+                mask_vertex_group="SmoothingMask",
+            )
+
+        self.assertEqual(result, {"FINISHED"})
+        self.assertEqual(captured["vertex_weights"], [1.0, 0.5, 0.0])
+
+    def test_empty_vertex_group_falls_back_to_current_selection(self):
+        """空欄のVertex Group指定では現在の頂点選択をマスクにする。"""
+        obj = self._create_edit_mesh(
+            "EmptyMask",
+            [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            [(0, 1, 2)],
+        )
+        bpy.ops.object.mode_set(mode="OBJECT")
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="DESELECT")
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.verts.ensure_lookup_table()
+        bm.verts[0].select = True
+        bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+
+        captured = {}
+
+        def fake_smooth(positions, _edges, **kwargs):
+            captured.update(kwargs)
+            return list(positions)
+
+        with mock.patch.object(volume_smoothing.binding, "smooth", side_effect=fake_smooth):
+            result = bpy.ops.ywta.volume_smooth(
+                mode="HC",
+                iterations=1,
+                preserve_volume=False,
+                preserve_boundary=False,
+                preserve_rails=False,
+            )
+
+        self.assertEqual(result, {"FINISHED"})
+        self.assertEqual(captured["vertex_weights"], [1.0, 0.0, 0.0])
+
+    def test_edge_selection_uses_full_mask_and_preserves_selected_rail(self):
+        """空のVertex GroupとEDGE選択では全頂点をmaskにし、選択edgeをrailにする。"""
+        self._create_edit_mesh(
+            "EdgeMask",
+            [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)],
+            [(0, 1, 2, 3)],
+        )
+        tool_settings = bpy.context.tool_settings
+        previous_mode = tuple(tool_settings.mesh_select_mode)
+        try:
+            tool_settings.mesh_select_mode = (False, True, False)
+            bpy.ops.mesh.select_all(action="DESELECT")
+            bm = bmesh.from_edit_mesh(bpy.context.object.data)
+            bm.edges.ensure_lookup_table()
+            bm.edges[0].select = True
+            bmesh.update_edit_mesh(bpy.context.object.data, loop_triangles=False, destructive=False)
+
+            captured = {}
+
+            def fake_smooth(positions, _edges, **kwargs):
+                captured.update(kwargs)
+                return list(positions)
+
+            with mock.patch.object(volume_smoothing.binding, "smooth", side_effect=fake_smooth):
+                result = bpy.ops.ywta.volume_smooth(
+                    mode="HC",
+                    iterations=1,
+                    preserve_volume=False,
+                    preserve_boundary=False,
+                    preserve_rails=True,
+                )
+        finally:
+            tool_settings.mesh_select_mode = previous_mode
+
+        self.assertEqual(result, {"FINISHED"})
+        self.assertEqual(captured["vertex_weights"], [1.0, 1.0, 1.0, 1.0])
+        self.assertEqual(captured["constraint_modes"].count(binding.CONSTRAINT_FIXED), 2)
+        self.assertEqual(captured["constraint_modes"].count(binding.CONSTRAINT_FREE), 2)
+
+    def test_named_empty_vertex_group_cancels_without_selection_fallback(self):
+        """指定済みの空Vertex Groupはゼロmaskとして安全にキャンセルする。"""
+        obj = self._create_edit_mesh(
+            "NamedEmptyMask",
+            [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            [(0, 1, 2)],
+        )
+        bpy.ops.object.mode_set(mode="OBJECT")
+        group = obj.vertex_groups.new(name="NamedEmptyGroup")
+        bpy.ops.object.mode_set(mode="EDIT")
+        result = bpy.ops.ywta.volume_smooth(
+            mode="HC",
+            iterations=1,
+            preserve_volume=False,
+            preserve_boundary=False,
+            preserve_rails=False,
+            mask_vertex_group=group.name,
+        )
+        self.assertEqual(result, {"CANCELLED"})
+
+    def test_rail_chain_classifies_interior_and_fixed_endpoints(self):
+        """直線railの内部を接線制約にし、端点・分岐・cornerを固定する。"""
+        bm = bmesh.new()
+        try:
+            vertices = [bm.verts.new(coordinate) for coordinate in [(-1, 0, 0), (0, 0, 0), (1, 0, 0)]]
+            first = bm.edges.new((vertices[0], vertices[1]))
+            second = bm.edges.new((vertices[1], vertices[2]))
+            first.seam = True
+            second.seam = True
+            bm.verts.ensure_lookup_table()
+            bm.edges.ensure_lookup_table()
+            bm.verts.index_update()
+
+            modes, directions = volume_smoothing._rail_constraints(bm, include_selected_edges=False)
+            self.assertEqual(modes[1], binding.CONSTRAINT_RAIL_LINE)
+            self.assertEqual(modes[0], binding.CONSTRAINT_FIXED)
+            self.assertEqual(modes[2], binding.CONSTRAINT_FIXED)
+            self.assertAlmostEqual(abs(directions[1].dot(Vector((1.0, 0.0, 0.0)))), 1.0, places=6)
+
+            branch = bm.verts.new((0, 1, 0))
+            branch_edge = bm.edges.new((vertices[1], branch))
+            branch_edge.seam = True
+            bm.verts.ensure_lookup_table()
+            bm.edges.ensure_lookup_table()
+            bm.verts.index_update()
+            modes, _directions = volume_smoothing._rail_constraints(bm, include_selected_edges=False)
+            self.assertEqual(modes[1], binding.CONSTRAINT_FIXED)
+        finally:
+            bm.free()
+
+    def test_hard_crease_seam_and_edge_selection_are_rail_candidates(self):
+        """hard edge、crease、seam、EDGE選択をrail候補として認識する。"""
+        bm = bmesh.new()
+        try:
+            crease_layer = bm.edges.layers.float.new("crease_edge")
+            vertices = [bm.verts.new((index, 0, 0)) for index in range(8)]
+            hard = bm.edges.new((vertices[0], vertices[1]))
+            bm.faces.new((vertices[0], vertices[1], vertices[2]))
+            bm.faces.new((vertices[1], vertices[0], vertices[3]))
+            seam = bm.edges.new((vertices[2], vertices[3]))
+            crease = bm.edges.new((vertices[4], vertices[5]))
+            selected = bm.edges.new((vertices[6], vertices[7]))
+            hard.smooth = False
+            seam.seam = True
+            crease[crease_layer] = 1.0
+            selected.select = True
+            self.assertTrue(volume_smoothing._edge_is_rail_candidate(hard, crease_layer, False))
+            self.assertTrue(volume_smoothing._edge_is_rail_candidate(seam, crease_layer, False))
+            self.assertTrue(volume_smoothing._edge_is_rail_candidate(crease, crease_layer, False))
+            self.assertTrue(volume_smoothing._edge_is_rail_candidate(selected, crease_layer, True))
+            self.assertFalse(volume_smoothing._edge_is_rail_candidate(selected, crease_layer, False))
+        finally:
+            bm.free()
+
+    def test_face_selection_with_seam_preserves_panel_rail(self):
+        """Face選択時でもseamのpanel線をrail候補として保持する。"""
+        bm = bmesh.new()
+        try:
+            vertices = [
+                bm.verts.new((0, 0, 0)),
+                bm.verts.new((1, 0, 0)),
+                bm.verts.new((2, 0, 0)),
+            ]
+            bm.faces.new((vertices[0], vertices[1], vertices[2]))
+            bm.verts.ensure_lookup_table()
+            bm.edges.ensure_lookup_table()
+            bm.faces.ensure_lookup_table()
+            bm.verts.index_update()
+            bm.faces.index_update()
+            seam = next(edge for edge in bm.edges if set(edge.verts) == {vertices[0], vertices[1]})
+            seam.seam = True
+            bm.faces[0].select = True
+            modes, directions = volume_smoothing._rail_constraints(bm, include_selected_edges=False)
+            self.assertIn(modes[0], {binding.CONSTRAINT_FIXED, binding.CONSTRAINT_RAIL_LINE})
+            self.assertIn(modes[1], {binding.CONSTRAINT_FIXED, binding.CONSTRAINT_RAIL_LINE})
+            self.assertTrue(any(direction.length > 0.0 for direction in directions[:2]))
         finally:
             bm.free()
 
