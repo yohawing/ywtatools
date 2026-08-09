@@ -23,12 +23,14 @@ if "bpy" in locals():
     importlib.reload(ui)
     importlib.reload(shape_key_rename)
     importlib.reload(autoremesher)
+    importlib.reload(volume_smoothing)
 else:
     from . import custom_nodes
     from . import properties
     from . import ui
     from . import shape_key_rename
     from . import autoremesher
+    from . import volume_smoothing
 
 import bpy
 
@@ -40,10 +42,12 @@ def register():
     ui.register()
     shape_key_rename.register()
     autoremesher.register()
+    volume_smoothing.register()
 
 
 def unregister():
     print("unregister YWTA Tools")
+    volume_smoothing.unregister()
     autoremesher.unregister()
     shape_key_rename.unregister()
     custom_nodes.unregister()
