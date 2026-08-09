@@ -3,6 +3,7 @@
 //! 均一ラプラシアンと、収縮を抑えるTaubinおよびHCを提供する。
 //! 閉じた三角形メッシュでは、体積勾配による符号付き体積補正を合成できる。
 //! TaubinとHCだけでは厳密な体積保持にならない。
+//! 開いたメッシュはHCを基準とし、接線ドリフトを避ける用途ではNormalOnlyを合成する。
 //! 頂点ウェイトと方向射影制約はDCC固有の境界・レール判定から独立している。
 
 use std::collections::HashMap;
@@ -1286,6 +1287,114 @@ mod tests {
     }
 
     #[test]
+    fn open_patch_oracle_prefers_hc_with_optional_normal_only_constraint() {
+        let side = 7_usize;
+        let mut clean = Vec::with_capacity(side * side * 3);
+        let mut noisy = Vec::with_capacity(side * side * 3);
+        let mut normals = Vec::with_capacity(side * side * 3);
+        let mut fixed_modes = Vec::with_capacity(side * side);
+        let mut normal_modes = Vec::with_capacity(side * side);
+        for y in 0..side {
+            for x in 0..side {
+                let px = (x as f64 - 3.0) / 3.0;
+                let py = (y as f64 - 3.0) / 3.0;
+                let pz = 0.2 * (px * px + py * py);
+                let mut normal = [-0.4 * px, -0.4 * py, 1.0];
+                let inverse_length = 1.0 / dot3(&normal, normal).sqrt();
+                normal = normal.map(|value| value * inverse_length);
+                let noise = 0.08 * (2.1 * x as f64 + 1.7 * y as f64).sin();
+                clean.extend_from_slice(&[px, py, pz]);
+                noisy.extend(
+                    [px, py, pz]
+                        .iter()
+                        .zip(normal)
+                        .map(|(position, direction)| position + noise * direction),
+                );
+                normals.extend_from_slice(&normal);
+                let boundary = x == 0 || x + 1 == side || y == 0 || y + 1 == side;
+                fixed_modes.push(if boundary {
+                    CONSTRAINT_FIXED
+                } else {
+                    CONSTRAINT_FREE
+                });
+                normal_modes.push(if boundary {
+                    CONSTRAINT_FIXED
+                } else {
+                    CONSTRAINT_NORMAL_ONLY
+                });
+            }
+        }
+        let mut edges = Vec::new();
+        for y in 0..side {
+            for x in 0..side {
+                let vertex = (y * side + x) as u32;
+                if x + 1 < side {
+                    edges.extend_from_slice(&[vertex, vertex + 1]);
+                }
+                if y + 1 < side {
+                    edges.extend_from_slice(&[vertex, vertex + side as u32]);
+                }
+            }
+        }
+        let hc_options = SmoothingOptions {
+            iterations: 5,
+            ..internal_options(MODE_HC)
+        };
+        let uniform = smooth_positions(
+            &noisy,
+            side * side,
+            &edges,
+            &[],
+            SmoothingOptions {
+                iterations: 5,
+                ..internal_options(MODE_UNIFORM_LAPLACIAN)
+            },
+            ConstraintInputs {
+                weights: None,
+                modes: Some(&fixed_modes),
+                directions: None,
+            },
+        )
+        .expect("Uniform成功");
+        let hc = smooth_positions(
+            &noisy,
+            side * side,
+            &edges,
+            &[],
+            hc_options,
+            ConstraintInputs {
+                weights: None,
+                modes: Some(&fixed_modes),
+                directions: None,
+            },
+        )
+        .expect("HC成功");
+        let hc_normal = smooth_positions(
+            &noisy,
+            side * side,
+            &edges,
+            &[],
+            hc_options,
+            ConstraintInputs {
+                weights: None,
+                modes: Some(&normal_modes),
+                directions: Some(&normals),
+            },
+        )
+        .expect("NormalOnly付きHC成功");
+
+        let noisy_error = rms_position_error(&noisy, &clean);
+        let uniform_error = rms_position_error(&uniform, &clean);
+        let hc_error = rms_position_error(&hc, &clean);
+        let hc_normal_error = rms_position_error(&hc_normal, &clean);
+        assert!(hc_error < noisy_error);
+        assert!(hc_error < uniform_error);
+        assert!(hc_normal_error <= hc_error * 1.01);
+        assert!(max_tangent_displacement(&noisy, &hc_normal, &normals) < 1.0e-12);
+        assert!(max_tangent_displacement(&noisy, &hc, &normals) > 1.0e-4);
+    }
+
+    #[test]
     fn hc_uses_neighbour_correction_instead_of_simple_blend_back() {
         let positions = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 4.0, 0.0, 0.0];
         let edges = [0, 1, 1, 2];
@@ -1367,6 +1476,38 @@ mod tests {
                     / 6.0
             })
             .sum()
+    }
+
+    fn rms_position_error(positions: &[f64], reference: &[f64]) -> f64 {
+        (positions
+            .iter()
+            .zip(reference)
+            .map(|(position, reference)| (position - reference).powi(2))
+            .sum::<f64>()
+            / (positions.len() / 3) as f64)
+            .sqrt()
+    }
+
+    fn max_tangent_displacement(positions: &[f64], result: &[f64], normals: &[f64]) -> f64 {
+        positions
+            .chunks_exact(3)
+            .zip(result.chunks_exact(3))
+            .zip(normals.chunks_exact(3))
+            .map(|((position, result), normal)| {
+                let displacement = [
+                    result[0] - position[0],
+                    result[1] - position[1],
+                    result[2] - position[2],
+                ];
+                let along = dot3(&displacement, [normal[0], normal[1], normal[2]]);
+                displacement
+                    .iter()
+                    .zip(normal)
+                    .map(|(value, normal)| (value - along * normal).powi(2))
+                    .sum::<f64>()
+                    .sqrt()
+            })
+            .fold(0.0, f64::max)
     }
 
     fn centroid(positions: &[f64]) -> [f64; 3] {
