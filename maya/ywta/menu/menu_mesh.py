@@ -55,5 +55,11 @@ def create_mesh_menu(parent_menu):
         command="import ywta.mesh.volume_smoothing as vs; vs.smooth_selected_mesh()",
         annotation="選択メッシュをHC方式でスムージングし、閉メッシュの体積を補正します",
     )
+    cmds.menuItem(
+        parent=mesh_menu,
+        label="Volume Smooth Brush",
+        command="import ywta.mesh.volume_smoothing as vs; vs.activate_volume_smooth_brush()",
+        annotation="ビューポート上をドラッグして局所スムージングします（半径はobject-space）",
+    )
 
     return mesh_menu

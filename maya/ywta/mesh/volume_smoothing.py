@@ -2,15 +2,18 @@
 
 メッシュの取得、選択範囲と境界の固定、Undo/RedoはMaya側で行い、数値計算は
 ``blender/modules/ywta_mesh_smoothing/binding.py`` の共有ctypesバインディングに
-委譲する。ブラシやMPxContextはこのモジュールの責務に含めない。
+委譲する。通常コマンドと、API 2.0のMPxContextブラシを提供する。
 """
 
 from __future__ import annotations
 
 import sys
+import heapq
+import math
 from pathlib import Path
 
 import maya.api.OpenMaya as om2
+import maya.api.OpenMayaUI as omui
 import maya.cmds as cmds
 
 
@@ -23,6 +26,12 @@ from ywta_mesh_smoothing import binding as _binding  # noqa: E402
 
 
 COMMAND_NAME = "ywtaVolumeSmooth"
+BRUSH_CONTEXT_NAME = "ywtaVolumeSmoothBrushContext"
+BRUSH_CONTEXT_INSTANCE_NAME = "ywtaVolumeSmoothBrushContext1"
+BRUSH_COMMIT_COMMAND_NAME = "ywtaVolumeSmoothBrushCommit"
+
+# Context解放と通常MPxCommandの間で1ストロークだけ受け渡す。
+_PENDING_BRUSH_TRANSACTION = None
 DEFAULT_MODE = _binding.MODE_HC
 DEFAULT_ITERATIONS = 5
 DEFAULT_STRENGTH = 0.3
@@ -237,3 +246,404 @@ class VolumeSmoothingCommand(om2.MPxCommand):
         """保存済みの元座標へ戻す。"""
         if self._shape_path is not None and self._before is not None:
             _apply_points(self._shape_path, self._before)
+
+
+def _geodesic_brush_weights(
+    positions,
+    edges,
+    faces,
+    face_index,
+    hit_point,
+    radius,
+    strength,
+    selected,
+    boundary_vertices,
+):
+    """ヒット面から辺距離を辿り、滑らかなブラシ重みを生成する。
+
+    距離と半径はobject-spaceで扱う。これにより、変換済みメッシュでもrayと
+    ジオデシック計算の空間が一致する。
+    """
+    vertex_count = len(positions) // 3
+    weights = [0.0] * vertex_count
+    if radius <= 0.0 or face_index < 0 or face_index >= len(faces):
+        return weights
+    hit_face = faces[face_index]
+    if not hit_face:
+        return weights
+
+    points = [positions[index * 3 : index * 3 + 3] for index in range(vertex_count)]
+    adjacency = [[] for _ in range(vertex_count)]
+    for first, second in zip(edges[::2], edges[1::2]):
+        delta = [points[first][axis] - points[second][axis] for axis in range(3)]
+        length = math.sqrt(sum(value * value for value in delta))
+        adjacency[first].append((second, length))
+        adjacency[second].append((first, length))
+
+    distances = [math.inf] * vertex_count
+    queue = []
+    for vertex in hit_face:
+        delta = [points[vertex][axis] - hit_point[axis] for axis in range(3)]
+        distance = math.sqrt(sum(value * value for value in delta))
+        if distance <= radius:
+            distances[vertex] = distance
+            heapq.heappush(queue, (distance, vertex))
+
+    while queue:
+        distance, vertex = heapq.heappop(queue)
+        if distance != distances[vertex] or distance > radius:
+            continue
+        for neighbour, edge_length in adjacency[vertex]:
+            candidate = distance + edge_length
+            if candidate <= radius and candidate < distances[neighbour]:
+                distances[neighbour] = candidate
+                heapq.heappush(queue, (candidate, neighbour))
+
+    for vertex, distance in enumerate(distances):
+        if vertex not in selected or vertex in boundary_vertices or distance > radius:
+            continue
+        normalized = max(0.0, min(1.0, 1.0 - distance / radius))
+        falloff = normalized * normalized * (3.0 - 2.0 * normalized)
+        weights[vertex] = max(0.0, min(1.0, strength * falloff))
+    return weights
+
+
+def _mesh_faces(mesh_fn):
+    """MFnMeshの面頂点配列をPythonの面リストへ変換する。"""
+    face_counts, face_indices = mesh_fn.getVertices()
+    faces = []
+    offset = 0
+    for raw_count in face_counts:
+        count = int(raw_count)
+        faces.append([int(index) for index in face_indices[offset : offset + count]])
+        offset += count
+    return faces
+
+
+class _BrushSessionCache:
+    """ストローク中にトポロジーとRustセッションを再利用するキャッシュ。"""
+
+    def __init__(self, shape_path, positions, edges, triangles, faces, closed, selected):
+        self.shape_path = shape_path
+        self.positions = list(positions)
+        self.edges = list(edges)
+        self.triangles = list(triangles)
+        self.faces = list(faces)
+        self.closed = bool(closed)
+        self.selected = set(selected)
+        self.vertex_count = len(self.positions) // 3
+        self.face_count = len(self.faces)
+        self.session = _binding.MeshSmoothingSession(
+            self.vertex_count,
+            self.edges,
+            self.triangles if self.closed else None,
+        )
+        self.boundary_vertices = self._find_boundaries()
+
+    def is_valid(self):
+        """頂点数・面数がキャッシュ構築時から変わっていないか確認する。"""
+        try:
+            selection = om2.MSelectionList()
+            selection.add(self.shape_path)
+            dag_path = selection.getDagPath(0)
+            mesh_fn = om2.MFnMesh(dag_path)
+            return mesh_fn.numVertices == self.vertex_count and mesh_fn.numPolygons == self.face_count
+        except (RuntimeError, TypeError):
+            return False
+
+    @classmethod
+    def from_active_selection(cls):
+        """現在の選択からキャッシュを構築する。"""
+        shape_path, positions, edges, triangles, closed, selected = _shape_selection()
+        selection = om2.MSelectionList()
+        selection.add(shape_path)
+        dag_path = selection.getDagPath(0)
+        faces = _mesh_faces(om2.MFnMesh(dag_path))
+        return cls(shape_path, positions, edges, triangles, faces, closed, selected)
+
+    def _find_boundaries(self):
+        """開境界と選択範囲境界の頂点を返す。"""
+        vertex_count = len(self.positions) // 3
+        neighbours = [set() for _ in range(vertex_count)]
+        edge_faces = {}
+        for face in self.faces:
+            for first, second in zip(face, face[1:] + face[:1]):
+                edge = (min(first, second), max(first, second))
+                edge_faces[edge] = edge_faces.get(edge, 0) + 1
+                neighbours[first].add(second)
+                neighbours[second].add(first)
+        boundary = {vertex for edge, count in edge_faces.items() if count != 2 for vertex in edge}
+        boundary.update(
+            vertex for vertex in self.selected if any(neighbour not in self.selected for neighbour in neighbours[vertex])
+        )
+        return boundary
+
+    def apply_dab(self, hit_point, face_index, radius, strength):
+        """1 dabを適用し、座標が変化したかを返す。"""
+        weights = _geodesic_brush_weights(
+            self.positions,
+            self.edges,
+            self.faces,
+            face_index,
+            hit_point,
+            radius,
+            strength,
+            self.selected,
+            self.boundary_vertices,
+        )
+        if not any(weight > 0.0 for weight in weights):
+            return False
+        modes = [
+            _binding.CONSTRAINT_FIXED
+            if vertex in self.boundary_vertices or weights[vertex] <= 0.0
+            else _binding.CONSTRAINT_FREE
+            for vertex in range(len(weights))
+        ]
+        result = self.session.apply(
+            self.positions,
+            mode=_binding.MODE_HC,
+            iterations=1,
+            strength=0.3,
+            volume_correction=1.0 if self.closed else 0.0,
+            vertex_weights=weights,
+            constraint_modes=modes,
+        )
+        changed = result != self.positions
+        self.positions = list(result)
+        return changed
+
+
+class _BrushStrokeTransaction:
+    """テストフックとcommit MPxCommandが共有する1ストローク状態。"""
+
+    def __init__(self, shape_path, before, after):
+        self.shape_path = shape_path
+        self.before = list(before)
+        self.after = list(after)
+
+    def undoIt(self):
+        """1ストローク分の変更を元へ戻す。"""
+        _apply_points(self.shape_path, self.before)
+
+    def redoIt(self):
+        """1ストローク分の変更を再適用する。"""
+        _apply_points(self.shape_path, self.after)
+
+
+class VolumeSmoothingBrushCommitCommand(om2.MPxCommand):
+    """保留中の1ストロークをMayaのUndo managerへ登録するコマンド。"""
+
+    def __init__(self):
+        super().__init__()
+        self._transaction = None
+
+    @staticmethod
+    def creator():
+        """Mayaプラグイン用creator。"""
+        return VolumeSmoothingBrushCommitCommand()
+
+    def doIt(self, _args):
+        """保留トランザクションを取り込み、座標は既に適用済みとして確定する。"""
+        global _PENDING_BRUSH_TRANSACTION
+        self._transaction = _PENDING_BRUSH_TRANSACTION
+        _PENDING_BRUSH_TRANSACTION = None
+        if self._transaction is None:
+            raise RuntimeError("確定待ちのブラシストロークがありません")
+
+    def isUndoable(self):
+        """1ストロークをMayaのUndoキューへ登録する。"""
+        return True
+
+    def undoIt(self):
+        """ストローク全体をUndoする。"""
+        if self._transaction:
+            self._transaction.undoIt()
+
+    def redoIt(self):
+        """ストローク全体をRedoする。"""
+        if self._transaction:
+            self._transaction.redoIt()
+
+
+class VolumeSmoothingBrushContext(omui.MPxContext):
+    """object-spaceのジオデシックfalloffブラシ。"""
+
+    def __init__(self):
+        super().__init__()
+        self.setTitleString("YWTA Volume Smooth Brush")
+        self.setHelpString("LMB drag: smooth | radius is object-space")
+        self.radius = 0.25
+        self.strength = 0.5
+        self._cache = None
+        self._stroke_before = None
+        self._stroke_active = False
+        self._stroke_changed = False
+
+    def toolOnSetup(self, _event):
+        """ツール有効化時にトポロジーとRustセッションを一度だけ構築する。"""
+        try:
+            self._cache = _BrushSessionCache.from_active_selection()
+        except (RuntimeError, ValueError, FileNotFoundError) as error:
+            om2.MGlobal.displayError(str(error))
+            self._cache = None
+
+    def toolOffCleanup(self):
+        """ツール終了時に未確定ストロークを破棄する。"""
+        if self._stroke_active and self._cache:
+            self._restore_stroke()
+        self._cache = None
+        self._stroke_active = False
+        self._stroke_changed = False
+
+    def _event_hit(self, event):
+        """イベント位置からobject-spaceのメッシュ交点と面番号を得る。"""
+        if self._cache is None:
+            return None
+        position = event.position
+        view = omui.M3dView.active3dView()
+        selection = om2.MSelectionList()
+        selection.add(self._cache.shape_path)
+        dag_path = selection.getDagPath(0)
+        origin = om2.MPoint()
+        direction = om2.MVector()
+        view.viewToObjectSpace(
+            int(position[0]),
+            int(position[1]),
+            dag_path.inclusiveMatrixInverse(),
+            origin,
+            direction,
+        )
+        mesh_fn = om2.MFnMesh(dag_path)
+        hit = mesh_fn.closestIntersection(
+            origin,
+            direction,
+            om2.MSpace.kObject,
+            1.0e6,
+            False,
+        )
+        if hit is None:
+            return None
+        return hit[0], int(hit[2])
+
+    def _begin_stroke(self):
+        if self._cache is None:
+            return False
+        self._stroke_before = list(self._cache.positions)
+        self._stroke_active = True
+        self._stroke_changed = False
+        return True
+
+    def _apply_hit(self, hit):
+        if not hit or self._cache is None:
+            return
+        if not self._cache.is_valid():
+            self.abortAction()
+            self._cache = None
+            om2.MGlobal.displayError("メッシュトポロジーが変化したためブラシを終了しました")
+            return
+        try:
+            changed = self._cache.apply_dab(hit[0], hit[1], self.radius, self.strength)
+        except Exception as error:
+            self._restore_stroke()
+            self._stroke_active = False
+            self._stroke_before = None
+            self._stroke_changed = False
+            om2.MGlobal.displayError(f"ブラシストロークを取り消しました: {error}")
+            return
+        if changed:
+            _apply_points(self._cache.shape_path, self._cache.positions)
+            self._stroke_changed = True
+
+    def _finish_stroke(self, journal=True):
+        if not self._stroke_active or self._cache is None:
+            return None
+        transaction = None
+        if self._stroke_changed:
+            transaction = _BrushStrokeTransaction(
+                self._cache.shape_path,
+                self._stroke_before,
+                self._cache.positions,
+            )
+            if journal:
+                global _PENDING_BRUSH_TRANSACTION
+                _PENDING_BRUSH_TRANSACTION = transaction
+                try:
+                    cmds.ywtaVolumeSmoothBrushCommit()
+                except Exception:
+                    _PENDING_BRUSH_TRANSACTION = None
+                    transaction.undoIt()
+                    raise
+        self._stroke_active = False
+        self._stroke_before = None
+        self._stroke_changed = False
+        return transaction
+
+    def doPress(self, event, _draw_manager, _frame_context):
+        """左ボタン押下でストロークを開始する。"""
+        if event.mouseButton() != omui.MEvent.kLeftMouse or not self._begin_stroke():
+            return
+        self._apply_hit(self._event_hit(event))
+
+    def doDrag(self, event, _draw_manager, _frame_context):
+        """ドラッグ中は同じsessionへdabを追加する。"""
+        if self._stroke_active:
+            self._apply_hit(self._event_hit(event))
+
+    def doRelease(self, event, _draw_manager, _frame_context):
+        """左ボタン解放で1ストロークを1Undoへ確定する。"""
+        if event.mouseButton() == omui.MEvent.kLeftMouse:
+            self._apply_hit(self._event_hit(event))
+            try:
+                self._finish_stroke()
+            except Exception as error:
+                om2.MGlobal.displayError(f"ブラシストロークの確定に失敗しました: {error}")
+
+    def abortAction(self):
+        """Esc等で未確定ストロークを取り消す。"""
+        if self._stroke_active and self._cache:
+            self._restore_stroke()
+        self._stroke_active = False
+        self._stroke_before = None
+        self._stroke_changed = False
+
+    def apply_stroke_for_test(self, hit_points, face_index=0):
+        """GUIイベントを合成できない環境向けの1ストロークテストフック。"""
+        if not self._begin_stroke():
+            return None
+        for hit_point in hit_points:
+            self._apply_hit((hit_point, face_index))
+        return self._finish_stroke(journal=True)
+
+    def _restore_stroke(self):
+        """現在ストロークの開始座標へ戻し、過去の確定結果は保持する。"""
+        if self._cache is not None and self._stroke_before is not None:
+            self._cache.positions = list(self._stroke_before)
+            _apply_points(self._cache.shape_path, self._stroke_before)
+
+
+class VolumeSmoothingBrushContextCommand(omui.MPxContextCommand):
+    """ブラシコンテキストの登録コマンド。"""
+
+    @staticmethod
+    def creator():
+        """Mayaプラグイン用creator。"""
+        return VolumeSmoothingBrushContextCommand()
+
+    def makeObj(self):
+        """API 2.0コンテキストを生成する。"""
+        return VolumeSmoothingBrushContext()
+
+
+def activate_volume_smooth_brush(*_args):
+    """プラグインをロードし、ブラシコンテキストをアクティブ化する。"""
+    try:
+        loaded = bool(cmds.pluginInfo("ywtaVolumeSmoothing.py", query=True, loaded=True))
+    except (AttributeError, RuntimeError):
+        loaded = False
+    if not loaded:
+        plugin_path = _REPOSITORY_ROOT / "maya" / "plug-ins" / "ywtaVolumeSmoothing.py"
+        cmds.loadPlugin(str(plugin_path), quiet=True)
+    if not cmds.contextInfo(BRUSH_CONTEXT_INSTANCE_NAME, exists=True):
+        cmds.ywtaVolumeSmoothBrushContext(BRUSH_CONTEXT_INSTANCE_NAME)
+    cmds.setToolTo(BRUSH_CONTEXT_INSTANCE_NAME)
+    return BRUSH_CONTEXT_INSTANCE_NAME

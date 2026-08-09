@@ -5,9 +5,16 @@ from __future__ import annotations
 import math
 from pathlib import Path
 import unittest
+from unittest import mock
 
 import maya.api.OpenMaya as om2
 import maya.cmds as cmds
+
+from ywta.mesh.volume_smoothing import (
+    VolumeSmoothingBrushContext,
+    _geodesic_brush_weights,
+    activate_volume_smooth_brush,
+)
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -137,6 +144,94 @@ class TestVolumeSmoothing(unittest.TestCase):
         cmds.unloadPlugin("ywtaVolumeSmoothing.py")
         self.assertFalse(cmds.pluginInfo("ywtaVolumeSmoothing.py", query=True, loaded=True))
         cmds.loadPlugin(str(_PLUGIN_PATH), quiet=True)
+
+    def test_brush_geodesic_falloff_and_selection_mask(self):
+        """純粋なfalloff計算が辺距離と選択範囲を守る。"""
+        positions = [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            2.0,
+            0.0,
+            0.0,
+            3.0,
+            0.0,
+            0.0,
+        ]
+        weights = _geodesic_brush_weights(
+            positions,
+            [0, 1, 1, 2, 2, 3],
+            [[0, 1, 2]],
+            0,
+            (0.0, 0.0, 0.0),
+            2.5,
+            1.0,
+            {0, 1, 2},
+            {2},
+        )
+        self.assertGreater(weights[0], weights[1])
+        self.assertEqual(weights[2], 0.0)
+        self.assertEqual(weights[3], 0.0)
+
+    def test_brush_context_registration_and_no_hit_cancel(self):
+        """コンテキスト登録を確認し、hitなしではUndo状態を作らない。"""
+        self.assertTrue(hasattr(cmds, "ywtaVolumeSmoothBrushContext"))
+        mesh, _ = cmds.polyCube(name="brushContextCube")
+        cmds.select(mesh, replace=True)
+        context = VolumeSmoothingBrushContext()
+        context.toolOnSetup(None)
+        self.assertIsNone(context.apply_stroke_for_test([], face_index=0))
+
+    def test_activate_brush_creates_named_context_and_selects_it(self):
+        """GUIで使うhelperが名前付きcontextを生成して切り替える。"""
+        with (
+            mock.patch.object(cmds, "contextInfo", return_value=False),
+            mock.patch.object(cmds, "ywtaVolumeSmoothBrushContext") as create_context,
+            mock.patch.object(cmds, "setToolTo") as set_tool,
+        ):
+            context_name = activate_volume_smooth_brush()
+
+        self.assertEqual(context_name, "ywtaVolumeSmoothBrushContext1")
+        create_context.assert_called_once_with(context_name)
+        set_tool.assert_called_once_with(context_name)
+
+    def test_brush_session_reuse_and_single_stroke_transaction(self):
+        """複数dabが1 sessionを再利用し、テストフックで1トランザクションになる。"""
+        mesh, _ = cmds.polyCube(name="brushCube")
+        shape = cmds.listRelatives(mesh, shapes=True, noIntermediate=True)[0]
+        cmds.xform(f"{shape}.vtx[0]", objectSpace=True, translation=(-0.8, -0.5, 0.7))
+        cmds.select(mesh, replace=True)
+        context = VolumeSmoothingBrushContext()
+        context.radius = 2.0
+        context.toolOnSetup(None)
+        self.assertIsNotNone(context._cache)
+        session = context._cache.session
+        before = _points(shape)
+        before_volume = _signed_volume(shape)
+
+        transaction = context.apply_stroke_for_test(
+            [(0.5, 0.5, 0.5), (0.45, 0.45, 0.45)],
+            face_index=0,
+        )
+        after = _points(shape)
+        self.assertIsNotNone(transaction)
+        self.assertIs(context._cache.session, session)
+        self.assertNotEqual(before, after)
+        self.assertTrue(math.isclose(before_volume, _signed_volume(shape), rel_tol=1.0e-7, abs_tol=1.0e-8))
+
+        # 既に確定したstrokeを残したまま、次のstrokeをキャンセルする。
+        committed = _points(shape)
+        self.assertTrue(context._begin_stroke())
+        context._apply_hit(((0.4, 0.4, 0.4), 0))
+        context.abortAction()
+        self.assertEqual(_points(shape), committed)
+        cmds.undo()
+        self.assertEqual(_points(shape), before)
+        cmds.redo()
+        self.assertEqual(_points(shape), committed)
 
 
 if __name__ == "__main__":
