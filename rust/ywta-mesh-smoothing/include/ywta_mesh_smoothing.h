@@ -14,8 +14,10 @@
 #define YWTA_MESH_SMOOTHING_ABI_VERSION UINT32_C(1)
 #define YWTA_MESH_SMOOTHING_MODE_UNIFORM_LAPLACIAN UINT32_C(0)
 #define YWTA_MESH_SMOOTHING_MODE_TAUBIN UINT32_C(1)
+#define YWTA_MESH_SMOOTHING_MODE_HC UINT32_C(2)
 #define YWTA_MESH_SMOOTHING_OPTIONS_V1_SIZE UINT32_C(24)
 #define YWTA_MESH_SMOOTHING_OPTIONS_TAUBIN_SIZE UINT32_C(32)
+#define YWTA_MESH_SMOOTHING_OPTIONS_HC_SIZE UINT32_C(48)
 #define YWTA_MESH_SMOOTHING_REQUEST_V1_SIZE UINT32_C(64)
 #define YWTA_MESH_SMOOTHING_REQUEST_CONSTRAINTS_SIZE UINT32_C(88)
 
@@ -46,6 +48,8 @@ typedef struct ywta_mesh_smoothing_options {
     uint32_t iterations;
     double strength;
     double taubin_mu;
+    double hc_alpha;
+    double hc_beta;
 } ywta_mesh_smoothing_options;
 
 typedef struct ywta_mesh_smoothing_request {
@@ -74,9 +78,12 @@ extern "C" {
  * positions/edges は要素数が0ならNULLを許可するが、非0ならNULL不可かつ自然アライメント
  * が必要。outputもoutput_lenが非0ならNULL不可で自然アライメントが必要（0ならNULL可）。
  * options/requestはNULL不可で、abi_version=1。Uniformモードは旧V1の24 bytes
- * optionsを引き続き受理する。Taubinモードは32 bytes以上を必要とする。
+ * optionsを引き続き受理する。Taubinモードは32 bytes以上、HCモードは48 bytes以上を
+ * 必要とする。
  * strength は [0,1] の有限値、iterations は1以上。Taubinではstrengthをλ、
  * taubin_muをμとして使い、0 < λ < -μ <= 1を要求する。
+ * HCではstrengthをLaplacian前進係数、hc_alphaを元位置の参照率、hc_betaを
+ * 自頂点の補正率として使い、いずれも[0,1]を要求する。
  * requestの旧V1 64 bytesも受理する。88 bytes版ではvertex_weights（頂点ごとの
  * [0,1]）とconstraint_modesを省略可能。方向を使うモードでは
  * constraint_directionsに正規化前のxyzを頂点数分渡す。SurfacePlaneは方向の
