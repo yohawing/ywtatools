@@ -12,6 +12,8 @@ import unittest
 ABI_VERSION = 1
 MODE_UNIFORM_LAPLACIAN = 0
 MODE_TAUBIN = 1
+CONSTRAINT_FIXED = 1
+CONSTRAINT_RAIL_LINE = 3
 STATUS_OK = 0
 STATUS_ABI_MISMATCH = 2
 STATUS_NULL_POINTER = 3
@@ -46,7 +48,14 @@ class Request(ctypes.Structure):
         ("output", ctypes.POINTER(ctypes.c_double)),
         ("output_len", ctypes.c_uint64),
         ("options", ctypes.POINTER(Options)),
+        ("vertex_weights", ctypes.POINTER(ctypes.c_double)),
+        ("constraint_modes", ctypes.POINTER(ctypes.c_uint32)),
+        ("constraint_directions", ctypes.POINTER(ctypes.c_double)),
     ]
+
+
+class LegacyRequestV1(ctypes.Structure):
+    _fields_ = Request._fields_[:-3]
 
 
 def _dll_path() -> Path:
@@ -93,6 +102,9 @@ class MeshSmoothingFfiTests(unittest.TestCase):
             output_pointer,
             len(output) if output else 0,
             ctypes.pointer(options),
+            None,
+            None,
+            None,
         )
 
     def test_success_and_rejected_inputs(self) -> None:
@@ -144,6 +156,8 @@ class MeshSmoothingFfiTests(unittest.TestCase):
     def test_taubin_and_legacy_uniform_options(self) -> None:
         self.assertEqual(ctypes.sizeof(LegacyOptionsV1), 24)
         self.assertEqual(ctypes.sizeof(Options), 32)
+        self.assertEqual(ctypes.sizeof(LegacyRequestV1), 64)
+        self.assertEqual(ctypes.sizeof(Request), 88)
 
         positions = (ctypes.c_double * 6)(0.0, 0.0, 0.0, 2.0, 0.0, 0.0)
         edges = (ctypes.c_uint32 * 2)(0, 1)
@@ -166,6 +180,31 @@ class MeshSmoothingFfiTests(unittest.TestCase):
         self.assertEqual(self.library.ywta_mesh_smoothing_apply(ctypes.byref(request)), STATUS_OK)
         self.assertAlmostEqual(output[0], 0.6)
         self.assertAlmostEqual(output[3], 1.4)
+
+        legacy_request = LegacyRequestV1(*[getattr(request, name) for name, _ in LegacyRequestV1._fields_])
+        legacy_request.struct_size = ctypes.sizeof(LegacyRequestV1)
+        legacy_request.options = ctypes.cast(ctypes.pointer(legacy_options), ctypes.POINTER(Options))
+        self.assertEqual(
+            self.library.ywta_mesh_smoothing_apply(
+                ctypes.cast(ctypes.pointer(legacy_request), ctypes.POINTER(Request))
+            ),
+            STATUS_OK,
+        )
+
+        constrained_positions = (ctypes.c_double * 6)(0.0, 0.0, 0.0, 2.0, 2.0, 0.0)
+        weights = (ctypes.c_double * 2)(0.5, 1.0)
+        modes = (ctypes.c_uint32 * 2)(CONSTRAINT_RAIL_LINE, CONSTRAINT_FIXED)
+        directions = (ctypes.c_double * 6)(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+        current_options = self._options()
+        request = self._request(constrained_positions, edges, output, current_options)
+        request.vertex_weights = weights
+        request.constraint_modes = modes
+        request.constraint_directions = directions
+        self.assertEqual(self.library.ywta_mesh_smoothing_apply(ctypes.byref(request)), STATUS_OK)
+        self.assertAlmostEqual(output[0], 0.3)
+        self.assertAlmostEqual(output[1], 0.0)
+        self.assertAlmostEqual(output[3], 2.0)
+        self.assertAlmostEqual(output[4], 2.0)
 
 
 if __name__ == "__main__":

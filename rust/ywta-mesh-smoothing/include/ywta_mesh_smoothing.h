@@ -16,6 +16,14 @@
 #define YWTA_MESH_SMOOTHING_MODE_TAUBIN UINT32_C(1)
 #define YWTA_MESH_SMOOTHING_OPTIONS_V1_SIZE UINT32_C(24)
 #define YWTA_MESH_SMOOTHING_OPTIONS_TAUBIN_SIZE UINT32_C(32)
+#define YWTA_MESH_SMOOTHING_REQUEST_V1_SIZE UINT32_C(64)
+#define YWTA_MESH_SMOOTHING_REQUEST_CONSTRAINTS_SIZE UINT32_C(88)
+
+#define YWTA_MESH_SMOOTHING_CONSTRAINT_FREE UINT32_C(0)
+#define YWTA_MESH_SMOOTHING_CONSTRAINT_FIXED UINT32_C(1)
+#define YWTA_MESH_SMOOTHING_CONSTRAINT_SURFACE_PLANE UINT32_C(2)
+#define YWTA_MESH_SMOOTHING_CONSTRAINT_RAIL_LINE UINT32_C(3)
+#define YWTA_MESH_SMOOTHING_CONSTRAINT_NORMAL_ONLY UINT32_C(4)
 
 /* 成功およびエラーコード。 */
 #define YWTA_MESH_SMOOTHING_STATUS_OK INT32_C(0)
@@ -29,6 +37,7 @@
 #define YWTA_MESH_SMOOTHING_STATUS_OVERLAPPING_BUFFERS INT32_C(8)
 #define YWTA_MESH_SMOOTHING_STATUS_UNSUPPORTED_MODE INT32_C(9)
 #define YWTA_MESH_SMOOTHING_STATUS_PANIC INT32_C(10)
+#define YWTA_MESH_SMOOTHING_STATUS_INVALID_CONSTRAINT INT32_C(11)
 
 typedef struct ywta_mesh_smoothing_options {
     uint32_t abi_version;
@@ -49,6 +58,9 @@ typedef struct ywta_mesh_smoothing_request {
     double *output;
     uint64_t output_len;
     const ywta_mesh_smoothing_options *options;
+    const double *vertex_weights;
+    const uint32_t *constraint_modes;
+    const double *constraint_directions;
 } ywta_mesh_smoothing_request;
 
 #ifdef __cplusplus
@@ -65,6 +77,11 @@ extern "C" {
  * optionsを引き続き受理する。Taubinモードは32 bytes以上を必要とする。
  * strength は [0,1] の有限値、iterations は1以上。Taubinではstrengthをλ、
  * taubin_muをμとして使い、0 < λ < -μ <= 1を要求する。
+ * requestの旧V1 64 bytesも受理する。88 bytes版ではvertex_weights（頂点ごとの
+ * [0,1]）とconstraint_modesを省略可能。方向を使うモードでは
+ * constraint_directionsに正規化前のxyzを頂点数分渡す。SurfacePlaneは方向の
+ * 直交平面、RailLine/NormalOnlyは方向軸へ変位を射影する。各入力は呼び出し中だけ
+ * 参照し、outputと重ならないこと。
  * 成功時も出力の解放は呼び出し側が行う。戻り値は上記STATUS_*のいずれか。
  */
 YWTA_MESH_SMOOTHING_API int32_t ywta_mesh_smoothing_apply(

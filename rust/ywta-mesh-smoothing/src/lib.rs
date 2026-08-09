@@ -2,6 +2,7 @@
 //!
 //! 均一ラプラシアンと、収縮を抑えるTaubinのλ/μ二段パスを提供する。
 //! Taubinは体積損失を減らす比較基準であり、厳密な体積保持ではない。
+//! 頂点ウェイトと方向射影制約はDCC固有の境界・レール判定から独立している。
 
 use std::mem::{align_of, size_of};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -13,6 +14,12 @@ pub const ABI_VERSION: u32 = 1;
 pub const MODE_UNIFORM_LAPLACIAN: u32 = 0;
 /// 収縮を抑えるTaubinのλ/μ二段パス。
 pub const MODE_TAUBIN: u32 = 1;
+
+pub const CONSTRAINT_FREE: u32 = 0;
+pub const CONSTRAINT_FIXED: u32 = 1;
+pub const CONSTRAINT_SURFACE_PLANE: u32 = 2;
+pub const CONSTRAINT_RAIL_LINE: u32 = 3;
+pub const CONSTRAINT_NORMAL_ONLY: u32 = 4;
 
 /// ABI関数が返すステータスコード。
 pub const STATUS_OK: i32 = 0;
@@ -26,6 +33,7 @@ pub const STATUS_NON_FINITE: i32 = 7;
 pub const STATUS_OVERLAPPING_BUFFERS: i32 = 8;
 pub const STATUS_UNSUPPORTED_MODE: i32 = 9;
 pub const STATUS_PANIC: i32 = 10;
+pub const STATUS_INVALID_CONSTRAINT: i32 = 11;
 
 /// スムージングのオプション。
 ///
@@ -63,6 +71,13 @@ struct SmoothingOptions {
     taubin_mu: f64,
 }
 
+#[derive(Clone, Copy, Default)]
+struct ConstraintInputs<'a> {
+    weights: Option<&'a [f64]>,
+    modes: Option<&'a [u32]>,
+    directions: Option<&'a [f64]>,
+}
+
 /// スムージング要求。ポインタは呼び出し中だけ参照し、DLLは保持しない。
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -76,6 +91,23 @@ pub struct YwtaMeshSmoothingRequest {
     pub output: *mut f64,
     pub output_len: u64,
     pub options: *const YwtaMeshSmoothingOptions,
+    pub vertex_weights: *const f64,
+    pub constraint_modes: *const u32,
+    pub constraint_directions: *const f64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct YwtaMeshSmoothingRequestV1 {
+    abi_version: u32,
+    struct_size: u32,
+    positions: *const f64,
+    position_count: u64,
+    edges: *const u32,
+    edge_count: u64,
+    output: *mut f64,
+    output_len: u64,
+    options: *const YwtaMeshSmoothingOptions,
 }
 
 #[repr(C)]
@@ -88,6 +120,7 @@ struct AbiHeader {
 const OPTIONS_SIZE: usize = size_of::<YwtaMeshSmoothingOptions>();
 const OPTIONS_V1_SIZE: usize = size_of::<YwtaMeshSmoothingOptionsV1>();
 const REQUEST_SIZE: usize = size_of::<YwtaMeshSmoothingRequest>();
+const REQUEST_V1_SIZE: usize = size_of::<YwtaMeshSmoothingRequestV1>();
 
 /// C ABIのスムージングエントリポイント。
 ///
@@ -116,13 +149,23 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
 
     // 構造体全体を読む前に、先頭ヘッダのサイズとバージョンを検証する。
     let header = ptr::read(request.cast::<AbiHeader>());
-    if header.abi_version != ABI_VERSION || (header.struct_size as usize) < REQUEST_SIZE {
+    if header.abi_version != ABI_VERSION || (header.struct_size as usize) < REQUEST_V1_SIZE {
         return STATUS_ABI_MISMATCH;
     }
     if !is_aligned(request, align_of::<YwtaMeshSmoothingRequest>()) {
         return STATUS_INVALID_ARGUMENT;
     }
-    let request_value = ptr::read(request);
+    let request_value = ptr::read(request.cast::<YwtaMeshSmoothingRequestV1>());
+    let (vertex_weights_ptr, constraint_modes_ptr, constraint_directions_ptr) =
+        if (header.struct_size as usize) >= REQUEST_SIZE {
+            (
+                ptr::addr_of!((*request).vertex_weights).read(),
+                ptr::addr_of!((*request).constraint_modes).read(),
+                ptr::addr_of!((*request).constraint_directions).read(),
+            )
+        } else {
+            (ptr::null(), ptr::null(), ptr::null())
+        };
 
     if request_value.options.is_null()
         || !is_aligned(request_value.options, align_of::<AbiHeader>())
@@ -225,12 +268,27 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
     {
         return STATUS_NULL_POINTER;
     }
+    if (!vertex_weights_ptr.is_null() && !is_aligned(vertex_weights_ptr, align_of::<f64>()))
+        || (!constraint_modes_ptr.is_null() && !is_aligned(constraint_modes_ptr, align_of::<u32>()))
+        || (!constraint_directions_ptr.is_null()
+            && !is_aligned(constraint_directions_ptr, align_of::<f64>()))
+    {
+        return STATUS_INVALID_ARGUMENT;
+    }
 
     let positions_bytes = match position_len.checked_mul(size_of::<f64>()) {
         Some(value) => value,
         None => return STATUS_LENGTH_OVERFLOW,
     };
     let edges_bytes = match edge_len.checked_mul(size_of::<u32>()) {
+        Some(value) => value,
+        None => return STATUS_LENGTH_OVERFLOW,
+    };
+    let weights_bytes = match position_count.checked_mul(size_of::<f64>()) {
+        Some(value) => value,
+        None => return STATUS_LENGTH_OVERFLOW,
+    };
+    let modes_bytes = match position_count.checked_mul(size_of::<u32>()) {
         Some(value) => value,
         None => return STATUS_LENGTH_OVERFLOW,
     };
@@ -242,6 +300,33 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
     ) || ranges_overlap(
         request_value.edges.cast::<u8>(),
         edges_bytes,
+        request_value.output.cast::<u8>(),
+        output_capacity_bytes,
+    ) || ranges_overlap(
+        vertex_weights_ptr.cast::<u8>(),
+        if vertex_weights_ptr.is_null() {
+            0
+        } else {
+            weights_bytes
+        },
+        request_value.output.cast::<u8>(),
+        output_capacity_bytes,
+    ) || ranges_overlap(
+        constraint_modes_ptr.cast::<u8>(),
+        if constraint_modes_ptr.is_null() {
+            0
+        } else {
+            modes_bytes
+        },
+        request_value.output.cast::<u8>(),
+        output_capacity_bytes,
+    ) || ranges_overlap(
+        constraint_directions_ptr.cast::<u8>(),
+        if constraint_directions_ptr.is_null() {
+            0
+        } else {
+            positions_bytes
+        },
         request_value.output.cast::<u8>(),
         output_capacity_bytes,
     ) {
@@ -259,6 +344,30 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
     } else {
         std::slice::from_raw_parts(request_value.edges, edge_len)
     };
+    let vertex_weights = if vertex_weights_ptr.is_null() {
+        None
+    } else {
+        Some(std::slice::from_raw_parts(
+            vertex_weights_ptr,
+            position_count,
+        ))
+    };
+    let constraint_modes = if constraint_modes_ptr.is_null() {
+        None
+    } else {
+        Some(std::slice::from_raw_parts(
+            constraint_modes_ptr,
+            position_count,
+        ))
+    };
+    let constraint_directions = if constraint_directions_ptr.is_null() {
+        None
+    } else {
+        Some(std::slice::from_raw_parts(
+            constraint_directions_ptr,
+            position_len,
+        ))
+    };
     if positions.iter().any(|value| !value.is_finite()) {
         return STATUS_NON_FINITE;
     }
@@ -267,8 +376,41 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
             return STATUS_EDGE_INDEX_OUT_OF_RANGE;
         }
     }
+    if let Some(weights) = vertex_weights {
+        if weights
+            .iter()
+            .any(|weight| !weight.is_finite() || !(0.0..=1.0).contains(weight))
+        {
+            return STATUS_INVALID_CONSTRAINT;
+        }
+    }
+    if let Some(modes) = constraint_modes {
+        for (vertex, &mode) in modes.iter().enumerate() {
+            if mode > CONSTRAINT_NORMAL_ONLY {
+                return STATUS_INVALID_CONSTRAINT;
+            }
+            if matches!(
+                mode,
+                CONSTRAINT_SURFACE_PLANE | CONSTRAINT_RAIL_LINE | CONSTRAINT_NORMAL_ONLY
+            ) {
+                let Some(directions) = constraint_directions else {
+                    return STATUS_NULL_POINTER;
+                };
+                let direction = &directions[vertex * 3..vertex * 3 + 3];
+                let length_squared = direction.iter().map(|value| value * value).sum::<f64>();
+                if !length_squared.is_finite() || length_squared <= f64::EPSILON {
+                    return STATUS_INVALID_CONSTRAINT;
+                }
+            }
+        }
+    }
+    let constraints = ConstraintInputs {
+        weights: vertex_weights,
+        modes: constraint_modes,
+        directions: constraint_directions,
+    };
 
-    let smoothed = match smooth_positions(positions, position_count, edges, options) {
+    let smoothed = match smooth_positions(positions, position_count, edges, options, constraints) {
         Ok(value) => value,
         Err(status) => return status,
     };
@@ -303,6 +445,7 @@ fn smooth_positions(
     position_count: usize,
     edges: &[u32],
     options: SmoothingOptions,
+    constraints: ConstraintInputs<'_>,
 ) -> Result<Vec<f64>, i32> {
     let mut current = positions.to_vec();
     let mut sums = vec![[0.0_f64; 3]; position_count];
@@ -314,6 +457,7 @@ fn smooth_positions(
             position_count,
             edges,
             options.strength,
+            constraints,
             &mut sums,
             &mut counts,
         )?;
@@ -323,6 +467,7 @@ fn smooth_positions(
                 position_count,
                 edges,
                 options.taubin_mu,
+                constraints,
                 &mut sums,
                 &mut counts,
             )?;
@@ -336,6 +481,7 @@ fn laplacian_pass(
     position_count: usize,
     edges: &[u32],
     factor: f64,
+    constraints: ConstraintInputs<'_>,
     sums: &mut [[f64; 3]],
     counts: &mut [u32],
 ) -> Result<Vec<f64>, i32> {
@@ -366,13 +512,67 @@ fn laplacian_pass(
         for (axis, sum) in sums[vertex].iter().enumerate() {
             let index = vertex * 3 + axis;
             let average = *sum * inverse_count;
-            next[index] += factor * (average - current[index]);
+            let mut delta = [0.0; 3];
+            delta[axis] = factor * (average - current[index]);
+            next[index] += delta[axis];
+        }
+        let start = vertex * 3;
+        let raw_delta = [
+            next[start] - current[start],
+            next[start + 1] - current[start + 1],
+            next[start + 2] - current[start + 2],
+        ];
+        let projected = project_displacement(vertex, raw_delta, constraints);
+        let weight = constraints.weights.map_or(1.0, |weights| weights[vertex]);
+        for axis in 0..3 {
+            next[start + axis] = current[start + axis] + projected[axis] * weight;
         }
     }
     if next.iter().any(|value| !value.is_finite()) {
         return Err(STATUS_NON_FINITE);
     }
     Ok(next)
+}
+
+fn project_displacement(
+    vertex: usize,
+    displacement: [f64; 3],
+    constraints: ConstraintInputs<'_>,
+) -> [f64; 3] {
+    let mode = constraints
+        .modes
+        .map_or(CONSTRAINT_FREE, |modes| modes[vertex]);
+    if mode == CONSTRAINT_FREE {
+        return displacement;
+    }
+    if mode == CONSTRAINT_FIXED {
+        return [0.0; 3];
+    }
+
+    let directions = constraints.directions.expect("方向制約はFFI境界で検証済み");
+    let direction = &directions[vertex * 3..vertex * 3 + 3];
+    let inverse_length = 1.0
+        / direction
+            .iter()
+            .map(|value| value * value)
+            .sum::<f64>()
+            .sqrt();
+    let unit = [
+        direction[0] * inverse_length,
+        direction[1] * inverse_length,
+        direction[2] * inverse_length,
+    ];
+    let along = displacement[0] * unit[0] + displacement[1] * unit[1] + displacement[2] * unit[2];
+    let directional = [unit[0] * along, unit[1] * along, unit[2] * along];
+    if mode == CONSTRAINT_SURFACE_PLANE {
+        [
+            displacement[0] - directional[0],
+            displacement[1] - directional[1],
+            displacement[2] - directional[2],
+        ]
+    } else {
+        directional
+    }
 }
 
 #[cfg(test)]
@@ -423,7 +623,8 @@ mod tests {
             std::mem::offset_of!(YwtaMeshSmoothingOptions, taubin_mu),
             24
         );
-        assert_eq!(size_of::<YwtaMeshSmoothingRequest>(), 64);
+        assert_eq!(size_of::<YwtaMeshSmoothingRequestV1>(), 64);
+        assert_eq!(size_of::<YwtaMeshSmoothingRequest>(), 88);
         assert_eq!(align_of::<YwtaMeshSmoothingRequest>(), 8);
         assert_eq!(
             std::mem::offset_of!(YwtaMeshSmoothingRequest, abi_version),
@@ -449,6 +650,18 @@ mod tests {
             48
         );
         assert_eq!(std::mem::offset_of!(YwtaMeshSmoothingRequest, options), 56);
+        assert_eq!(
+            std::mem::offset_of!(YwtaMeshSmoothingRequest, vertex_weights),
+            64
+        );
+        assert_eq!(
+            std::mem::offset_of!(YwtaMeshSmoothingRequest, constraint_modes),
+            72
+        );
+        assert_eq!(
+            std::mem::offset_of!(YwtaMeshSmoothingRequest, constraint_directions),
+            80
+        );
     }
 
     fn request<'a>(
@@ -467,6 +680,9 @@ mod tests {
             output: output.as_mut_ptr(),
             output_len: output.len() as u64,
             options,
+            vertex_weights: ptr::null(),
+            constraint_modes: ptr::null(),
+            constraint_directions: ptr::null(),
         }
     }
 
@@ -479,6 +695,7 @@ mod tests {
             2,
             &edges,
             internal_options(MODE_UNIFORM_LAPLACIAN),
+            ConstraintInputs::default(),
         )
         .expect("成功");
         assert_eq!(result, [0.6, 0.0, 0.0, 1.4, 0.0, 0.0]);
@@ -502,10 +719,17 @@ mod tests {
             6,
             &edges,
             internal_options(MODE_UNIFORM_LAPLACIAN),
+            ConstraintInputs::default(),
         )
         .expect("Uniform成功");
-        let taubin = smooth_positions(&positions, 6, &edges, internal_options(MODE_TAUBIN))
-            .expect("Taubin成功");
+        let taubin = smooth_positions(
+            &positions,
+            6,
+            &edges,
+            internal_options(MODE_TAUBIN),
+            ConstraintInputs::default(),
+        )
+        .expect("Taubin成功");
         let original_volume = signed_volume(&positions, &triangles).abs();
         let uniform_error = (signed_volume(&uniform, &triangles).abs() - original_volume).abs();
         let taubin_error = (signed_volume(&taubin, &triangles).abs() - original_volume).abs();
@@ -518,6 +742,53 @@ mod tests {
         for component in centroid {
             assert!(component.abs() < 1.0e-12);
         }
+    }
+
+    #[test]
+    fn constraint_projection_and_vertex_weights_are_reusable() {
+        let displacement = [1.0, 2.0, 3.0];
+        let directions = [0.0, 2.0, 0.0];
+        let plane_mode = [CONSTRAINT_SURFACE_PLANE];
+        let rail_mode = [CONSTRAINT_RAIL_LINE];
+        let normal_mode = [CONSTRAINT_NORMAL_ONLY];
+        let inputs = |modes| ConstraintInputs {
+            weights: None,
+            modes: Some(modes),
+            directions: Some(&directions),
+        };
+        assert_eq!(
+            project_displacement(0, displacement, inputs(&plane_mode)),
+            [1.0, 0.0, 3.0]
+        );
+        assert_eq!(
+            project_displacement(0, displacement, inputs(&rail_mode)),
+            [0.0, 2.0, 0.0]
+        );
+        assert_eq!(
+            project_displacement(0, displacement, inputs(&normal_mode)),
+            [0.0, 2.0, 0.0]
+        );
+
+        let positions = [0.0, 0.0, 0.0, 2.0, 2.0, 0.0];
+        let edges = [0, 1];
+        let weights = [0.5, 1.0];
+        let modes = [CONSTRAINT_FREE, CONSTRAINT_FIXED];
+        let result = smooth_positions(
+            &positions,
+            2,
+            &edges,
+            SmoothingOptions {
+                strength: 0.5,
+                ..internal_options(MODE_UNIFORM_LAPLACIAN)
+            },
+            ConstraintInputs {
+                weights: Some(&weights),
+                modes: Some(&modes),
+                directions: None,
+            },
+        )
+        .expect("制約付きスムージング成功");
+        assert_eq!(result, [0.5, 0.5, 0.0, 2.0, 2.0, 0.0]);
     }
 
     fn signed_volume(positions: &[f64], triangles: &[u32]) -> f64 {
@@ -583,6 +854,9 @@ mod tests {
             output_len: 6,
             options: (&legacy_options as *const YwtaMeshSmoothingOptionsV1)
                 .cast::<YwtaMeshSmoothingOptions>(),
+            vertex_weights: ptr::null(),
+            constraint_modes: ptr::null(),
+            constraint_directions: ptr::null(),
         };
 
         assert_eq!(unsafe { ywta_mesh_smoothing_apply(&req) }, STATUS_OK);
@@ -625,6 +899,44 @@ mod tests {
     }
 
     #[test]
+    fn ffi_rejects_invalid_constraint_inputs() {
+        let positions = [0.0; 3];
+        let edges: [u32; 0] = [];
+        let mut output = [0.0; 3];
+        let opts = options();
+
+        let invalid_weights = [1.5];
+        let mut req = request(&positions, &edges, &mut output, &opts);
+        req.vertex_weights = invalid_weights.as_ptr();
+        assert_eq!(
+            unsafe { ywta_mesh_smoothing_apply(&req) },
+            STATUS_INVALID_CONSTRAINT
+        );
+
+        let invalid_modes = [99];
+        req.vertex_weights = ptr::null();
+        req.constraint_modes = invalid_modes.as_ptr();
+        assert_eq!(
+            unsafe { ywta_mesh_smoothing_apply(&req) },
+            STATUS_INVALID_CONSTRAINT
+        );
+
+        let directional_mode = [CONSTRAINT_RAIL_LINE];
+        req.constraint_modes = directional_mode.as_ptr();
+        assert_eq!(
+            unsafe { ywta_mesh_smoothing_apply(&req) },
+            STATUS_NULL_POINTER
+        );
+
+        let zero_direction = [0.0; 3];
+        req.constraint_directions = zero_direction.as_ptr();
+        assert_eq!(
+            unsafe { ywta_mesh_smoothing_apply(&req) },
+            STATUS_INVALID_CONSTRAINT
+        );
+    }
+
+    #[test]
     fn ffi_rejects_null_pointer_with_nonzero_length() {
         let edges: [u32; 0] = [];
         let mut output = [0.0; 3];
@@ -639,6 +951,9 @@ mod tests {
             output: output.as_mut_ptr(),
             output_len: 3,
             options: &opts,
+            vertex_weights: ptr::null(),
+            constraint_modes: ptr::null(),
+            constraint_directions: ptr::null(),
         };
         assert_eq!(
             unsafe { ywta_mesh_smoothing_apply(&req) },
@@ -695,6 +1010,9 @@ mod tests {
             output: positions.as_mut_ptr(),
             output_len: 3,
             options: &opts,
+            vertex_weights: ptr::null(),
+            constraint_modes: ptr::null(),
+            constraint_directions: ptr::null(),
         };
         assert_eq!(
             unsafe { ywta_mesh_smoothing_apply(&req) },
