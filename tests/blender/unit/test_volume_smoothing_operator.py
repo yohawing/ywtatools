@@ -4,7 +4,9 @@ import os
 import sys
 import unittest
 
+import bmesh
 import bpy
+from mathutils import Matrix, Vector
 
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -17,6 +19,7 @@ for path in (
         sys.path.insert(0, path)
 
 import volume_smoothing  # noqa: E402
+from ywta_mesh_smoothing import binding  # noqa: E402
 
 
 def _signed_volume(vertices, triangles):
@@ -95,6 +98,59 @@ class VolumeSmoothingOperatorTests(unittest.TestCase):
             preserve_boundary=False,
         )
         self.assertEqual(result, {"FINISHED"})
+
+    def test_geodesic_falloff_does_not_reach_disconnected_back_surface(self):
+        bm = bmesh.new()
+        try:
+            front = [bm.verts.new(coordinate) for coordinate in [(0, 0, 0), (1, 0, 0), (0, 1, 0)]]
+            back = [bm.verts.new(coordinate) for coordinate in [(0, 0, 0.01), (1, 0, 0.01), (0, 1, 0.01)]]
+            bm.faces.new(front)
+            bm.faces.new(back)
+            bm.verts.ensure_lookup_table()
+            bm.faces.ensure_lookup_table()
+            bm.verts.index_update()
+            bm.faces.index_update()
+
+            weights = volume_smoothing._geodesic_brush_weights(
+                bm,
+                0,
+                Vector((0.2, 0.2, 0.0)),
+                Matrix.Identity(4),
+                radius=2.0,
+                strength=1.0,
+                use_selection_mask=False,
+                preserve_boundary=False,
+            )
+
+            self.assertTrue(any(weight > 0.0 for weight in weights[:3]))
+            self.assertEqual(weights[3:], [0.0, 0.0, 0.0])
+        finally:
+            bm.free()
+
+    def test_brush_solver_moves_weighted_vertices_through_release_dll(self):
+        bm = bmesh.new()
+        try:
+            vertices = [bm.verts.new(coordinate) for coordinate in [(0, 0, 0), (2, 0, 0), (0, 1, 0.4)]]
+            bm.faces.new(vertices)
+            bm.verts.ensure_lookup_table()
+            bm.verts.index_update()
+            bm.normal_update()
+            edges = [index for edge in bm.edges for index in (edge.verts[0].index, edge.verts[1].index)]
+            session = binding.MeshSmoothingSession(3, edges)
+            before = [vertex.co.copy() for vertex in bm.verts]
+
+            volume_smoothing._apply_brush_solver(
+                bm,
+                session,
+                [1.0, 0.5, 0.25],
+                "SMOOTH",
+                False,
+                1,
+            )
+
+            self.assertTrue(any((after.co - start).length > 1.0e-6 for after, start in zip(bm.verts, before)))
+        finally:
+            bm.free()
 
 
 if __name__ == "__main__":
