@@ -18,8 +18,10 @@
 #define YWTA_MESH_SMOOTHING_OPTIONS_V1_SIZE UINT32_C(24)
 #define YWTA_MESH_SMOOTHING_OPTIONS_TAUBIN_SIZE UINT32_C(32)
 #define YWTA_MESH_SMOOTHING_OPTIONS_HC_SIZE UINT32_C(48)
+#define YWTA_MESH_SMOOTHING_OPTIONS_VOLUME_SIZE UINT32_C(56)
 #define YWTA_MESH_SMOOTHING_REQUEST_V1_SIZE UINT32_C(64)
 #define YWTA_MESH_SMOOTHING_REQUEST_CONSTRAINTS_SIZE UINT32_C(88)
+#define YWTA_MESH_SMOOTHING_REQUEST_TRIANGLES_SIZE UINT32_C(104)
 
 #define YWTA_MESH_SMOOTHING_CONSTRAINT_FREE UINT32_C(0)
 #define YWTA_MESH_SMOOTHING_CONSTRAINT_FIXED UINT32_C(1)
@@ -40,6 +42,8 @@
 #define YWTA_MESH_SMOOTHING_STATUS_UNSUPPORTED_MODE INT32_C(9)
 #define YWTA_MESH_SMOOTHING_STATUS_PANIC INT32_C(10)
 #define YWTA_MESH_SMOOTHING_STATUS_INVALID_CONSTRAINT INT32_C(11)
+#define YWTA_MESH_SMOOTHING_STATUS_INVALID_TOPOLOGY INT32_C(12)
+#define YWTA_MESH_SMOOTHING_STATUS_VOLUME_CORRECTION_FAILED INT32_C(13)
 
 typedef struct ywta_mesh_smoothing_options {
     uint32_t abi_version;
@@ -50,6 +54,7 @@ typedef struct ywta_mesh_smoothing_options {
     double taubin_mu;
     double hc_alpha;
     double hc_beta;
+    double volume_correction;
 } ywta_mesh_smoothing_options;
 
 typedef struct ywta_mesh_smoothing_request {
@@ -65,6 +70,8 @@ typedef struct ywta_mesh_smoothing_request {
     const double *vertex_weights;
     const uint32_t *constraint_modes;
     const double *constraint_directions;
+    const uint32_t *triangles;
+    uint64_t triangle_count;
 } ywta_mesh_smoothing_request;
 
 #ifdef __cplusplus
@@ -84,6 +91,9 @@ extern "C" {
  * taubin_muをμとして使い、0 < λ < -μ <= 1を要求する。
  * HCではstrengthをLaplacian前進係数、hc_alphaを元位置の参照率、hc_betaを
  * 自頂点の補正率として使い、いずれも[0,1]を要求する。
+ * 56 bytes版optionsのvolume_correctionは[0,1]。0より大きい場合は104 bytes版
+ * requestのtrianglesをtriangle_count個渡す。三角形は閉じた2-manifoldで辺方向が
+ * 整合している必要がある。補正は初期符号付き体積を目標に体積勾配方向へ移動する。
  * requestの旧V1 64 bytesも受理する。88 bytes版ではvertex_weights（頂点ごとの
  * [0,1]）とconstraint_modesを省略可能。方向を使うモードでは
  * constraint_directionsに正規化前のxyzを頂点数分渡す。SurfacePlaneは方向の

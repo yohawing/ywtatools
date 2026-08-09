@@ -1,9 +1,11 @@
 //! Maya/Blenderから共有するメッシュスムージング基盤。
 //!
 //! 均一ラプラシアンと、収縮を抑えるTaubinおよびHCを提供する。
-//! Taubinは体積損失を減らす比較基準であり、厳密な体積保持ではない。
+//! 閉じた三角形メッシュでは、体積勾配による符号付き体積補正を合成できる。
+//! TaubinとHCだけでは厳密な体積保持にならない。
 //! 頂点ウェイトと方向射影制約はDCC固有の境界・レール判定から独立している。
 
+use std::collections::HashMap;
 use std::mem::{align_of, size_of};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
@@ -36,11 +38,14 @@ pub const STATUS_OVERLAPPING_BUFFERS: i32 = 8;
 pub const STATUS_UNSUPPORTED_MODE: i32 = 9;
 pub const STATUS_PANIC: i32 = 10;
 pub const STATUS_INVALID_CONSTRAINT: i32 = 11;
+pub const STATUS_INVALID_TOPOLOGY: i32 = 12;
+pub const STATUS_VOLUME_CORRECTION_FAILED: i32 = 13;
 
 /// スムージングのオプション。
 ///
 /// UniformモードはABI v1の先頭24 bytesでも受理する。Taubinモードは
-/// `taubin_mu`まで含む32 bytes、HCモードは現在の48 bytesを必要とする。
+/// `taubin_mu`まで含む32 bytes、HCモードは48 bytesを必要とする。
+/// 現在の56 bytesでは閉メッシュ用の体積補正率を追加指定できる。
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct YwtaMeshSmoothingOptions {
@@ -52,6 +57,7 @@ pub struct YwtaMeshSmoothingOptions {
     pub taubin_mu: f64,
     pub hc_alpha: f64,
     pub hc_beta: f64,
+    pub volume_correction: f64,
 }
 
 /// ABI v1で公開したオプション先頭部分。
@@ -79,6 +85,20 @@ struct YwtaMeshSmoothingOptionsTaubin {
     taubin_mu: f64,
 }
 
+/// HC追加時に公開したオプション先頭部分。
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct YwtaMeshSmoothingOptionsHc {
+    abi_version: u32,
+    struct_size: u32,
+    mode: u32,
+    iterations: u32,
+    strength: f64,
+    taubin_mu: f64,
+    hc_alpha: f64,
+    hc_beta: f64,
+}
+
 #[derive(Clone, Copy)]
 struct SmoothingOptions {
     mode: u32,
@@ -87,6 +107,7 @@ struct SmoothingOptions {
     taubin_mu: f64,
     hc_alpha: f64,
     hc_beta: f64,
+    volume_correction: f64,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -112,6 +133,8 @@ pub struct YwtaMeshSmoothingRequest {
     pub vertex_weights: *const f64,
     pub constraint_modes: *const u32,
     pub constraint_directions: *const f64,
+    pub triangles: *const u32,
+    pub triangle_count: u64,
 }
 
 #[repr(C)]
@@ -128,6 +151,24 @@ struct YwtaMeshSmoothingRequestV1 {
     options: *const YwtaMeshSmoothingOptions,
 }
 
+/// 頂点制約追加時に公開した要求先頭部分。
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct YwtaMeshSmoothingRequestConstraints {
+    abi_version: u32,
+    struct_size: u32,
+    positions: *const f64,
+    position_count: u64,
+    edges: *const u32,
+    edge_count: u64,
+    output: *mut f64,
+    output_len: u64,
+    options: *const YwtaMeshSmoothingOptions,
+    vertex_weights: *const f64,
+    constraint_modes: *const u32,
+    constraint_directions: *const f64,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct AbiHeader {
@@ -138,8 +179,10 @@ struct AbiHeader {
 const OPTIONS_SIZE: usize = size_of::<YwtaMeshSmoothingOptions>();
 const OPTIONS_V1_SIZE: usize = size_of::<YwtaMeshSmoothingOptionsV1>();
 const OPTIONS_TAUBIN_SIZE: usize = size_of::<YwtaMeshSmoothingOptionsTaubin>();
+const OPTIONS_HC_SIZE: usize = size_of::<YwtaMeshSmoothingOptionsHc>();
 const REQUEST_SIZE: usize = size_of::<YwtaMeshSmoothingRequest>();
 const REQUEST_V1_SIZE: usize = size_of::<YwtaMeshSmoothingRequestV1>();
+const REQUEST_CONSTRAINTS_SIZE: usize = size_of::<YwtaMeshSmoothingRequestConstraints>();
 
 /// C ABIのスムージングエントリポイント。
 ///
@@ -176,7 +219,7 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
     }
     let request_value = ptr::read(request.cast::<YwtaMeshSmoothingRequestV1>());
     let (vertex_weights_ptr, constraint_modes_ptr, constraint_directions_ptr) =
-        if (header.struct_size as usize) >= REQUEST_SIZE {
+        if (header.struct_size as usize) >= REQUEST_CONSTRAINTS_SIZE {
             (
                 ptr::addr_of!((*request).vertex_weights).read(),
                 ptr::addr_of!((*request).constraint_modes).read(),
@@ -185,6 +228,14 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
         } else {
             (ptr::null(), ptr::null(), ptr::null())
         };
+    let (triangles_ptr, triangle_count_u64) = if (header.struct_size as usize) >= REQUEST_SIZE {
+        (
+            ptr::addr_of!((*request).triangles).read(),
+            ptr::addr_of!((*request).triangle_count).read(),
+        )
+    } else {
+        (ptr::null(), 0)
+    };
 
     if request_value.options.is_null()
         || !is_aligned(request_value.options, align_of::<AbiHeader>())
@@ -240,7 +291,7 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
         0.0
     };
     let (hc_alpha, hc_beta) = if options_v1.mode == MODE_HC {
-        if (options_header.struct_size as usize) < OPTIONS_SIZE {
+        if (options_header.struct_size as usize) < OPTIONS_HC_SIZE {
             return STATUS_ABI_MISMATCH;
         }
         let alpha = ptr::addr_of!((*request_value.options).hc_alpha).read();
@@ -255,6 +306,21 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
     } else {
         (0.0, 0.0)
     };
+    let volume_correction = if (options_header.struct_size as usize) >= OPTIONS_SIZE {
+        let value = ptr::addr_of!((*request_value.options).volume_correction).read();
+        if !value.is_finite() {
+            return STATUS_NON_FINITE;
+        }
+        if !(0.0..=1.0).contains(&value) {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        value
+    } else {
+        0.0
+    };
+    if volume_correction > 0.0 && (header.struct_size as usize) < REQUEST_SIZE {
+        return STATUS_ABI_MISMATCH;
+    }
     let options = SmoothingOptions {
         mode: options_v1.mode,
         iterations: options_v1.iterations,
@@ -262,6 +328,7 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
         taubin_mu,
         hc_alpha,
         hc_beta,
+        volume_correction,
     };
 
     let position_count = match usize::try_from(request_value.position_count) {
@@ -272,11 +339,19 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
         Ok(value) => value,
         Err(_) => return STATUS_LENGTH_OVERFLOW,
     };
+    let triangle_count = match usize::try_from(triangle_count_u64) {
+        Ok(value) => value,
+        Err(_) => return STATUS_LENGTH_OVERFLOW,
+    };
     let position_len = match position_count.checked_mul(3) {
         Some(value) => value,
         None => return STATUS_LENGTH_OVERFLOW,
     };
     let edge_len = match edge_count.checked_mul(2) {
+        Some(value) => value,
+        None => return STATUS_LENGTH_OVERFLOW,
+    };
+    let triangle_len = match triangle_count.checked_mul(3) {
         Some(value) => value,
         None => return STATUS_LENGTH_OVERFLOW,
     };
@@ -308,6 +383,19 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
     {
         return STATUS_NULL_POINTER;
     }
+    if options.volume_correction > 0.0
+        && (triangle_len == 0
+            || triangles_ptr.is_null()
+            || !is_aligned(triangles_ptr, align_of::<u32>()))
+    {
+        return if triangle_len == 0 {
+            STATUS_INVALID_TOPOLOGY
+        } else if triangles_ptr.is_null() {
+            STATUS_NULL_POINTER
+        } else {
+            STATUS_INVALID_ARGUMENT
+        };
+    }
     if (!vertex_weights_ptr.is_null() && !is_aligned(vertex_weights_ptr, align_of::<f64>()))
         || (!constraint_modes_ptr.is_null() && !is_aligned(constraint_modes_ptr, align_of::<u32>()))
         || (!constraint_directions_ptr.is_null()
@@ -321,6 +409,10 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
         None => return STATUS_LENGTH_OVERFLOW,
     };
     let edges_bytes = match edge_len.checked_mul(size_of::<u32>()) {
+        Some(value) => value,
+        None => return STATUS_LENGTH_OVERFLOW,
+    };
+    let triangles_bytes = match triangle_len.checked_mul(size_of::<u32>()) {
         Some(value) => value,
         None => return STATUS_LENGTH_OVERFLOW,
     };
@@ -369,6 +461,15 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
         },
         request_value.output.cast::<u8>(),
         output_capacity_bytes,
+    ) || ranges_overlap(
+        triangles_ptr.cast::<u8>(),
+        if options.volume_correction > 0.0 {
+            triangles_bytes
+        } else {
+            0
+        },
+        request_value.output.cast::<u8>(),
+        output_capacity_bytes,
     ) {
         return STATUS_OVERLAPPING_BUFFERS;
     }
@@ -383,6 +484,11 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
         &[][..]
     } else {
         std::slice::from_raw_parts(request_value.edges, edge_len)
+    };
+    let triangles = if options.volume_correction == 0.0 {
+        &[][..]
+    } else {
+        std::slice::from_raw_parts(triangles_ptr, triangle_len)
     };
     let vertex_weights = if vertex_weights_ptr.is_null() {
         None
@@ -414,6 +520,11 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
     for &index in edges {
         if (index as usize) >= position_count {
             return STATUS_EDGE_INDEX_OUT_OF_RANGE;
+        }
+    }
+    for &index in triangles {
+        if (index as usize) >= position_count {
+            return STATUS_INVALID_TOPOLOGY;
         }
     }
     if let Some(weights) = vertex_weights {
@@ -450,7 +561,18 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
         directions: constraint_directions,
     };
 
-    let smoothed = match smooth_positions(positions, position_count, edges, options, constraints) {
+    if options.volume_correction > 0.0 && !is_closed_oriented_triangle_mesh(triangles) {
+        return STATUS_INVALID_TOPOLOGY;
+    }
+
+    let smoothed = match smooth_positions(
+        positions,
+        position_count,
+        edges,
+        triangles,
+        options,
+        constraints,
+    ) {
         Ok(value) => value,
         Err(status) => return status,
     };
@@ -484,6 +606,7 @@ fn smooth_positions(
     positions: &[f64],
     position_count: usize,
     edges: &[u32],
+    triangles: &[u32],
     options: SmoothingOptions,
     constraints: ConstraintInputs<'_>,
 ) -> Result<Vec<f64>, i32> {
@@ -526,7 +649,172 @@ fn smooth_positions(
             )?;
         }
     }
+    if options.volume_correction > 0.0 {
+        current = correct_signed_volume(
+            positions,
+            &current,
+            triangles,
+            options.volume_correction,
+            constraints,
+        )?;
+    }
     Ok(current)
+}
+
+fn is_closed_oriented_triangle_mesh(triangles: &[u32]) -> bool {
+    if triangles.is_empty() || !triangles.len().is_multiple_of(3) {
+        return false;
+    }
+    let mut edge_uses = HashMap::<(u32, u32), (u32, i32)>::new();
+    if edge_uses.try_reserve(triangles.len()).is_err() {
+        return false;
+    }
+    for triangle in triangles.chunks_exact(3) {
+        if triangle[0] == triangle[1] || triangle[1] == triangle[2] || triangle[2] == triangle[0] {
+            return false;
+        }
+        for edge in [
+            (triangle[0], triangle[1]),
+            (triangle[1], triangle[2]),
+            (triangle[2], triangle[0]),
+        ] {
+            let key = if edge.0 < edge.1 {
+                edge
+            } else {
+                (edge.1, edge.0)
+            };
+            let orientation = if edge == key { 1 } else { -1 };
+            let entry = edge_uses.entry(key).or_default();
+            entry.0 = entry.0.saturating_add(1);
+            entry.1 += orientation;
+        }
+    }
+    edge_uses
+        .values()
+        .all(|&(count, orientation)| count == 2 && orientation == 0)
+}
+
+fn signed_volume(positions: &[f64], triangles: &[u32]) -> Result<f64, i32> {
+    let mut volume = 0.0;
+    for triangle in triangles.chunks_exact(3) {
+        let a = &positions[triangle[0] as usize * 3..triangle[0] as usize * 3 + 3];
+        let b = &positions[triangle[1] as usize * 3..triangle[1] as usize * 3 + 3];
+        let c = &positions[triangle[2] as usize * 3..triangle[2] as usize * 3 + 3];
+        let contribution = dot3(a, cross3(b, c)) / 6.0;
+        volume += contribution;
+        if !contribution.is_finite() || !volume.is_finite() {
+            return Err(STATUS_NON_FINITE);
+        }
+    }
+    Ok(volume)
+}
+
+fn volume_gradients(
+    positions: &[f64],
+    triangles: &[u32],
+    gradients: &mut [[f64; 3]],
+) -> Result<(), i32> {
+    gradients.fill([0.0; 3]);
+    for triangle in triangles.chunks_exact(3) {
+        let vertices = [
+            triangle[0] as usize,
+            triangle[1] as usize,
+            triangle[2] as usize,
+        ];
+        let a = &positions[vertices[0] * 3..vertices[0] * 3 + 3];
+        let b = &positions[vertices[1] * 3..vertices[1] * 3 + 3];
+        let c = &positions[vertices[2] * 3..vertices[2] * 3 + 3];
+        for (vertex, gradient) in [
+            (vertices[0], cross3(b, c)),
+            (vertices[1], cross3(c, a)),
+            (vertices[2], cross3(a, b)),
+        ] {
+            for axis in 0..3 {
+                gradients[vertex][axis] += gradient[axis] / 6.0;
+            }
+        }
+    }
+    if gradients.iter().flatten().any(|value| !value.is_finite()) {
+        return Err(STATUS_NON_FINITE);
+    }
+    Ok(())
+}
+
+fn correct_signed_volume(
+    original: &[f64],
+    smoothed: &[f64],
+    triangles: &[u32],
+    correction: f64,
+    constraints: ConstraintInputs<'_>,
+) -> Result<Vec<f64>, i32> {
+    let target = signed_volume(original, triangles)?;
+    let initial = signed_volume(smoothed, triangles)?;
+    let tolerance = target.abs() * 1.0e-10 + f64::MIN_POSITIVE;
+    if target.abs() <= f64::MIN_POSITIVE {
+        return Err(STATUS_INVALID_TOPOLOGY);
+    }
+    let goal = initial + correction * (target - initial);
+    let mut current = smoothed.to_vec();
+    let mut gradients = vec![[0.0; 3]; current.len() / 3];
+    let mut directions = vec![[0.0; 3]; current.len() / 3];
+
+    for _ in 0..16 {
+        let volume = signed_volume(&current, triangles)?;
+        let error = goal - volume;
+        if error.abs() <= tolerance {
+            return Ok(current);
+        }
+        volume_gradients(&current, triangles, &mut gradients)?;
+        let mut derivative = 0.0;
+        for vertex in 0..gradients.len() {
+            let projected = project_displacement(vertex, gradients[vertex], constraints);
+            let weight = constraints.weights.map_or(1.0, |weights| weights[vertex]);
+            directions[vertex] = projected.map(|value| value * weight);
+            derivative += gradients[vertex]
+                .iter()
+                .zip(directions[vertex])
+                .map(|(gradient, direction)| gradient * direction)
+                .sum::<f64>();
+        }
+        if !derivative.is_finite() || derivative <= 0.0 {
+            return Err(STATUS_VOLUME_CORRECTION_FAILED);
+        }
+
+        let step = error / derivative;
+        let mut accepted = None;
+        let mut scale = 1.0;
+        for _ in 0..16 {
+            let mut candidate = current.clone();
+            for (vertex, direction) in directions.iter().enumerate() {
+                for axis in 0..3 {
+                    candidate[vertex * 3 + axis] += step * scale * direction[axis];
+                }
+            }
+            let candidate_error = (goal - signed_volume(&candidate, triangles)?).abs();
+            if candidate_error < error.abs() {
+                accepted = Some(candidate);
+                break;
+            }
+            scale *= 0.5;
+        }
+        let Some(candidate) = accepted else {
+            return Err(STATUS_VOLUME_CORRECTION_FAILED);
+        };
+        current = candidate;
+    }
+    Err(STATUS_VOLUME_CORRECTION_FAILED)
+}
+
+fn cross3(a: &[f64], b: &[f64]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn dot3(a: &[f64], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
 fn hc_iteration(
@@ -717,6 +1005,7 @@ mod tests {
             taubin_mu: -0.34,
             hc_alpha: 0.0,
             hc_beta: 0.5,
+            volume_correction: 0.0,
         }
     }
 
@@ -728,6 +1017,7 @@ mod tests {
             taubin_mu: -0.34,
             hc_alpha: 0.0,
             hc_beta: 0.5,
+            volume_correction: 0.0,
         }
     }
 
@@ -736,7 +1026,8 @@ mod tests {
         // Maya/Blenderの現行Windowsビルドは64-bitを前提とする。
         assert_eq!(size_of::<YwtaMeshSmoothingOptionsV1>(), 24);
         assert_eq!(size_of::<YwtaMeshSmoothingOptionsTaubin>(), 32);
-        assert_eq!(size_of::<YwtaMeshSmoothingOptions>(), 48);
+        assert_eq!(size_of::<YwtaMeshSmoothingOptionsHc>(), 48);
+        assert_eq!(size_of::<YwtaMeshSmoothingOptions>(), 56);
         assert_eq!(align_of::<YwtaMeshSmoothingOptions>(), 8);
         assert_eq!(
             std::mem::offset_of!(YwtaMeshSmoothingOptions, abi_version),
@@ -758,8 +1049,13 @@ mod tests {
         );
         assert_eq!(std::mem::offset_of!(YwtaMeshSmoothingOptions, hc_alpha), 32);
         assert_eq!(std::mem::offset_of!(YwtaMeshSmoothingOptions, hc_beta), 40);
+        assert_eq!(
+            std::mem::offset_of!(YwtaMeshSmoothingOptions, volume_correction),
+            48
+        );
         assert_eq!(size_of::<YwtaMeshSmoothingRequestV1>(), 64);
-        assert_eq!(size_of::<YwtaMeshSmoothingRequest>(), 88);
+        assert_eq!(size_of::<YwtaMeshSmoothingRequestConstraints>(), 88);
+        assert_eq!(size_of::<YwtaMeshSmoothingRequest>(), 104);
         assert_eq!(align_of::<YwtaMeshSmoothingRequest>(), 8);
         assert_eq!(
             std::mem::offset_of!(YwtaMeshSmoothingRequest, abi_version),
@@ -797,6 +1093,14 @@ mod tests {
             std::mem::offset_of!(YwtaMeshSmoothingRequest, constraint_directions),
             80
         );
+        assert_eq!(
+            std::mem::offset_of!(YwtaMeshSmoothingRequest, triangles),
+            88
+        );
+        assert_eq!(
+            std::mem::offset_of!(YwtaMeshSmoothingRequest, triangle_count),
+            96
+        );
     }
 
     fn request<'a>(
@@ -818,6 +1122,8 @@ mod tests {
             vertex_weights: ptr::null(),
             constraint_modes: ptr::null(),
             constraint_directions: ptr::null(),
+            triangles: ptr::null(),
+            triangle_count: 0,
         }
     }
 
@@ -829,6 +1135,7 @@ mod tests {
             &positions,
             2,
             &edges,
+            &[],
             internal_options(MODE_UNIFORM_LAPLACIAN),
             ConstraintInputs::default(),
         )
@@ -853,6 +1160,7 @@ mod tests {
             &positions,
             6,
             &edges,
+            &[],
             internal_options(MODE_UNIFORM_LAPLACIAN),
             ConstraintInputs::default(),
         )
@@ -861,6 +1169,7 @@ mod tests {
             &positions,
             6,
             &edges,
+            &[],
             internal_options(MODE_TAUBIN),
             ConstraintInputs::default(),
         )
@@ -869,14 +1178,17 @@ mod tests {
             &positions,
             6,
             &edges,
+            &[],
             internal_options(MODE_HC),
             ConstraintInputs::default(),
         )
         .expect("HC成功");
-        let original_volume = signed_volume(&positions, &triangles).abs();
-        let uniform_error = (signed_volume(&uniform, &triangles).abs() - original_volume).abs();
-        let taubin_error = (signed_volume(&taubin, &triangles).abs() - original_volume).abs();
-        let hc_error = (signed_volume(&hc, &triangles).abs() - original_volume).abs();
+        let original_volume = signed_volume_oracle(&positions, &triangles).abs();
+        let uniform_error =
+            (signed_volume_oracle(&uniform, &triangles).abs() - original_volume).abs();
+        let taubin_error =
+            (signed_volume_oracle(&taubin, &triangles).abs() - original_volume).abs();
+        let hc_error = (signed_volume_oracle(&hc, &triangles).abs() - original_volume).abs();
 
         assert!(taubin_error < uniform_error);
         assert!(hc_error < uniform_error);
@@ -890,6 +1202,90 @@ mod tests {
     }
 
     #[test]
+    fn signed_volume_correction_matches_independent_oracle() {
+        let positions = [
+            1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+            -1.0,
+        ];
+        let edges = [
+            0, 2, 0, 3, 0, 4, 0, 5, 1, 2, 1, 3, 1, 4, 1, 5, 2, 4, 2, 5, 3, 4, 3, 5,
+        ];
+        let triangles = [
+            4, 0, 2, 4, 2, 1, 4, 1, 3, 4, 3, 0, 5, 2, 0, 5, 1, 2, 5, 3, 1, 5, 0, 3,
+        ];
+        let corrected = smooth_positions(
+            &positions,
+            6,
+            &edges,
+            &triangles,
+            SmoothingOptions {
+                volume_correction: 1.0,
+                ..internal_options(MODE_UNIFORM_LAPLACIAN)
+            },
+            ConstraintInputs::default(),
+        )
+        .expect("体積補正成功");
+
+        let original_volume = signed_volume_oracle(&positions, &triangles);
+        let corrected_volume = signed_volume_oracle(&corrected, &triangles);
+        assert!((corrected_volume - original_volume).abs() < 1.0e-9);
+        for component in centroid(&corrected) {
+            assert!(component.abs() < 1.0e-12);
+        }
+    }
+
+    #[test]
+    fn volume_correction_requires_closed_consistently_oriented_triangles() {
+        assert!(!is_closed_oriented_triangle_mesh(&[0, 1, 2]));
+        assert!(!is_closed_oriented_triangle_mesh(&[
+            0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3,
+        ]));
+        assert!(is_closed_oriented_triangle_mesh(&[
+            0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3,
+        ]));
+    }
+
+    #[test]
+    fn volume_correction_respects_fixed_vertex_on_asymmetric_mesh() {
+        let positions = [
+            2.0, 1.0, -1.0, 4.0, 1.0, -1.0, 2.0, 4.0, -1.0, 2.0, 1.0, 3.0,
+        ];
+        let edges = [0, 1, 0, 2, 0, 3, 1, 2, 1, 3, 2, 3];
+        let triangles = [0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3];
+        let modes = [
+            CONSTRAINT_FIXED,
+            CONSTRAINT_FREE,
+            CONSTRAINT_FREE,
+            CONSTRAINT_FREE,
+        ];
+        let corrected = smooth_positions(
+            &positions,
+            4,
+            &edges,
+            &triangles,
+            SmoothingOptions {
+                strength: 0.2,
+                volume_correction: 1.0,
+                ..internal_options(MODE_UNIFORM_LAPLACIAN)
+            },
+            ConstraintInputs {
+                weights: None,
+                modes: Some(&modes),
+                directions: None,
+            },
+        )
+        .expect("固定点付き体積補正成功");
+
+        assert_eq!(&corrected[..3], &positions[..3]);
+        assert!(
+            (signed_volume_oracle(&corrected, &triangles)
+                - signed_volume_oracle(&positions, &triangles))
+            .abs()
+                < 1.0e-9
+        );
+    }
+
+    #[test]
     fn hc_uses_neighbour_correction_instead_of_simple_blend_back() {
         let positions = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 4.0, 0.0, 0.0];
         let edges = [0, 1, 1, 2];
@@ -897,6 +1293,7 @@ mod tests {
             &positions,
             3,
             &edges,
+            &[],
             internal_options(MODE_HC),
             ConstraintInputs::default(),
         )
@@ -942,6 +1339,7 @@ mod tests {
             &positions,
             2,
             &edges,
+            &[],
             SmoothingOptions {
                 strength: 0.5,
                 ..internal_options(MODE_UNIFORM_LAPLACIAN)
@@ -956,7 +1354,7 @@ mod tests {
         assert_eq!(result, [0.5, 0.5, 0.0, 2.0, 2.0, 0.0]);
     }
 
-    fn signed_volume(positions: &[f64], triangles: &[u32]) -> f64 {
+    fn signed_volume_oracle(positions: &[f64], triangles: &[u32]) -> f64 {
         triangles
             .chunks_exact(3)
             .map(|triangle| {
@@ -1022,6 +1420,8 @@ mod tests {
             vertex_weights: ptr::null(),
             constraint_modes: ptr::null(),
             constraint_directions: ptr::null(),
+            triangles: ptr::null(),
+            triangle_count: 0,
         };
 
         assert_eq!(unsafe { ywta_mesh_smoothing_apply(&req) }, STATUS_OK);
@@ -1167,6 +1567,8 @@ mod tests {
             vertex_weights: ptr::null(),
             constraint_modes: ptr::null(),
             constraint_directions: ptr::null(),
+            triangles: ptr::null(),
+            triangle_count: 0,
         };
         assert_eq!(
             unsafe { ywta_mesh_smoothing_apply(&req) },
@@ -1226,6 +1628,8 @@ mod tests {
             vertex_weights: ptr::null(),
             constraint_modes: ptr::null(),
             constraint_directions: ptr::null(),
+            triangles: ptr::null(),
+            triangle_count: 0,
         };
         assert_eq!(
             unsafe { ywta_mesh_smoothing_apply(&req) },

@@ -21,6 +21,7 @@ STATUS_NULL_POINTER = 3
 STATUS_OUTPUT_TOO_SMALL = 5
 STATUS_EDGE_INDEX_OUT_OF_RANGE = 6
 STATUS_NON_FINITE = 7
+STATUS_INVALID_TOPOLOGY = 12
 
 
 class Options(ctypes.Structure):
@@ -33,6 +34,7 @@ class Options(ctypes.Structure):
         ("taubin_mu", ctypes.c_double),
         ("hc_alpha", ctypes.c_double),
         ("hc_beta", ctypes.c_double),
+        ("volume_correction", ctypes.c_double),
     ]
 
 
@@ -42,6 +44,10 @@ class LegacyOptionsV1(ctypes.Structure):
 
 class TaubinOptionsV2(ctypes.Structure):
     _fields_ = Options._fields_[:6]
+
+
+class HcOptionsV3(ctypes.Structure):
+    _fields_ = Options._fields_[:8]
 
 
 class Request(ctypes.Structure):
@@ -58,11 +64,17 @@ class Request(ctypes.Structure):
         ("vertex_weights", ctypes.POINTER(ctypes.c_double)),
         ("constraint_modes", ctypes.POINTER(ctypes.c_uint32)),
         ("constraint_directions", ctypes.POINTER(ctypes.c_double)),
+        ("triangles", ctypes.POINTER(ctypes.c_uint32)),
+        ("triangle_count", ctypes.c_uint64),
     ]
 
 
 class LegacyRequestV1(ctypes.Structure):
-    _fields_ = Request._fields_[:-3]
+    _fields_ = Request._fields_[:9]
+
+
+class ConstraintRequestV2(ctypes.Structure):
+    _fields_ = Request._fields_[:12]
 
 
 def _dll_path() -> Path:
@@ -77,6 +89,22 @@ def _load_library() -> ctypes.CDLL:
     library.ywta_mesh_smoothing_apply.argtypes = [ctypes.POINTER(Request)]
     library.ywta_mesh_smoothing_apply.restype = ctypes.c_int32
     return library
+
+
+def _signed_volume(positions: list[float], triangles: list[int]) -> float:
+    """Rust実装から独立したスカラー三重積で符号付き体積を測る。"""
+    volume = 0.0
+    for offset in range(0, len(triangles), 3):
+        a_index, b_index, c_index = triangles[offset : offset + 3]
+        ax, ay, az = positions[a_index * 3 : a_index * 3 + 3]
+        bx, by, bz = positions[b_index * 3 : b_index * 3 + 3]
+        cx, cy, cz = positions[c_index * 3 : c_index * 3 + 3]
+        volume += (
+            ax * (by * cz - bz * cy)
+            + ay * (bz * cx - bx * cz)
+            + az * (bx * cy - by * cx)
+        ) / 6.0
+    return volume
 
 
 class MeshSmoothingFfiTests(unittest.TestCase):
@@ -95,6 +123,7 @@ class MeshSmoothingFfiTests(unittest.TestCase):
             -0.34,
             0.0,
             0.5,
+            0.0,
         )
 
     def _request(self, positions, edges, output, options) -> Request:
@@ -114,6 +143,8 @@ class MeshSmoothingFfiTests(unittest.TestCase):
             None,
             None,
             None,
+            None,
+            0,
         )
 
     def test_success_and_rejected_inputs(self) -> None:
@@ -165,9 +196,11 @@ class MeshSmoothingFfiTests(unittest.TestCase):
     def test_taubin_and_legacy_uniform_options(self) -> None:
         self.assertEqual(ctypes.sizeof(LegacyOptionsV1), 24)
         self.assertEqual(ctypes.sizeof(TaubinOptionsV2), 32)
-        self.assertEqual(ctypes.sizeof(Options), 48)
+        self.assertEqual(ctypes.sizeof(HcOptionsV3), 48)
+        self.assertEqual(ctypes.sizeof(Options), 56)
         self.assertEqual(ctypes.sizeof(LegacyRequestV1), 64)
-        self.assertEqual(ctypes.sizeof(Request), 88)
+        self.assertEqual(ctypes.sizeof(ConstraintRequestV2), 88)
+        self.assertEqual(ctypes.sizeof(Request), 104)
 
         positions = (ctypes.c_double * 6)(0.0, 0.0, 0.0, 2.0, 0.0, 0.0)
         edges = (ctypes.c_uint32 * 2)(0, 1)
@@ -184,6 +217,19 @@ class MeshSmoothingFfiTests(unittest.TestCase):
         self.assertEqual(self.library.ywta_mesh_smoothing_apply(ctypes.byref(request)), STATUS_OK)
         self.assertAlmostEqual(output[0], 0.6)
         self.assertAlmostEqual(output[3], 1.4)
+
+        legacy_hc_options = HcOptionsV3(
+            ABI_VERSION,
+            ctypes.sizeof(HcOptionsV3),
+            MODE_HC,
+            1,
+            0.3,
+            -0.34,
+            0.0,
+            0.5,
+        )
+        request.options = ctypes.cast(ctypes.pointer(legacy_hc_options), ctypes.POINTER(Options))
+        self.assertEqual(self.library.ywta_mesh_smoothing_apply(ctypes.byref(request)), STATUS_OK)
 
         short_hc_options = TaubinOptionsV2(
             ABI_VERSION,
@@ -235,6 +281,86 @@ class MeshSmoothingFfiTests(unittest.TestCase):
         self.assertAlmostEqual(output[1], 0.0)
         self.assertAlmostEqual(output[3], 2.0)
         self.assertAlmostEqual(output[4], 2.0)
+
+        constraint_request = ConstraintRequestV2(
+            *[getattr(request, name) for name, _ in ConstraintRequestV2._fields_]
+        )
+        constraint_request.struct_size = ctypes.sizeof(ConstraintRequestV2)
+        self.assertEqual(
+            self.library.ywta_mesh_smoothing_apply(
+                ctypes.cast(ctypes.pointer(constraint_request), ctypes.POINTER(Request))
+            ),
+            STATUS_OK,
+        )
+        self.assertAlmostEqual(output[0], 0.3)
+        self.assertAlmostEqual(output[1], 0.0)
+
+    def test_signed_volume_correction_and_open_mesh_rejection(self) -> None:
+        positions = (ctypes.c_double * 18)(
+            1.0,
+            0.0,
+            0.0,
+            -1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            -1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            -1.0,
+        )
+        edges = (ctypes.c_uint32 * 24)(
+            0, 2, 0, 3, 0, 4, 0, 5, 1, 2, 1, 3, 1, 4, 1, 5, 2, 4, 2, 5, 3, 4, 3, 5
+        )
+        triangle_values = [
+            4, 0, 2, 4, 2, 1, 4, 1, 3, 4, 3, 0, 5, 2, 0, 5, 1, 2, 5, 3, 1, 5, 0, 3
+        ]
+        triangles = (ctypes.c_uint32 * len(triangle_values))(*triangle_values)
+        output = (ctypes.c_double * 18)()
+        options = self._options()
+        options.volume_correction = 1.0
+        request = self._request(positions, edges, output, options)
+        request.triangles = triangles
+        request.triangle_count = len(triangle_values) // 3
+
+        self.assertEqual(self.library.ywta_mesh_smoothing_apply(ctypes.byref(request)), STATUS_OK)
+        self.assertAlmostEqual(
+            _signed_volume(list(output), triangle_values),
+            _signed_volume(list(positions), triangle_values),
+            places=9,
+        )
+
+        request.triangle_count = 1
+        self.assertEqual(
+            self.library.ywta_mesh_smoothing_apply(ctypes.byref(request)),
+            STATUS_INVALID_TOPOLOGY,
+        )
+
+        request.triangles = None
+        request.triangle_count = len(triangle_values) // 3
+        self.assertEqual(
+            self.library.ywta_mesh_smoothing_apply(ctypes.byref(request)),
+            STATUS_NULL_POINTER,
+        )
+
+        request.triangles = triangles
+        short_request = ConstraintRequestV2(
+            *[getattr(request, name) for name, _ in ConstraintRequestV2._fields_]
+        )
+        short_request.struct_size = ctypes.sizeof(ConstraintRequestV2)
+        self.assertEqual(
+            self.library.ywta_mesh_smoothing_apply(
+                ctypes.cast(ctypes.pointer(short_request), ctypes.POINTER(Request))
+            ),
+            STATUS_ABI_MISMATCH,
+        )
 
 
 if __name__ == "__main__":
