@@ -1,7 +1,7 @@
 #ifndef YWTA_MESH_SMOOTHING_H
 #define YWTA_MESH_SMOOTHING_H
 
-/* Maya/Blenderから共有する均一ラプラシアン参照実装のC ABI。 */
+/* Maya/Blenderから共有するメッシュスムージングC ABI。 */
 
 #include <stdint.h>
 
@@ -13,6 +13,9 @@
 
 #define YWTA_MESH_SMOOTHING_ABI_VERSION UINT32_C(1)
 #define YWTA_MESH_SMOOTHING_MODE_UNIFORM_LAPLACIAN UINT32_C(0)
+#define YWTA_MESH_SMOOTHING_MODE_TAUBIN UINT32_C(1)
+#define YWTA_MESH_SMOOTHING_OPTIONS_V1_SIZE UINT32_C(24)
+#define YWTA_MESH_SMOOTHING_OPTIONS_TAUBIN_SIZE UINT32_C(32)
 
 /* 成功およびエラーコード。 */
 #define YWTA_MESH_SMOOTHING_STATUS_OK INT32_C(0)
@@ -33,6 +36,7 @@ typedef struct ywta_mesh_smoothing_options {
     uint32_t mode;
     uint32_t iterations;
     double strength;
+    double taubin_mu;
 } ywta_mesh_smoothing_options;
 
 typedef struct ywta_mesh_smoothing_request {
@@ -57,8 +61,10 @@ extern "C" {
  * と重ならないようにする。ポインタは呼び出し中だけ有効で、DLLは所有・保持しない。
  * positions/edges は要素数が0ならNULLを許可するが、非0ならNULL不可かつ自然アライメント
  * が必要。outputもoutput_lenが非0ならNULL不可で自然アライメントが必要（0ならNULL可）。
- * options/requestはNULL不可で、abi_version=1、struct_sizeは現在の構造体以上。
- * strength は [0,1] の有限値、iterations は1以上、modeは0のみ有効。
+ * options/requestはNULL不可で、abi_version=1。Uniformモードは旧V1の24 bytes
+ * optionsを引き続き受理する。Taubinモードは32 bytes以上を必要とする。
+ * strength は [0,1] の有限値、iterations は1以上。Taubinではstrengthをλ、
+ * taubin_muをμとして使い、0 < λ < -μ <= 1を要求する。
  * 成功時も出力の解放は呼び出し側が行う。戻り値は上記STATUS_*のいずれか。
  */
 YWTA_MESH_SMOOTHING_API int32_t ywta_mesh_smoothing_apply(

@@ -1,7 +1,7 @@
 //! Maya/Blenderから共有するメッシュスムージング基盤。
 //!
-//! 現段階では、データフローとABIを検証するための均一ラプラシアン参照実装
-//! のみを提供する。体積保持スムージングはまだ実装していない。
+//! 均一ラプラシアンと、収縮を抑えるTaubinのλ/μ二段パスを提供する。
+//! Taubinは体積損失を減らす比較基準であり、厳密な体積保持ではない。
 
 use std::mem::{align_of, size_of};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -11,6 +11,8 @@ use std::ptr;
 pub const ABI_VERSION: u32 = 1;
 /// 現在サポートするモード（均一ラプラシアン参照実装）。
 pub const MODE_UNIFORM_LAPLACIAN: u32 = 0;
+/// 収縮を抑えるTaubinのλ/μ二段パス。
+pub const MODE_TAUBIN: u32 = 1;
 
 /// ABI関数が返すステータスコード。
 pub const STATUS_OK: i32 = 0;
@@ -27,8 +29,8 @@ pub const STATUS_PANIC: i32 = 10;
 
 /// スムージングのオプション。
 ///
-/// `struct_size` はこの構造体以上のバイト数を指定する。将来の拡張で末尾に
-/// フィールドを追加しても、既知の先頭部分がこのサイズ以上なら受け付ける。
+/// UniformモードはABI v1の先頭24 bytesでも受理する。Taubinモードは
+/// `taubin_mu`まで含む現在の32 bytesを必要とする。
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct YwtaMeshSmoothingOptions {
@@ -37,6 +39,28 @@ pub struct YwtaMeshSmoothingOptions {
     pub mode: u32,
     pub iterations: u32,
     pub strength: f64,
+    pub taubin_mu: f64,
+}
+
+/// ABI v1で公開したオプション先頭部分。
+///
+/// Uniformモードの既存クライアントは24 bytesのまま受理する。
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct YwtaMeshSmoothingOptionsV1 {
+    abi_version: u32,
+    struct_size: u32,
+    mode: u32,
+    iterations: u32,
+    strength: f64,
+}
+
+#[derive(Clone, Copy)]
+struct SmoothingOptions {
+    mode: u32,
+    iterations: u32,
+    strength: f64,
+    taubin_mu: f64,
 }
 
 /// スムージング要求。ポインタは呼び出し中だけ参照し、DLLは保持しない。
@@ -62,6 +86,7 @@ struct AbiHeader {
 }
 
 const OPTIONS_SIZE: usize = size_of::<YwtaMeshSmoothingOptions>();
+const OPTIONS_V1_SIZE: usize = size_of::<YwtaMeshSmoothingOptionsV1>();
 const REQUEST_SIZE: usize = size_of::<YwtaMeshSmoothingRequest>();
 
 /// C ABIのスムージングエントリポイント。
@@ -106,7 +131,7 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
     }
     let options_header = ptr::read(request_value.options.cast::<AbiHeader>());
     if options_header.abi_version != ABI_VERSION
-        || (options_header.struct_size as usize) < OPTIONS_SIZE
+        || (options_header.struct_size as usize) < OPTIONS_V1_SIZE
     {
         return STATUS_ABI_MISMATCH;
     }
@@ -116,21 +141,45 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
     ) {
         return STATUS_INVALID_ARGUMENT;
     }
-    let options = ptr::read(request_value.options);
+    let options_v1 = ptr::read(request_value.options.cast::<YwtaMeshSmoothingOptionsV1>());
 
-    if options.mode != MODE_UNIFORM_LAPLACIAN {
+    if options_v1.mode != MODE_UNIFORM_LAPLACIAN && options_v1.mode != MODE_TAUBIN {
         return STATUS_UNSUPPORTED_MODE;
     }
-    if options.iterations == 0
-        || !options.strength.is_finite()
-        || !(0.0..=1.0).contains(&options.strength)
+    if options_v1.iterations == 0
+        || !options_v1.strength.is_finite()
+        || !(0.0..=1.0).contains(&options_v1.strength)
     {
-        return if !options.strength.is_finite() {
+        return if !options_v1.strength.is_finite() {
             STATUS_NON_FINITE
         } else {
             STATUS_INVALID_ARGUMENT
         };
     }
+    let taubin_mu = if options_v1.mode == MODE_TAUBIN {
+        if (options_header.struct_size as usize) < OPTIONS_SIZE {
+            return STATUS_ABI_MISMATCH;
+        }
+        let value = ptr::addr_of!((*request_value.options).taubin_mu).read();
+        if !value.is_finite() {
+            return STATUS_NON_FINITE;
+        }
+        if options_v1.strength == 0.0
+            || !(-1.0..0.0).contains(&value)
+            || -value <= options_v1.strength
+        {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        value
+    } else {
+        0.0
+    };
+    let options = SmoothingOptions {
+        mode: options_v1.mode,
+        iterations: options_v1.iterations,
+        strength: options_v1.strength,
+        taubin_mu,
+    };
 
     let position_count = match usize::try_from(request_value.position_count) {
         Ok(value) => value,
@@ -219,7 +268,7 @@ unsafe fn apply_unchecked(request: *const YwtaMeshSmoothingRequest) -> i32 {
         }
     }
 
-    let smoothed = match uniform_laplacian(positions, position_count, edges, options) {
+    let smoothed = match smooth_positions(positions, position_count, edges, options) {
         Ok(value) => value,
         Err(status) => return status,
     };
@@ -249,54 +298,81 @@ fn ranges_overlap(a: *const u8, a_len: usize, b: *const u8, b_len: usize) -> boo
     a_start < b_end && b_start < a_end
 }
 
-fn uniform_laplacian(
+fn smooth_positions(
     positions: &[f64],
     position_count: usize,
     edges: &[u32],
-    options: YwtaMeshSmoothingOptions,
+    options: SmoothingOptions,
 ) -> Result<Vec<f64>, i32> {
     let mut current = positions.to_vec();
     let mut sums = vec![[0.0_f64; 3]; position_count];
     let mut counts = vec![0_u32; position_count];
 
     for _ in 0..options.iterations {
-        sums.fill([0.0; 3]);
-        counts.fill(0);
-        for pair in edges.chunks_exact(2) {
-            let a = pair[0] as usize;
-            let b = pair[1] as usize;
-            for (sum, value) in sums[a].iter_mut().zip(&current[b * 3..b * 3 + 3]) {
-                *sum += *value;
-            }
-            for (sum, value) in sums[b].iter_mut().zip(&current[a * 3..a * 3 + 3]) {
-                *sum += *value;
-            }
-            counts[a] = counts[a].saturating_add(1);
-            counts[b] = counts[b].saturating_add(1);
+        current = laplacian_pass(
+            &current,
+            position_count,
+            edges,
+            options.strength,
+            &mut sums,
+            &mut counts,
+        )?;
+        if options.mode == MODE_TAUBIN {
+            current = laplacian_pass(
+                &current,
+                position_count,
+                edges,
+                options.taubin_mu,
+                &mut sums,
+                &mut counts,
+            )?;
         }
-        if sums.iter().flatten().any(|value| !value.is_finite()) {
-            return Err(STATUS_NON_FINITE);
-        }
-
-        let mut next = current.clone();
-        for vertex in 0..position_count {
-            if counts[vertex] == 0 {
-                continue;
-            }
-            let inverse_count = 1.0 / f64::from(counts[vertex]);
-            for (axis, sum) in sums[vertex].iter().enumerate() {
-                let index = vertex * 3 + axis;
-                let average = *sum * inverse_count;
-                let current_value = next[index];
-                next[index] += options.strength * (average - current_value);
-            }
-        }
-        if next.iter().any(|value| !value.is_finite()) {
-            return Err(STATUS_NON_FINITE);
-        }
-        current = next;
     }
     Ok(current)
+}
+
+fn laplacian_pass(
+    current: &[f64],
+    position_count: usize,
+    edges: &[u32],
+    factor: f64,
+    sums: &mut [[f64; 3]],
+    counts: &mut [u32],
+) -> Result<Vec<f64>, i32> {
+    sums.fill([0.0; 3]);
+    counts.fill(0);
+    for pair in edges.chunks_exact(2) {
+        let a = pair[0] as usize;
+        let b = pair[1] as usize;
+        for (sum, value) in sums[a].iter_mut().zip(&current[b * 3..b * 3 + 3]) {
+            *sum += *value;
+        }
+        for (sum, value) in sums[b].iter_mut().zip(&current[a * 3..a * 3 + 3]) {
+            *sum += *value;
+        }
+        counts[a] = counts[a].saturating_add(1);
+        counts[b] = counts[b].saturating_add(1);
+    }
+    if sums.iter().flatten().any(|value| !value.is_finite()) {
+        return Err(STATUS_NON_FINITE);
+    }
+
+    let mut next = current.to_vec();
+    for vertex in 0..position_count {
+        if counts[vertex] == 0 {
+            continue;
+        }
+        let inverse_count = 1.0 / f64::from(counts[vertex]);
+        for (axis, sum) in sums[vertex].iter().enumerate() {
+            let index = vertex * 3 + axis;
+            let average = *sum * inverse_count;
+            next[index] += factor * (average - current[index]);
+        }
+    }
+    if next.iter().any(|value| !value.is_finite()) {
+        return Err(STATUS_NON_FINITE);
+    }
+    Ok(next)
 }
 
 #[cfg(test)]
@@ -309,14 +385,25 @@ mod tests {
             struct_size: OPTIONS_SIZE as u32,
             mode: MODE_UNIFORM_LAPLACIAN,
             iterations: 1,
-            strength: 0.5,
+            strength: 0.3,
+            taubin_mu: -0.34,
+        }
+    }
+
+    fn internal_options(mode: u32) -> SmoothingOptions {
+        SmoothingOptions {
+            mode,
+            iterations: 1,
+            strength: 0.3,
+            taubin_mu: -0.34,
         }
     }
 
     #[test]
     fn abi_layout_matches_documented_c_layout() {
         // Maya/Blenderの現行Windowsビルドは64-bitを前提とする。
-        assert_eq!(size_of::<YwtaMeshSmoothingOptions>(), 24);
+        assert_eq!(size_of::<YwtaMeshSmoothingOptionsV1>(), 24);
+        assert_eq!(size_of::<YwtaMeshSmoothingOptions>(), 32);
         assert_eq!(align_of::<YwtaMeshSmoothingOptions>(), 8);
         assert_eq!(
             std::mem::offset_of!(YwtaMeshSmoothingOptions, abi_version),
@@ -332,6 +419,10 @@ mod tests {
             12
         );
         assert_eq!(std::mem::offset_of!(YwtaMeshSmoothingOptions, strength), 16);
+        assert_eq!(
+            std::mem::offset_of!(YwtaMeshSmoothingOptions, taubin_mu),
+            24
+        );
         assert_eq!(size_of::<YwtaMeshSmoothingRequest>(), 64);
         assert_eq!(align_of::<YwtaMeshSmoothingRequest>(), 8);
         assert_eq!(
@@ -383,8 +474,76 @@ mod tests {
     fn uniform_laplacian_moves_vertices_towards_neighbour() {
         let positions = [0.0, 0.0, 0.0, 2.0, 0.0, 0.0];
         let edges = [0, 1];
-        let result = uniform_laplacian(&positions, 2, &edges, options()).expect("成功");
-        assert_eq!(result, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+        let result = smooth_positions(
+            &positions,
+            2,
+            &edges,
+            internal_options(MODE_UNIFORM_LAPLACIAN),
+        )
+        .expect("成功");
+        assert_eq!(result, [0.6, 0.0, 0.0, 1.4, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn taubin_reduces_volume_loss_and_preserves_centroid() {
+        let positions = [
+            1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+            -1.0,
+        ];
+        let edges = [
+            0, 2, 0, 3, 0, 4, 0, 5, 1, 2, 1, 3, 1, 4, 1, 5, 2, 4, 2, 5, 3, 4, 3, 5,
+        ];
+        let triangles = [
+            4, 0, 2, 4, 2, 1, 4, 1, 3, 4, 3, 0, 5, 2, 0, 5, 1, 2, 5, 3, 1, 5, 0, 3,
+        ];
+
+        let uniform = smooth_positions(
+            &positions,
+            6,
+            &edges,
+            internal_options(MODE_UNIFORM_LAPLACIAN),
+        )
+        .expect("Uniform成功");
+        let taubin = smooth_positions(&positions, 6, &edges, internal_options(MODE_TAUBIN))
+            .expect("Taubin成功");
+        let original_volume = signed_volume(&positions, &triangles).abs();
+        let uniform_error = (signed_volume(&uniform, &triangles).abs() - original_volume).abs();
+        let taubin_error = (signed_volume(&taubin, &triangles).abs() - original_volume).abs();
+
+        assert!(taubin_error < uniform_error);
+        for value in &taubin {
+            assert!(value.is_finite());
+        }
+        let centroid = centroid(&taubin);
+        for component in centroid {
+            assert!(component.abs() < 1.0e-12);
+        }
+    }
+
+    fn signed_volume(positions: &[f64], triangles: &[u32]) -> f64 {
+        triangles
+            .chunks_exact(3)
+            .map(|triangle| {
+                let a = &positions[triangle[0] as usize * 3..triangle[0] as usize * 3 + 3];
+                let b = &positions[triangle[1] as usize * 3..triangle[1] as usize * 3 + 3];
+                let c = &positions[triangle[2] as usize * 3..triangle[2] as usize * 3 + 3];
+                (a[0] * (b[1] * c[2] - b[2] * c[1])
+                    + a[1] * (b[2] * c[0] - b[0] * c[2])
+                    + a[2] * (b[0] * c[1] - b[1] * c[0]))
+                    / 6.0
+            })
+            .sum()
+    }
+
+    fn centroid(positions: &[f64]) -> [f64; 3] {
+        let mut result = [0.0; 3];
+        for point in positions.chunks_exact(3) {
+            for axis in 0..3 {
+                result[axis] += point[axis];
+            }
+        }
+        let count = (positions.len() / 3) as f64;
+        result.map(|value| value / count)
     }
 
     #[test]
@@ -398,6 +557,70 @@ mod tests {
         assert_eq!(
             unsafe { ywta_mesh_smoothing_apply(&req) },
             STATUS_ABI_MISMATCH
+        );
+    }
+
+    #[test]
+    fn ffi_accepts_legacy_options_for_uniform_only() {
+        let positions = [0.0, 0.0, 0.0, 2.0, 0.0, 0.0];
+        let edges = [0, 1];
+        let mut output = [0.0; 6];
+        let legacy_options = YwtaMeshSmoothingOptionsV1 {
+            abi_version: ABI_VERSION,
+            struct_size: OPTIONS_V1_SIZE as u32,
+            mode: MODE_UNIFORM_LAPLACIAN,
+            iterations: 1,
+            strength: 0.3,
+        };
+        let mut req = YwtaMeshSmoothingRequest {
+            abi_version: ABI_VERSION,
+            struct_size: REQUEST_SIZE as u32,
+            positions: positions.as_ptr(),
+            position_count: 2,
+            edges: edges.as_ptr(),
+            edge_count: 1,
+            output: output.as_mut_ptr(),
+            output_len: 6,
+            options: (&legacy_options as *const YwtaMeshSmoothingOptionsV1)
+                .cast::<YwtaMeshSmoothingOptions>(),
+        };
+
+        assert_eq!(unsafe { ywta_mesh_smoothing_apply(&req) }, STATUS_OK);
+        assert_eq!(output, [0.6, 0.0, 0.0, 1.4, 0.0, 0.0]);
+
+        let legacy_taubin = YwtaMeshSmoothingOptionsV1 {
+            mode: MODE_TAUBIN,
+            ..legacy_options
+        };
+        req.options = (&legacy_taubin as *const YwtaMeshSmoothingOptionsV1)
+            .cast::<YwtaMeshSmoothingOptions>();
+        assert_eq!(
+            unsafe { ywta_mesh_smoothing_apply(&req) },
+            STATUS_ABI_MISMATCH
+        );
+    }
+
+    #[test]
+    fn ffi_rejects_invalid_taubin_parameters() {
+        let positions = [0.0; 3];
+        let edges: [u32; 0] = [];
+        let mut output = [0.0; 3];
+        let mut opts = options();
+        opts.mode = MODE_TAUBIN;
+        opts.taubin_mu = -0.2;
+        {
+            let req = request(&positions, &edges, &mut output, &opts);
+            assert_eq!(
+                unsafe { ywta_mesh_smoothing_apply(&req) },
+                STATUS_INVALID_ARGUMENT
+            );
+        }
+
+        opts.taubin_mu = f64::NAN;
+        let req = request(&positions, &edges, &mut output, &opts);
+        assert_eq!(
+            unsafe { ywta_mesh_smoothing_apply(&req) },
+            STATUS_NON_FINITE
         );
     }
 

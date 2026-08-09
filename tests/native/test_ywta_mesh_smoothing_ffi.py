@@ -11,6 +11,7 @@ import unittest
 
 ABI_VERSION = 1
 MODE_UNIFORM_LAPLACIAN = 0
+MODE_TAUBIN = 1
 STATUS_OK = 0
 STATUS_ABI_MISMATCH = 2
 STATUS_NULL_POINTER = 3
@@ -26,7 +27,12 @@ class Options(ctypes.Structure):
         ("mode", ctypes.c_uint32),
         ("iterations", ctypes.c_uint32),
         ("strength", ctypes.c_double),
+        ("taubin_mu", ctypes.c_double),
     ]
+
+
+class LegacyOptionsV1(ctypes.Structure):
+    _fields_ = Options._fields_[:-1]
 
 
 class Request(ctypes.Structure):
@@ -63,13 +69,14 @@ class MeshSmoothingFfiTests(unittest.TestCase):
         cls.library = _load_library()
 
     @staticmethod
-    def _options() -> Options:
+    def _options(mode=MODE_UNIFORM_LAPLACIAN) -> Options:
         return Options(
             ABI_VERSION,
             ctypes.sizeof(Options),
-            MODE_UNIFORM_LAPLACIAN,
+            mode,
             1,
-            0.5,
+            0.3,
+            -0.34,
         )
 
     def _request(self, positions, edges, output, options) -> Request:
@@ -96,7 +103,7 @@ class MeshSmoothingFfiTests(unittest.TestCase):
         request = self._request(positions, edges, output, options)
 
         self.assertEqual(self.library.ywta_mesh_smoothing_apply(ctypes.byref(request)), STATUS_OK)
-        self.assertEqual(list(output), [1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+        self.assertEqual(list(output), [0.6, 0.0, 0.0, 1.4, 0.0, 0.0])
 
         request.abi_version = ABI_VERSION + 1
         self.assertEqual(
@@ -133,6 +140,32 @@ class MeshSmoothingFfiTests(unittest.TestCase):
             self.library.ywta_mesh_smoothing_apply(ctypes.byref(request)),
             STATUS_NON_FINITE,
         )
+
+    def test_taubin_and_legacy_uniform_options(self) -> None:
+        self.assertEqual(ctypes.sizeof(LegacyOptionsV1), 24)
+        self.assertEqual(ctypes.sizeof(Options), 32)
+
+        positions = (ctypes.c_double * 6)(0.0, 0.0, 0.0, 2.0, 0.0, 0.0)
+        edges = (ctypes.c_uint32 * 2)(0, 1)
+        output = (ctypes.c_double * 6)()
+
+        taubin_options = self._options(MODE_TAUBIN)
+        request = self._request(positions, edges, output, taubin_options)
+        self.assertEqual(self.library.ywta_mesh_smoothing_apply(ctypes.byref(request)), STATUS_OK)
+        self.assertAlmostEqual(output[0], 0.328)
+        self.assertAlmostEqual(output[3], 1.672)
+
+        legacy_options = LegacyOptionsV1(
+            ABI_VERSION,
+            ctypes.sizeof(LegacyOptionsV1),
+            MODE_UNIFORM_LAPLACIAN,
+            1,
+            0.3,
+        )
+        request.options = ctypes.cast(ctypes.pointer(legacy_options), ctypes.POINTER(Options))
+        self.assertEqual(self.library.ywta_mesh_smoothing_apply(ctypes.byref(request)), STATUS_OK)
+        self.assertAlmostEqual(output[0], 0.6)
+        self.assertAlmostEqual(output[3], 1.4)
 
 
 if __name__ == "__main__":
