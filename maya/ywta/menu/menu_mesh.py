@@ -48,4 +48,12 @@ def create_mesh_menu(parent_menu):
         annotation="パラメータを指定してAutoRemesherノードを作成します（別オブジェクトに出力）",
     )
 
+    # Rust Volume Preserving Smoothing（ブラシは別実装）
+    cmds.menuItem(
+        parent=mesh_menu,
+        label="Volume Preserving Smoothing",
+        command="import ywta.mesh.volume_smoothing as vs; vs.smooth_selected_mesh()",
+        annotation="選択メッシュをHC方式でスムージングし、閉メッシュの体積を補正します",
+    )
+
     return mesh_menu
