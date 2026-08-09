@@ -14,6 +14,7 @@ Python環境 / mayapy / blender を薄くラップして呼び出すだけにす
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -120,6 +121,48 @@ def autoremesher_build(session: nox.Session) -> None:
     dest = out_dir / "ywta_autoremesher.dll"
     shutil.copy2(built_dll, dest)
     session.log(f"コピー完了: {built_dll} -> {dest}")
+
+
+def _build_mesh_smoothing_dll(session: nox.Session) -> Path:
+    """RustメッシュスムージングDLLをビルドしてbin/windowsへコピーする。"""
+    repo_root = Path(__file__).parent
+    session.run(
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "ywta-mesh-smoothing",
+        external=True,
+    )
+    built_dll = repo_root / "target" / "release" / "ywta_mesh_smoothing.dll"
+    if not built_dll.exists():
+        session.error(f"ビルド後にDLLが見つかりません: {built_dll}")
+    out_dir = repo_root / "bin" / "windows"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    destination = out_dir / "ywta_mesh_smoothing.dll"
+    shutil.copy2(built_dll, destination)
+    session.log(f"コピー完了: {built_dll} -> {destination}")
+    return destination
+
+
+@nox.session(venv_backend="none")
+def mesh_smoothing_build(session: nox.Session) -> None:
+    """RustメッシュスムージングのリリースDLLをビルドする。"""
+    _build_mesh_smoothing_dll(session)
+
+
+@nox.session(venv_backend="none")
+def mesh_smoothing_ffi_smoke(session: nox.Session) -> None:
+    """DLLをビルドし、Python ctypesからC ABIの往復を検証する。"""
+    dll_path = _build_mesh_smoothing_dll(session)
+    environment = dict(os.environ)
+    environment["YWTA_MESH_SMOOTHING_DLL"] = str(dll_path)
+    session.run(
+        sys.executable,
+        "tests/native/test_ywta_mesh_smoothing_ffi.py",
+        env=environment,
+        external=True,
+    )
 
 
 @nox.session(venv_backend="none")

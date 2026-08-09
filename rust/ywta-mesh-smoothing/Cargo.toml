@@ -1,0 +1,9 @@
+[package]
+name = "ywta-mesh-smoothing"
+version = "0.1.0"
+edition = "2021"
+description = "YWTA DCC-independent mesh smoothing foundation"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
