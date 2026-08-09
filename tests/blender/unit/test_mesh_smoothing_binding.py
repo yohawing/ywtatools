@@ -21,6 +21,7 @@ class FakeSmoothingDLL:
     def __init__(self, status=0):
         self.status = status
         self.request = None
+        self.edge_addresses = []
 
     def ywta_mesh_smoothing_apply(self, request_pointer):
         request = request_pointer.contents
@@ -32,11 +33,12 @@ class FakeSmoothingDLL:
             "positions": read(request.positions, request.position_count * 3),
             "edges": read(request.edges, request.edge_count * 2),
             "triangles": read(request.triangles, request.triangle_count * 3),
-            "options": request.options.contents,
+            "iterations": request.options.contents.iterations,
             "weights": read(request.vertex_weights, request.position_count),
             "modes": read(request.constraint_modes, request.position_count),
             "directions": read(request.constraint_directions, request.position_count * 3),
         }
+        self.edge_addresses.append(ctypes.addressof(request.edges.contents) if request.edges else 0)
         if self.status == 0:
             for index, value in enumerate(self.request["positions"]):
                 request.output[index] = value + 1.0
@@ -79,7 +81,18 @@ class MeshSmoothingBindingTests(unittest.TestCase):
         self.assertEqual(fake.request["triangles"], [0, 1, 0])
         self.assertEqual(fake.request["weights"], [0.5, 1.0])
         self.assertEqual(fake.request["modes"], [binding.CONSTRAINT_NORMAL_ONLY, binding.CONSTRAINT_FIXED])
-        self.assertEqual(fake.request["options"].iterations, 3)
+        self.assertEqual(fake.request["iterations"], 3)
+
+    def test_session_reuses_topology_buffer_across_dabs(self):
+        fake = FakeSmoothingDLL()
+        binding._load_dll = lambda: fake
+        session = binding.MeshSmoothingSession(2, [0, 1])
+
+        first = session.apply([0.0, 0.0, 0.0, 2.0, 0.0, 0.0], iterations=1)
+        second = session.apply(first, iterations=1)
+
+        self.assertEqual(second, [2.0, 2.0, 2.0, 4.0, 2.0, 2.0])
+        self.assertEqual(len(set(fake.edge_addresses)), 1)
 
     def test_rejects_invalid_python_inputs_before_ffi(self):
         binding._load_dll = lambda: self.fail("不正入力でDLLを呼んではならない")

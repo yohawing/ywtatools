@@ -181,6 +181,129 @@ def _optional_array(ctype, values):
     return None if not values else (ctype * len(values))(*values)
 
 
+class MeshSmoothingSession:
+    """固定トポロジーとFFIバッファを複数回の呼び出しで再利用する。
+
+    Rust DLLは呼び出し終了後にポインタを保持しない。セッションは各配列を所有し、
+    入力と出力を別バッファにして非重複契約を維持する。
+    """
+
+    def __init__(self, vertex_count: int, edges, triangles=None):
+        self.vertex_count = int(vertex_count)
+        if self.vertex_count < 0:
+            raise ValueError("vertex_countは0以上である必要があります")
+        self._edges = _indices(edges, "edges", 2, self.vertex_count)
+        self._triangles = _indices(triangles, "triangles", 3, self.vertex_count)
+        position_len = self.vertex_count * 3
+        self._positions_array = (ctypes.c_double * position_len)()
+        self._output_array = (ctypes.c_double * position_len)()
+        self._edges_array = _optional_array(ctypes.c_uint32, self._edges)
+        self._triangles_array = _optional_array(ctypes.c_uint32, self._triangles)
+        self._weights_array = (ctypes.c_double * self.vertex_count)()
+        self._modes_array = (ctypes.c_uint32 * self.vertex_count)()
+        self._directions_array = (ctypes.c_double * position_len)()
+
+    def apply(
+        self,
+        positions,
+        *,
+        mode: int = MODE_HC,
+        iterations: int = 5,
+        strength: float = 0.3,
+        taubin_mu: float = -0.34,
+        hc_alpha: float = 0.0,
+        hc_beta: float = 0.5,
+        volume_correction: float = 0.0,
+        vertex_weights=None,
+        constraint_modes=None,
+        constraint_directions=None,
+    ) -> list[float]:
+        """現在座標と制約だけを更新してRustソルバーを実行する。"""
+        flat_positions = _finite_floats(positions, "positions", 3)
+        if len(flat_positions) != self.vertex_count * 3:
+            raise ValueError("positionsの頂点数がセッションと一致しません")
+        if mode not in {MODE_UNIFORM_LAPLACIAN, MODE_TAUBIN, MODE_HC}:
+            raise ValueError("modeが未対応です")
+        if int(iterations) < 1:
+            raise ValueError("iterationsは1以上である必要があります")
+
+        weights = [1.0] * self.vertex_count
+        if vertex_weights is not None:
+            weights = _finite_floats(vertex_weights, "vertex_weights", 1)
+            if len(weights) != self.vertex_count or any(not 0.0 <= value <= 1.0 for value in weights):
+                raise ValueError("vertex_weightsは頂点数分の[0,1]で指定してください")
+
+        modes = [CONSTRAINT_FREE] * self.vertex_count
+        if constraint_modes is not None:
+            modes = [int(value) for value in _flatten(constraint_modes)]
+            if len(modes) != self.vertex_count or any(
+                not 0 <= value <= CONSTRAINT_NORMAL_ONLY for value in modes
+            ):
+                raise ValueError("constraint_modesが不正です")
+
+        directions = [1.0, 0.0, 0.0] * self.vertex_count
+        if constraint_directions is not None:
+            directions = _finite_floats(constraint_directions, "constraint_directions", 3)
+            if len(directions) != len(flat_positions):
+                raise ValueError("constraint_directionsは頂点数分のxyzが必要です")
+        elif any(
+            constraint_mode
+            in {CONSTRAINT_SURFACE_PLANE, CONSTRAINT_RAIL_LINE, CONSTRAINT_NORMAL_ONLY}
+            for constraint_mode in modes
+        ):
+            raise ValueError("方向制約にはconstraint_directionsが必要です")
+        for vertex, constraint_mode in enumerate(modes):
+            if constraint_mode in {
+                CONSTRAINT_SURFACE_PLANE,
+                CONSTRAINT_RAIL_LINE,
+                CONSTRAINT_NORMAL_ONLY,
+            }:
+                direction = directions[vertex * 3 : vertex * 3 + 3]
+                if sum(value * value for value in direction) <= 0.0:
+                    raise ValueError("方向制約のベクトルをゼロにはできません")
+
+        for index, value in enumerate(flat_positions):
+            self._positions_array[index] = value
+        for index, value in enumerate(weights):
+            self._weights_array[index] = value
+        for index, value in enumerate(modes):
+            self._modes_array[index] = value
+        for index, value in enumerate(directions):
+            self._directions_array[index] = value
+
+        options = MeshSmoothingOptions(
+            ABI_VERSION,
+            ctypes.sizeof(MeshSmoothingOptions),
+            int(mode),
+            int(iterations),
+            float(strength),
+            float(taubin_mu),
+            float(hc_alpha),
+            float(hc_beta),
+            float(volume_correction),
+        )
+        request = MeshSmoothingRequest(
+            ABI_VERSION,
+            ctypes.sizeof(MeshSmoothingRequest),
+            self._positions_array,
+            self.vertex_count,
+            self._edges_array,
+            len(self._edges) // 2,
+            self._output_array,
+            len(flat_positions),
+            ctypes.pointer(options),
+            self._weights_array,
+            self._modes_array,
+            self._directions_array,
+            self._triangles_array,
+            len(self._triangles) // 3,
+        )
+        status = int(_load_dll().ywta_mesh_smoothing_apply(ctypes.pointer(request)))
+        if status != 0:
+            raise MeshSmoothingError(status)
+        return list(self._output_array)
+
+
 def smooth(
     positions,
     edges,
@@ -197,89 +320,19 @@ def smooth(
     constraint_modes=None,
     constraint_directions=None,
 ) -> list[float]:
-    """Rustソルバーを実行し、flatなxyz配列を返す。
-
-    すべての入力配列はこの関数が所有するctypes配列へコピーするため、DLL呼び出し中に
-    移動・解放されない。出力は入力と別の配列を確保し、非重複契約を守る。
-    """
+    """単発のRustソルバー呼び出しを行う。"""
     flat_positions = _finite_floats(positions, "positions", 3)
-    vertex_count = len(flat_positions) // 3
-    flat_edges = _indices(edges, "edges", 2, vertex_count)
-    flat_triangles = _indices(triangles, "triangles", 3, vertex_count)
-    if mode not in {MODE_UNIFORM_LAPLACIAN, MODE_TAUBIN, MODE_HC}:
-        raise ValueError("modeが未対応です")
-    if int(iterations) < 1:
-        raise ValueError("iterationsは1以上である必要があります")
-
-    weights = None
-    if vertex_weights is not None:
-        weights = _finite_floats(vertex_weights, "vertex_weights", 1)
-        if len(weights) != vertex_count or any(not 0.0 <= value <= 1.0 for value in weights):
-            raise ValueError("vertex_weightsは頂点数分の[0,1]で指定してください")
-
-    modes = None
-    if constraint_modes is not None:
-        modes = [int(value) for value in _flatten(constraint_modes)]
-        if len(modes) != vertex_count or any(not 0 <= value <= CONSTRAINT_NORMAL_ONLY for value in modes):
-            raise ValueError("constraint_modesが不正です")
-
-    directions = None
-    if constraint_directions is not None:
-        directions = _finite_floats(constraint_directions, "constraint_directions", 3)
-        if len(directions) != len(flat_positions):
-            raise ValueError("constraint_directionsは頂点数分のxyzが必要です")
-    if modes is not None and any(
-        value in {CONSTRAINT_SURFACE_PLANE, CONSTRAINT_RAIL_LINE, CONSTRAINT_NORMAL_ONLY}
-        for value in modes
-    ):
-        if directions is None:
-            raise ValueError("方向制約にはconstraint_directionsが必要です")
-        for vertex, constraint_mode in enumerate(modes):
-            if constraint_mode in {
-                CONSTRAINT_SURFACE_PLANE,
-                CONSTRAINT_RAIL_LINE,
-                CONSTRAINT_NORMAL_ONLY,
-            }:
-                direction = directions[vertex * 3 : vertex * 3 + 3]
-                if sum(value * value for value in direction) <= 0.0:
-                    raise ValueError("方向制約のベクトルをゼロにはできません")
-
-    positions_array = (ctypes.c_double * len(flat_positions))(*flat_positions)
-    edges_array = _optional_array(ctypes.c_uint32, flat_edges)
-    triangles_array = _optional_array(ctypes.c_uint32, flat_triangles)
-    weights_array = _optional_array(ctypes.c_double, weights)
-    modes_array = _optional_array(ctypes.c_uint32, modes)
-    directions_array = _optional_array(ctypes.c_double, directions)
-    output_array = (ctypes.c_double * len(flat_positions))()
-    options = MeshSmoothingOptions(
-        ABI_VERSION,
-        ctypes.sizeof(MeshSmoothingOptions),
-        int(mode),
-        int(iterations),
-        float(strength),
-        float(taubin_mu),
-        float(hc_alpha),
-        float(hc_beta),
-        float(volume_correction),
+    session = MeshSmoothingSession(len(flat_positions) // 3, edges, triangles)
+    return session.apply(
+        flat_positions,
+        mode=mode,
+        iterations=iterations,
+        strength=strength,
+        taubin_mu=taubin_mu,
+        hc_alpha=hc_alpha,
+        hc_beta=hc_beta,
+        volume_correction=volume_correction,
+        vertex_weights=vertex_weights,
+        constraint_modes=constraint_modes,
+        constraint_directions=constraint_directions,
     )
-    request = MeshSmoothingRequest(
-        ABI_VERSION,
-        ctypes.sizeof(MeshSmoothingRequest),
-        positions_array,
-        vertex_count,
-        edges_array,
-        len(flat_edges) // 2,
-        output_array,
-        len(flat_positions),
-        ctypes.pointer(options),
-        weights_array,
-        modes_array,
-        directions_array,
-        triangles_array,
-        len(flat_triangles) // 3,
-    )
-
-    status = int(_load_dll().ywta_mesh_smoothing_apply(ctypes.pointer(request)))
-    if status != 0:
-        raise MeshSmoothingError(status)
-    return list(output_array)
