@@ -50,23 +50,26 @@ def _points(shape):
     )
 
 
-def _signed_volume(shape):
-    """面の頂点順をファン分割して符号付き体積を計算する。"""
+def _maya_triangles(shape):
+    """Mayaが現在の面に割り当てた三角形インデックスを返す。"""
     selection = om2.MSelectionList()
     selection.add(shape)
     dag_path = selection.getDagPath(0)
     mesh_fn = om2.MFnMesh(dag_path)
-    points = mesh_fn.getPoints(om2.MSpace.kObject)
-    face_counts, face_indices = mesh_fn.getVertices()
+    _triangle_counts, triangle_indices = mesh_fn.getTriangles()
+    return tuple(int(index) for index in triangle_indices)
+
+
+def _signed_volume(shape, triangles):
+    """独立に取得したMaya実三角化から符号付き体積を計算する。"""
+    selection = om2.MSelectionList()
+    selection.add(shape)
+    dag_path = selection.getDagPath(0)
+    points = om2.MFnMesh(dag_path).getPoints(om2.MSpace.kObject)
     volume = 0.0
-    offset = 0
-    for raw_count in face_counts:
-        count = int(raw_count)
-        vertices = [int(index) for index in face_indices[offset : offset + count]]
-        offset += count
-        for index in range(1, count - 1):
-            a, b, c = (points[vertices[0]], points[vertices[index]], points[vertices[index + 1]])
-            volume += (a.x * (b.y * c.z - b.z * c.y) + a.y * (b.z * c.x - b.x * c.z) + a.z * (b.x * c.y - b.y * c.x)) / 6.0
+    for offset in range(0, len(triangles), 3):
+        a, b, c = (points[triangles[offset]], points[triangles[offset + 1]], points[triangles[offset + 2]])
+        volume += (a.x * (b.y * c.z - b.z * c.y) + a.y * (b.z * c.x - b.x * c.z) + a.z * (b.x * c.y - b.y * c.x)) / 6.0
     return volume
 
 
@@ -84,13 +87,14 @@ class TestVolumeSmoothing(unittest.TestCase):
         cube, _ = cmds.polyCube(name="volumeCube")
         shape = cmds.listRelatives(cube, shapes=True, noIntermediate=True)[0]
         cmds.xform(f"{shape}.vtx[0]", objectSpace=True, translation=(-0.7, -0.4, -0.2))
+        triangles = _maya_triangles(shape)
         before = _points(shape)
-        before_volume = _signed_volume(shape)
+        before_volume = _signed_volume(shape, triangles)
 
         cmds.select(cube, replace=True)
         cmds.ywtaVolumeSmooth()
         after = _points(shape)
-        after_volume = _signed_volume(shape)
+        after_volume = _signed_volume(shape, triangles)
 
         self.assertNotEqual(before, after)
         self.assertTrue(math.isclose(before_volume, after_volume, rel_tol=1.0e-7, abs_tol=1.0e-8))
@@ -115,6 +119,24 @@ class TestVolumeSmoothing(unittest.TestCase):
         for index in range(len(before)):
             if index not in {12}:
                 self.assertEqual(before[index], after[index])
+
+    def test_closed_partial_selection_preserves_volume(self):
+        """閉メッシュの部分選択でも固定点を保ったまま体積を補正する。"""
+        mesh, _ = cmds.polySphere(name="partialVolumeSphere", subdivisionsX=12, subdivisionsY=8)
+        shape = cmds.listRelatives(mesh, shapes=True, noIntermediate=True)[0]
+        vertex_count = cmds.polyEvaluate(shape, vertex=True)
+        triangles = _maya_triangles(shape)
+        before = _points(shape)
+        before_volume = _signed_volume(shape, triangles)
+
+        # 0番頂点を未選択の固定点として残し、残りを処理する。
+        cmds.select(f"{shape}.vtx[1:{vertex_count - 1}]", replace=True)
+        cmds.ywtaVolumeSmooth(iterations=5, strength=0.3, volumeCorrection=1.0)
+        after = _points(shape)
+
+        self.assertEqual(before[0], after[0])
+        self.assertNotEqual(before, after)
+        self.assertTrue(math.isclose(before_volume, _signed_volume(shape, triangles), rel_tol=1.0e-7, abs_tol=1.0e-8))
 
     def test_open_mesh_falls_back_without_volume_error(self):
         mesh, _ = cmds.polyPlane(name="openPlane", subdivisionsX=2, subdivisionsY=2)
@@ -209,8 +231,9 @@ class TestVolumeSmoothing(unittest.TestCase):
         context.toolOnSetup(None)
         self.assertIsNotNone(context._cache)
         session = context._cache.session
+        triangles = _maya_triangles(shape)
         before = _points(shape)
-        before_volume = _signed_volume(shape)
+        before_volume = _signed_volume(shape, triangles)
 
         transaction = context.apply_stroke_for_test(
             [(0.5, 0.5, 0.5), (0.45, 0.45, 0.45)],
@@ -220,7 +243,7 @@ class TestVolumeSmoothing(unittest.TestCase):
         self.assertIsNotNone(transaction)
         self.assertIs(context._cache.session, session)
         self.assertNotEqual(before, after)
-        self.assertTrue(math.isclose(before_volume, _signed_volume(shape), rel_tol=1.0e-7, abs_tol=1.0e-8))
+        self.assertTrue(math.isclose(before_volume, _signed_volume(shape, triangles), rel_tol=1.0e-7, abs_tol=1.0e-8))
 
         # 既に確定したstrokeを残したまま、次のstrokeをキャンセルする。
         committed = _points(shape)

@@ -25,6 +25,9 @@ class BlenderTestCase(BaseTestCase):
     Blender APIやアドオン機能を使用するテストは、このクラスを継承して実装します。
     """
 
+    # 継承先から環境判定を参照できるようにする。
+    BLENDER_AVAILABLE = BLENDER_AVAILABLE
+
     # 有効化されたアドオンのリスト
     addons_enabled = set()
 

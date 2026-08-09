@@ -85,11 +85,10 @@ def _shape_selection():
 
 
 def _mesh_topology(mesh_fn):
-    """Mayaの面リストから重複のない辺と閉メッシュ用三角形を作る。"""
+    """Mayaの面リストから重複のない辺と実三角形を作る。"""
     face_counts, face_indices = mesh_fn.getVertices()
     edges = set()
     edge_use_counts = {}
-    triangles = []
     offset = 0
     for raw_count in face_counts:
         count = int(raw_count)
@@ -101,9 +100,10 @@ def _mesh_topology(mesh_fn):
             edge = (min(first, second), max(first, second))
             edges.add(edge)
             edge_use_counts[edge] = edge_use_counts.get(edge, 0) + 1
-        # Mayaの面頂点順序を保ったファン分割。Rust側が閉包性と向きを検証する。
-        for index in range(1, count - 1):
-            triangles.extend((vertices[0], vertices[index], vertices[index + 1]))
+
+    # 非平面quad/ngonでもMayaが評価する面と一致する三角形をRustへ渡す。
+    _triangle_counts, triangle_indices = mesh_fn.getTriangles()
+    triangles = [int(index) for index in triangle_indices]
 
     # API 2.0のMFnMeshにはisClosedプロパティがないため、各辺の面使用数で判定する。
     is_closed = bool(edge_use_counts) and all(count == 2 for count in edge_use_counts.values())
@@ -150,10 +150,9 @@ def _compute_result(
     if not selected:
         return shape_path, before, list(before)
 
-    weights, modes, free = _constraints(vertex_count, edges, selected)
-    # 部分選択では固定境界があるため、全体体積を補正しようとすると不定になる。
-    # 全頂点が可動で、かつRustが検証できる閉メッシュの場合だけ補正を有効にする。
-    correction = float(volume_correction) if closed and len(free) == vertex_count else 0.0
+    weights, modes, _free = _constraints(vertex_count, edges, selected)
+    # Rust側は固定点を含む閉メッシュの体積補正に対応している。
+    correction = float(volume_correction) if closed else 0.0
     try:
         after = _binding.smooth(
             before,

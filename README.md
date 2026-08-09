@@ -29,6 +29,31 @@ maya\cpp\build.bat              # Mayaプラグイン (autoRemesherNode を含�
 - **Maya**: メッシュを選択して YWTA > Mesh > AutoRemesher Node。`<元名>_remeshed` オブジェクトが生成され、ノードの targetCount / adaptivity / modelType を変更すると再リメッシュされます（元メッシュは非破壊）
 - **Blender**: オブジェクトを選択して Object メニュー > AutoRemesh。実行後は左下のRedoパネル（F9）でパラメータを調整できます
 
+## Preserve Volume Smoothing
+
+Maya / Blenderで共有するRust製メッシュスムージングソルバーです。利用前に
+[Rust toolchain（Cargo）](https://www.rust-lang.org/tools/install) と `uvx` を用意し、
+Windows 11上でリリースDLLをビルドしてください。
+
+```bash
+uvx nox -s mesh_smoothing_build
+uvx nox -s mesh_smoothing_ffi_smoke
+```
+
+DLLは `bin/windows/ywta_mesh_smoothing.dll` に生成されます。このファイルはgit管理外です。
+別の場所へ配置する場合は、Maya / Blenderの起動前に
+`YWTA_MESH_SMOOTHING_DLL`へDLLの絶対パスを設定してください。
+
+- **Maya**: モジュールをインストールしてMayaを起動し、メッシュまたは頂点を選択して YWTA > Mesh > Volume Preserving Smoothing、ブラシ操作は YWTA > Mesh > Volume Smooth Brush を選びます
+- **Blender**: アドオンを有効化し、Edit Modeの Mesh メニューから Volume Preserving Smooth または Volume Smooth Brush を選びます
+
+Blenderテストはインストール済みの最新版を自動検出します。検出できない場合は
+`BLENDER_EXECUTABLE`へ `blender.exe` の絶対パスを設定してください。
+
+```bash
+uvx nox -s blender_tests
+```
+
 ## Dependency
 
 Pythonの依存モジュールはRequirements.txtに記載しています。Mayapyへのインストールは自己責任でおねがいします。

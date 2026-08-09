@@ -165,6 +165,41 @@ def mesh_smoothing_ffi_smoke(session: nox.Session) -> None:
     )
 
 
+def _resolve_blender_executable(session: nox.Session) -> Path:
+    """環境変数、PATH、Windows標準配置の順でBlenderを解決する。"""
+    configured = os.environ.get("BLENDER_EXECUTABLE")
+    if configured:
+        executable = Path(configured)
+        if executable.is_file():
+            return executable
+        session.error(f"BLENDER_EXECUTABLEが指すファイルが見つかりません: {executable}")
+
+    from_path = shutil.which("blender")
+    if from_path:
+        return Path(from_path)
+
+    if os.name == "nt":
+        program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+        install_root = program_files / "Blender Foundation"
+        candidates = list(install_root.glob("Blender */blender.exe"))
+        if candidates:
+
+            def version_key(executable: Path) -> tuple[int, ...]:
+                """インストールフォルダ名から数値バージョンを返す。"""
+                version = executable.parent.name.removeprefix("Blender ")
+                try:
+                    return tuple(int(part) for part in version.split("."))
+                except ValueError:
+                    return ()
+
+            return max(candidates, key=version_key)
+
+    session.error(
+        "Blender実行ファイルが見つかりません。PATHへ追加するか、"
+        "BLENDER_EXECUTABLEにblender実行ファイルの絶対パスを設定してください。"
+    )
+
+
 @nox.session(venv_backend="none")
 def blender_tests(session: nox.Session) -> None:
     """tests/run_blender_tests.py をラップして実行する。
@@ -175,9 +210,14 @@ def blender_tests(session: nox.Session) -> None:
         uvx nox -s blender_tests
         uvx nox -s blender_tests -- --type integration
     """
+    executable = _resolve_blender_executable(session)
     session.run(
-        sys.executable,
-        "tests/run_blender_tests.py",
+        str(executable),
+        "--background",
+        "--factory-startup",
+        "--python",
+        str(Path(__file__).parent / "tests" / "run_blender_tests.py"),
+        "--",
         *session.posargs,
         external=True,
     )
