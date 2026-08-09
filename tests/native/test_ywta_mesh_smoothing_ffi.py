@@ -6,6 +6,7 @@ import ctypes
 import math
 import os
 from pathlib import Path
+import sys
 import unittest
 
 
@@ -22,6 +23,13 @@ STATUS_OUTPUT_TOO_SMALL = 5
 STATUS_EDGE_INDEX_OUT_OF_RANGE = 6
 STATUS_NON_FINITE = 7
 STATUS_INVALID_TOPOLOGY = 12
+
+_REPO_ROOT = Path(__file__).parents[2]
+_BLENDER_MODULES = _REPO_ROOT / "blender" / "modules"
+if str(_BLENDER_MODULES) not in sys.path:
+    sys.path.insert(0, str(_BLENDER_MODULES))
+
+from ywta_mesh_smoothing import binding as blender_binding  # noqa: E402
 
 
 class Options(ctypes.Structure):
@@ -361,6 +369,17 @@ class MeshSmoothingFfiTests(unittest.TestCase):
             ),
             STATUS_ABI_MISMATCH,
         )
+
+    def test_blender_binding_calls_release_dll(self) -> None:
+        blender_binding.reset_dll_cache()
+        result = blender_binding.smooth(
+            [0.0, 0.0, 0.0, 2.0, 0.0, 0.0],
+            [0, 1],
+            mode=blender_binding.MODE_HC,
+            iterations=1,
+        )
+        self.assertAlmostEqual(result[0], 0.6)
+        self.assertAlmostEqual(result[3], 1.4)
 
 
 if __name__ == "__main__":
