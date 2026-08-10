@@ -155,3 +155,9 @@ def photoshop_validate(session: nox.Session) -> None:
         "test_*.py",
         external=True,
     )
+    session.run(
+        "node",
+        "--test",
+        "tests/photoshop/test_texture_contract.js",
+        external=True,
+    )

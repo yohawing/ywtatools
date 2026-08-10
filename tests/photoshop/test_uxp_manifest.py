@@ -25,6 +25,9 @@ class UxpManifestTest(unittest.TestCase):
         self.assertEqual(self.manifest["manifestVersion"], 5)
         self.assertEqual(self.manifest["host"]["app"], "PS")
         self.assertTrue(self.manifest["host"]["minVersion"])
+        self.assertEqual(
+            self.manifest["requiredPermissions"]["localFileSystem"], "request"
+        )
 
     def test_main_file_exists(self) -> None:
         """manifest の main が実在するファイルを参照することを確認する。"""

@@ -120,6 +120,7 @@ uvx nox -s lint
   - `anim:` アニメーション関連
   - `deform:` デフォーメーション関連
   - `blender:` Blenderアドオン関連
+  - `photoshop:` Photoshop UXPプラグイン関連
   - `cpp:` C++プラグイン関連
   - `test:` テスト関連
   - `docs:` ドキュメント関連

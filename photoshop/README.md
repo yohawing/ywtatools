@@ -1,7 +1,32 @@
 # Photoshop 用ツール
 
-Photoshop 用ツールは UXP プラグインとして実装します。現在は
-`ywtatools-uxp/` に、外部パッケージへ依存しない最小の開発環境があります。
+Photoshop 用ツールは UXP プラグインとして実装します。`ywtatools-uxp/` に、
+外部パッケージへ依存しない3DCG向けテクスチャ書き出し環境があります。
+
+## Texture Generator
+
+PSD直下のレイヤーグループをPBRテクスチャ用途として認識し、元PSDを変更せず
+`<ベース名>_<用途>.png` へ一括出力します。
+
+認識する標準グループは次のとおりです。大文字小文字と空白、`_`、`-` の違いは
+無視し、`Albedo` / `Diffuse` や `Metalness` などの一般的な別名も認識します。
+
+- `BaseColor`
+- `Normal`
+- `Roughness`
+- `Metallic`
+- `AO`
+- `Emissive`
+- `Opacity`
+- `Height`
+- `Mask`
+
+パネルの **不足グループを作成** で、この構成を現在のPSDへ追加できます。
+書き出し時はドキュメントを一時複製し、対象グループだけを表示した状態でPNGを
+保存してから複製を破棄します。元PSDの表示状態や履歴は変更しません。
+
+現段階では各グループを個別PNGへ出力します。ORMやUnity HDRP Mask Mapなどの
+RGBAチャンネルパッキングは未実装です。
 
 ## 必要なもの
 
@@ -28,6 +53,7 @@ UXP Developer Tool は Creative Cloud Desktop からインストールしてく�
 uvx nox -s photoshop_validate
 ```
 
-この検証は manifest の基本 contract、エントリーポイント ID、参照ファイルの
-存在を確認します。Photoshop 上での読み込み確認は UXP Developer Tool が必要です。
+この検証は manifest の基本 contract、エントリーポイント ID、参照ファイル、
+PBRグループ認識、出力命名を確認します。Photoshop 上での読み込み・実ファイル
+出力確認は UXP Developer Tool が必要です。
 

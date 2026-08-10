@@ -7,10 +7,36 @@
   </head>
   <body>
     <main>
-      <h1>YWTA Tools</h1>
-      <p>Photoshop UXP プラグインの開発環境です。</p>
-      <sp-button id="check-connection" variant="primary">接続確認</sp-button>
-      <p id="status" role="status">Photoshop の情報を確認できます。</p>
+      <h1>YWTA Texture Generator</h1>
+      <p class="description">
+        PSD直下のPBRグループを検出し、用途別のPNGとして書き出します。
+      </p>
+
+      <section>
+        <h2>PSD構成</h2>
+        <sp-button id="create-template">不足グループを作成</sp-button>
+        <sp-button id="refresh" quiet>再検出</sp-button>
+      </section>
+
+      <section>
+        <h2>出力</h2>
+        <label for="base-name">ベース名</label>
+        <sp-textfield id="base-name" placeholder="MaterialName"></sp-textfield>
+        <sp-button id="select-folder">出力フォルダを選択</sp-button>
+        <p id="output-folder" class="path">未選択</p>
+        <label class="checkbox-row">
+          <sp-checkbox id="overwrite"></sp-checkbox>
+          既存ファイルを上書き
+        </label>
+      </section>
+
+      <section>
+        <h2>書き出し予定</h2>
+        <ul id="export-plan"></ul>
+      </section>
+
+      <sp-button id="export" variant="primary">PBRテクスチャを書き出し</sp-button>
+      <p id="status" role="status">PSDを開いてください。</p>
     </main>
   </body>
 </html>

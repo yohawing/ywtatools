@@ -8,6 +8,9 @@
     "app": "PS",
     "minVersion": "23.3.0"
   },
+  "requiredPermissions": {
+    "localFileSystem": "request"
+  },
   "entrypoints": [
     {
       "type": "panel",
