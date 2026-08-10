@@ -160,5 +160,6 @@ def photoshop_validate(session: nox.Session) -> None:
         "--test",
         "tests/photoshop/test_texture_contract.js",
         "tests/photoshop/test_channel_packer.js",
+        "tests/photoshop/test_output_folder_store.js",
         external=True,
     )

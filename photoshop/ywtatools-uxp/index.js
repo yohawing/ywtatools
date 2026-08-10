@@ -7,6 +7,10 @@ const {
     getPackedPreset,
 } = require("./channel-packer");
 const {
+    restoreOutputFolder,
+    saveOutputFolder,
+} = require("./output-folder-store");
+const {
     TEXTURE_TEMPLATES,
     buildExportPlan,
     getTextureTemplate,
@@ -25,6 +29,17 @@ function setStatus(message, isError = false) {
     }
     status.textContent = message;
     status.classList.toggle("error", isError);
+}
+
+/** 出力フォルダの表示を更新する。 */
+function updateOutputFolderLabel(folder) {
+    const label = document.getElementById("output-folder");
+    if (!label) {
+        return;
+    }
+    label.textContent = folder
+        ? storage.localFileSystem.getNativePath(folder) || folder.name
+        : "未選択";
 }
 
 /** アクティブドキュメントを取得し、無い場合はエラーにする。 */
@@ -147,16 +162,28 @@ function refreshPreview() {
 
 /** 出力フォルダをユーザーに選択してもらう。 */
 async function selectOutputFolder() {
-    const selected = await storage.localFileSystem.getFolder();
-    if (!selected) {
-        return;
+    let selected = null;
+    try {
+        selected = await storage.localFileSystem.getFolder();
+        if (!selected) {
+            return;
+        }
+        outputFolder = selected;
+        updateOutputFolderLabel(outputFolder);
+        await saveOutputFolder(storage.localFileSystem, localStorage, selected);
+        setStatus("出力フォルダを選択し、次回起動用に保存しました。");
+    } catch (error) {
+        const prefix = selected
+            ? "出力先は選択しましたが、次回起動用に保存できませんでした"
+            : "出力フォルダを選択できませんでした";
+        setStatus(`${prefix}: ${error.message}`, true);
     }
-    outputFolder = selected;
-    const label = document.getElementById("output-folder");
-    if (label) {
-        label.textContent = selected.nativePath || selected.name;
-    }
-    setStatus("出力フォルダを選択しました。");
+}
+
+/** 前回選択した出力フォルダを復元する。 */
+async function restoreOutputFolderSelection() {
+    outputFolder = await restoreOutputFolder(storage.localFileSystem, localStorage);
+    updateOutputFolderLabel(outputFolder);
 }
 
 /** 選択したテンプレートで不足している標準グループをPSDへ追加する。 */
@@ -440,7 +467,7 @@ async function exportTextureMaps() {
     }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("refresh").addEventListener("click", refreshPreview);
     document.getElementById("select-folder").addEventListener("click", selectOutputFolder);
     document
@@ -452,6 +479,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("export-packed").addEventListener("change", refreshPreview);
     document.getElementById("packed-preset").addEventListener("change", refreshPreview);
     document.getElementById("texture-template").addEventListener("change", refreshPreview);
+    await restoreOutputFolderSelection();
     refreshPreview();
 });
 
