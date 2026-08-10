@@ -83,4 +83,5 @@ artifacts/
 # AutoRemesher コアのビルド出力 (cpp/autoremesher_core)
 /bin/
 cpp/autoremesher_core/build*/
+cpp/mesh_core/build*/
 
