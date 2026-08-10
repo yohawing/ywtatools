@@ -64,11 +64,56 @@ struct BowTieSplitResult {
   [[nodiscard]] bool ok() const noexcept { return status == TopologyStatus::kOk; }
 };
 
+/** 削除された要素を旧→新mappingで表す値。 */
+inline constexpr std::uint64_t kRemovedElement = UINT64_MAX;
+
+/**
+ * edge-connected shellが三角形1面だけの場合に、その面を除外する計画。
+ *
+ * retained_face_* は新しいface/corner配列である。source_face_by_outputと
+ * source_corner_by_outputを使うとface/corner属性を入力からコピーできる。
+ * source_vertex_by_outputを使うと頂点属性をコピーできる。旧→新mappingの
+ * 削除要素にはkRemovedElementが入る。
+ */
+struct SingleTriangleShellRemovalPlan {
+  std::uint32_t original_vertex_count = 0;
+  std::uint64_t output_vertex_count = 0;
+  std::uint64_t original_face_count = 0;
+  std::uint64_t output_face_count = 0;
+  std::vector<std::uint64_t> retained_face_offsets;
+  std::vector<std::uint32_t> retained_face_vertices;
+  std::vector<std::uint64_t> source_face_by_output;
+  std::vector<std::uint64_t> output_face_by_source;
+  std::vector<std::uint64_t> source_corner_by_output;
+  std::vector<std::uint32_t> source_vertex_by_output;
+  std::vector<std::uint64_t> output_vertex_by_source;
+  std::vector<std::uint64_t> removed_source_faces;
+};
+
+/** 1 triangle shell削除計画の作成結果。 */
+struct SingleTriangleShellRemovalResult {
+  TopologyStatus status = TopologyStatus::kOk;
+  std::string message;
+  SingleTriangleShellRemovalPlan plan;
+
+  [[nodiscard]] bool ok() const noexcept { return status == TopologyStatus::kOk; }
+};
+
 /**
  * 頂点周りのface fanを共有edgeで連結し、複数fanを持つ頂点の分離計画を作る。
  *
  * 頂点位置やface数は変更しない。構造的に不正な入力は部分結果を返さず拒否する。
  */
 [[nodiscard]] BowTieSplitResult plan_bow_tie_vertex_splits(const RawTopologyView& topology);
+
+/**
+ * 1 triangleだけで構成されたedge-connected shellを除外する計画を作る。
+ *
+ * 明示的なopt-in操作専用であり、bow-tie修復や通常の診断から自動では呼ばない。
+ * standalone polygonは対象外とする。削除faceだけから参照されていた頂点はcompactするが、
+ * 入力時点から孤立していた頂点は対象外として保持する。
+ */
+[[nodiscard]] SingleTriangleShellRemovalResult plan_single_triangle_shell_removal(
+    const RawTopologyView& topology);
 
 }  // namespace ywta::mesh_core

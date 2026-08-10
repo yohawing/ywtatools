@@ -9,7 +9,9 @@
 namespace {
 
 using ywta::mesh_core::BowTieSplitResult;
+using ywta::mesh_core::kRemovedElement;
 using ywta::mesh_core::plan_bow_tie_vertex_splits;
+using ywta::mesh_core::plan_single_triangle_shell_removal;
 using ywta::mesh_core::RawTopologyView;
 using ywta::mesh_core::TopologyStatus;
 
@@ -144,6 +146,98 @@ void test_empty_topology_is_supported() {
          "isolated vertex attributes should retain identity mapping");
 }
 
+void test_single_triangle_shell_removal_is_explicit_and_mapped() {
+  const std::vector<std::uint64_t> offsets{0, 3, 6, 9, 13, 16};
+  const std::vector<std::uint32_t> vertices{
+      0, 1,  2,       // edgeを共有しないtriangle
+      3, 4,  5,       // 次のtriangleとedgeを共有
+      4, 3,  6,       // 前のtriangleとedgeを共有
+      7, 8,  9,  10,  // standalone quadは削除対象外
+      0, 11, 12,      // 最初のtriangleとは頂点だけを共有
+  };
+  const auto result = plan_single_triangle_shell_removal({
+      14,  // vertex 13は入力時点から孤立
+      offsets.data(),
+      offsets.size() - 1,
+      vertices.data(),
+      vertices.size(),
+  });
+
+  expect(result.ok(), "single-triangle removal input should be accepted");
+  expect(result.plan.removed_source_faces == std::vector<std::uint64_t>({0, 4}),
+         "only edge-isolated triangles should be selected for removal");
+  expect(result.plan.output_face_count == 3, "three non-target faces should remain");
+  expect(result.plan.retained_face_offsets == std::vector<std::uint64_t>({0, 3, 6, 10}),
+         "retained face offsets should be rebuilt");
+  expect(result.plan.retained_face_vertices ==
+             std::vector<std::uint32_t>({0, 1, 2, 1, 0, 3, 4, 5, 6, 7}),
+         "retained faces should preserve corner order and use compacted vertices");
+  expect(result.plan.source_face_by_output == std::vector<std::uint64_t>({1, 2, 3}),
+         "output faces should map to source faces");
+  expect(result.plan.output_face_by_source ==
+             std::vector<std::uint64_t>({kRemovedElement, 0, 1, 2, kRemovedElement}),
+         "removed source faces should use the removal sentinel");
+  expect(result.plan.source_corner_by_output ==
+             std::vector<std::uint64_t>({3, 4, 5, 6, 7, 8, 9, 10, 11, 12}),
+         "corner attributes should map to their original corners");
+  expect(result.plan.source_vertex_by_output ==
+             std::vector<std::uint32_t>({3, 4, 5, 6, 7, 8, 9, 10, 13}),
+         "deleted-shell vertices should be compacted while old isolated vertices remain");
+  expect(result.plan.output_vertex_by_source ==
+             std::vector<std::uint64_t>({kRemovedElement, kRemovedElement, kRemovedElement, 0, 1, 2,
+                                         3, 4, 5, 6, 7, kRemovedElement, kRemovedElement, 8}),
+         "source vertices should map to compacted output ids");
+  expect(result.plan.output_vertex_count == 9,
+         "five deleted-shell-only vertices should be removed");
+
+  const auto second_pass = plan_single_triangle_shell_removal({
+      static_cast<std::uint32_t>(result.plan.output_vertex_count),
+      result.plan.retained_face_offsets.data(),
+      result.plan.retained_face_offsets.size() - 1,
+      result.plan.retained_face_vertices.data(),
+      result.plan.retained_face_vertices.size(),
+  });
+  expect(second_pass.ok(), "retained topology should remain valid");
+  expect(second_pass.plan.removed_source_faces.empty(),
+         "single-triangle removal should be idempotent");
+}
+
+void test_single_triangle_removal_propagates_validation_failure() {
+  const std::vector<std::uint64_t> offsets{0, 3};
+  const std::vector<std::uint32_t> vertices{0, 1, 3};
+  const auto result = plan_single_triangle_shell_removal({
+      3,
+      offsets.data(),
+      offsets.size() - 1,
+      vertices.data(),
+      vertices.size(),
+  });
+
+  expect(result.status == TopologyStatus::kVertexIndexOutOfRange,
+         "removal planning should reject invalid topology without a partial plan");
+  expect(result.plan.retained_face_vertices.empty(),
+         "invalid removal input should not return retained faces");
+}
+
+void test_single_triangle_removal_can_produce_an_empty_mesh() {
+  const std::vector<std::uint64_t> offsets{0, 3};
+  const std::vector<std::uint32_t> vertices{0, 1, 2};
+  const auto result = plan_single_triangle_shell_removal({
+      3,
+      offsets.data(),
+      offsets.size() - 1,
+      vertices.data(),
+      vertices.size(),
+  });
+
+  expect(result.ok(), "a standalone triangle should be removable");
+  expect(result.plan.output_face_count == 0, "removing the only triangle should leave no faces");
+  expect(result.plan.retained_face_offsets == std::vector<std::uint64_t>({0}),
+         "an empty output should retain a valid offset sentinel");
+  expect(result.plan.output_vertex_count == 0,
+         "vertices used only by the removed triangle should also be removed");
+}
+
 }  // namespace
 
 int main() {
@@ -153,6 +247,9 @@ int main() {
   test_three_fans_are_deterministic();
   test_invalid_inputs_are_rejected_without_a_plan();
   test_empty_topology_is_supported();
+  test_single_triangle_shell_removal_is_explicit_and_mapped();
+  test_single_triangle_removal_propagates_validation_failure();
+  test_single_triangle_removal_can_produce_an_empty_mesh();
 
   if (failures != 0) {
     std::cerr << failures << " test(s) failed\n";
