@@ -57,6 +57,76 @@ const TEXTURE_MAPS = Object.freeze([
     },
 ]);
 
+const TOON_TEXTURE_MAPS = Object.freeze([
+    {
+        id: "base_color",
+        groupName: "BaseColor",
+        suffix: "BaseColor",
+        aliases: ["basecolor", "base color", "albedo", "diffuse"],
+    },
+    {
+        id: "shade_color",
+        groupName: "ShadeColor",
+        suffix: "ShadeColor",
+        aliases: ["shadecolor", "shade color", "shadowcolor", "shadow color"],
+    },
+    {
+        id: "shadow_mask",
+        groupName: "ShadowMask",
+        suffix: "ShadowMask",
+        aliases: ["shadowmask", "shadow mask", "shademask", "shade mask"],
+    },
+    {
+        id: "specular",
+        groupName: "Specular",
+        suffix: "Specular",
+        aliases: ["specular", "specularmask", "specular mask", "highlight"],
+    },
+    {
+        id: "rim_light",
+        groupName: "RimLight",
+        suffix: "RimLight",
+        aliases: ["rimlight", "rim light", "rimmask", "rim mask"],
+    },
+    {
+        id: "matcap",
+        groupName: "MatCap",
+        suffix: "MatCap",
+        aliases: ["matcap", "sphere", "spheremap", "sphere map"],
+    },
+    {
+        id: "emissive",
+        groupName: "Emissive",
+        suffix: "Emissive",
+        aliases: ["emissive", "emission"],
+    },
+    {
+        id: "outline_mask",
+        groupName: "OutlineMask",
+        suffix: "OutlineMask",
+        aliases: ["outlinemask", "outline mask", "edge mask"],
+    },
+    {
+        id: "face_shadow",
+        groupName: "FaceShadow",
+        suffix: "FaceShadow",
+        aliases: ["faceshadow", "face shadow", "facesdf", "face sdf"],
+    },
+]);
+
+const TEXTURE_TEMPLATES = Object.freeze([
+    { id: "pbr", label: "PBR", maps: TEXTURE_MAPS, supportsPacking: true },
+    { id: "toon", label: "Toon", maps: TOON_TEXTURE_MAPS, supportsPacking: false },
+]);
+
+/** IDに一致するテクスチャテンプレートを返す。 */
+function getTextureTemplate(templateId) {
+    return (
+        TEXTURE_TEMPLATES.find((template) => template.id === templateId) ??
+        TEXTURE_TEMPLATES[0]
+    );
+}
+
 /** 大文字小文字や区切り文字を無視できる比較名へ変換する。 */
 function normalizeGroupName(name) {
     return String(name ?? "")
@@ -76,11 +146,11 @@ function sanitizeBaseName(name) {
 }
 
 /** トップレベルグループから既知のテクスチャ用途を検出する。 */
-function detectTextureGroups(groups) {
+function detectTextureGroups(groups, textureMaps = TEXTURE_MAPS) {
     const matches = [];
     const usedGroupIndices = new Set();
 
-    for (const textureMap of TEXTURE_MAPS) {
+    for (const textureMap of textureMaps) {
         const aliases = new Set(textureMap.aliases.map(normalizeGroupName));
         const sourceIndex = groups.findIndex(
             (group, index) =>
@@ -96,9 +166,9 @@ function detectTextureGroups(groups) {
 }
 
 /** 現在のPSDから生成するPNG一覧を返す。 */
-function buildExportPlan(documentName, groups) {
+function buildExportPlan(documentName, groups, textureMaps = TEXTURE_MAPS) {
     const baseName = sanitizeBaseName(documentName);
-    return detectTextureGroups(groups).map((match) => ({
+    return detectTextureGroups(groups, textureMaps).map((match) => ({
         ...match,
         fileName: `${baseName}_${match.suffix}.png`,
     }));
@@ -106,9 +176,11 @@ function buildExportPlan(documentName, groups) {
 
 module.exports = {
     TEXTURE_MAPS,
+    TEXTURE_TEMPLATES,
+    TOON_TEXTURE_MAPS,
     buildExportPlan,
     detectTextureGroups,
+    getTextureTemplate,
     normalizeGroupName,
     sanitizeBaseName,
 };
-

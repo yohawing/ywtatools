@@ -9,11 +9,18 @@
     <main>
       <h1>YWTA Texture Generator</h1>
       <p class="description">
-        PSD直下のPBRグループを検出し、用途別のPNGとして書き出します。
+        PSD直下のPBR / Toonグループを検出し、用途別のPNGとして書き出します。
       </p>
 
       <section>
         <h2>PSD構成</h2>
+        <label for="texture-template">テンプレート</label>
+        <sp-dropdown id="texture-template">
+          <sp-menu slot="options">
+            <sp-menu-item selected>PBR</sp-menu-item>
+            <sp-menu-item>Toon</sp-menu-item>
+          </sp-menu>
+        </sp-dropdown>
         <sp-button id="create-template">不足グループを作成</sp-button>
         <sp-button id="refresh" quiet>再検出</sp-button>
       </section>
@@ -28,18 +35,20 @@
           <sp-checkbox id="export-individual" checked></sp-checkbox>
           用途別PNGを出力
         </label>
-        <label class="checkbox-row">
-          <sp-checkbox id="export-packed" checked></sp-checkbox>
-          チャンネルパックを出力
-        </label>
-        <label for="packed-preset">パックプリセット</label>
-        <sp-dropdown id="packed-preset">
-          <sp-menu slot="options">
-            <sp-menu-item selected>Generic / Unreal ORM</sp-menu-item>
-            <sp-menu-item>Unity URP Metallic Smoothness</sp-menu-item>
-            <sp-menu-item>Unity HDRP Mask Map</sp-menu-item>
-          </sp-menu>
-        </sp-dropdown>
+        <div id="packed-controls">
+          <label class="checkbox-row">
+            <sp-checkbox id="export-packed" checked></sp-checkbox>
+            チャンネルパックを出力
+          </label>
+          <label for="packed-preset">パックプリセット</label>
+          <sp-dropdown id="packed-preset">
+            <sp-menu slot="options">
+              <sp-menu-item selected>Generic / Unreal ORM</sp-menu-item>
+              <sp-menu-item>Unity URP Metallic Smoothness</sp-menu-item>
+              <sp-menu-item>Unity HDRP Mask Map</sp-menu-item>
+            </sp-menu>
+          </sp-dropdown>
+        </div>
         <label class="checkbox-row">
           <sp-checkbox id="overwrite"></sp-checkbox>
           既存ファイルを上書き
@@ -51,7 +60,7 @@
         <ul id="export-plan"></ul>
       </section>
 
-      <sp-button id="export" variant="primary">PBRテクスチャを書き出し</sp-button>
+      <sp-button id="export" variant="primary">テクスチャを書き出し</sp-button>
       <p id="status" role="status">PSDを開いてください。</p>
     </main>
   </body>

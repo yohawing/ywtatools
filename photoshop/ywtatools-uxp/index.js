@@ -7,8 +7,9 @@ const {
     getPackedPreset,
 } = require("./channel-packer");
 const {
-    TEXTURE_MAPS,
+    TEXTURE_TEMPLATES,
     buildExportPlan,
+    getTextureTemplate,
     normalizeGroupName,
     sanitizeBaseName,
 } = require("./texture-contract");
@@ -47,6 +48,13 @@ function getRequestedBaseName(photoshopDocument) {
     return input?.value.trim() || photoshopDocument.name;
 }
 
+/** UIで選択されているテクスチャテンプレートを返す。 */
+function getSelectedTextureTemplate() {
+    const selectedIndex =
+        document.getElementById("texture-template")?.selectedIndex ?? 0;
+    return getTextureTemplate(TEXTURE_TEMPLATES[selectedIndex]?.id);
+}
+
 /** 現在のレイヤー構成から個別マップの出力予定を作る。 */
 function createCurrentPlan() {
     const photoshopDocument = requireActiveDocument();
@@ -54,6 +62,7 @@ function createCurrentPlan() {
     return buildExportPlan(
         getRequestedBaseName(photoshopDocument),
         groups.map((group) => ({ name: group.name })),
+        getSelectedTextureTemplate().maps,
     );
 }
 
@@ -65,6 +74,9 @@ function getSelectedPackedPreset() {
 
 /** 個別マップの検出結果からパック出力予定を作る。 */
 function createPackedPlan(individualPlan) {
+    if (!getSelectedTextureTemplate().supportsPacking) {
+        return null;
+    }
     if (!(document.getElementById("export-packed")?.checked ?? true)) {
         return null;
     }
@@ -82,7 +94,7 @@ function createPackedPlan(individualPlan) {
     };
 }
 
-/** 検出したPBRグループと出力名を表示する。 */
+/** 検出したテクスチャグループと出力名を表示する。 */
 function refreshPreview() {
     const list = document.getElementById("export-plan");
     if (!list) {
@@ -91,6 +103,11 @@ function refreshPreview() {
     list.replaceChildren();
 
     try {
+        const template = getSelectedTextureTemplate();
+        const packedControls = document.getElementById("packed-controls");
+        if (packedControls) {
+            packedControls.hidden = !template.supportsPacking;
+        }
         const photoshopDocument = requireActiveDocument();
         const input = document.getElementById("base-name");
         if (input && !input.value) {
@@ -120,7 +137,9 @@ function refreshPreview() {
             item.textContent = "書き出し対象がありません。";
             list.appendChild(item);
         }
-        setStatus(`Photoshop ${app.version} / ${individualPlan.length}マップ検出`);
+        setStatus(
+            `Photoshop ${app.version} / ${template.label} ${individualPlan.length}マップ検出`,
+        );
     } catch (error) {
         setStatus(error.message, true);
     }
@@ -140,23 +159,24 @@ async function selectOutputFolder() {
     setStatus("出力フォルダを選択しました。");
 }
 
-/** 不足している標準PBRグループをPSDへ追加する。 */
-async function createPbrTemplate() {
+/** 選択したテンプレートで不足している標準グループをPSDへ追加する。 */
+async function createTextureTemplate() {
     try {
         const photoshopDocument = requireActiveDocument();
+        const template = getSelectedTextureTemplate();
         const existingNames = new Set(
             getTopLevelGroups(photoshopDocument).map((group) =>
                 normalizeGroupName(group.name),
             ),
         );
-        const missingMaps = TEXTURE_MAPS.filter(
+        const missingMaps = template.maps.filter(
             (textureMap) =>
                 !textureMap.aliases.some((alias) =>
                     existingNames.has(normalizeGroupName(alias)),
                 ),
         );
         if (missingMaps.length === 0) {
-            setStatus("標準PBRグループはすべて存在します。");
+            setStatus(`標準${template.label}グループはすべて存在します。`);
             return;
         }
 
@@ -164,16 +184,16 @@ async function createPbrTemplate() {
             async (executionContext) => {
                 const suspension = await executionContext.hostControl.suspendHistory({
                     documentID: photoshopDocument.id,
-                    name: "PBRレイヤーグループを作成",
+                    name: `${template.label}レイヤーグループを作成`,
                 });
                 for (const textureMap of [...missingMaps].reverse()) {
                     await photoshopDocument.createLayerGroup({ name: textureMap.groupName });
                 }
                 await executionContext.hostControl.resumeHistory(suspension);
             },
-            { commandName: "PBRレイヤーグループを作成" },
+            { commandName: `${template.label}レイヤーグループを作成` },
         );
-        setStatus(`${missingMaps.length}個のPBRグループを追加しました。`);
+        setStatus(`${missingMaps.length}個の${template.label}グループを追加しました。`);
         refreshPreview();
     } catch (error) {
         setStatus(`グループ作成に失敗しました: ${error.message}`, true);
@@ -365,7 +385,7 @@ async function exportPackedMap(sourceDocument, packedFile, executionContext) {
     }
 }
 
-/** 認識したPBRグループを個別またはパック済みPNGとして非破壊で書き出す。 */
+/** 認識したグループを個別またはパック済みPNGとして非破壊で書き出す。 */
 async function exportTextureMaps() {
     try {
         const sourceDocument = requireActiveDocument();
@@ -378,7 +398,7 @@ async function exportTextureMaps() {
         const selectedIndividualPlan = exportIndividual ? individualPlan : [];
         const packedPlan = createPackedPlan(individualPlan);
         if (selectedIndividualPlan.length === 0 && !packedPlan) {
-            throw new Error("書き出せるPBRグループがありません。");
+            throw new Error("書き出せるテクスチャグループがありません。");
         }
 
         const overwrite = document.getElementById("overwrite")?.checked ?? false;
@@ -412,7 +432,7 @@ async function exportTextureMaps() {
                     });
                 }
             },
-            { commandName: "PBRテクスチャを書き出し" },
+            { commandName: "テクスチャを書き出し" },
         );
         setStatus(`${outputCount}枚のテクスチャを書き出しました。`);
     } catch (error) {
@@ -423,12 +443,15 @@ async function exportTextureMaps() {
 document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("refresh").addEventListener("click", refreshPreview);
     document.getElementById("select-folder").addEventListener("click", selectOutputFolder);
-    document.getElementById("create-template").addEventListener("click", createPbrTemplate);
+    document
+        .getElementById("create-template")
+        .addEventListener("click", createTextureTemplate);
     document.getElementById("export").addEventListener("click", exportTextureMaps);
     document.getElementById("base-name").addEventListener("input", refreshPreview);
     document.getElementById("export-individual").addEventListener("change", refreshPreview);
     document.getElementById("export-packed").addEventListener("change", refreshPreview);
     document.getElementById("packed-preset").addEventListener("change", refreshPreview);
+    document.getElementById("texture-template").addEventListener("change", refreshPreview);
     refreshPreview();
 });
 

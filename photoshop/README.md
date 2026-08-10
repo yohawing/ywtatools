@@ -5,7 +5,7 @@ Photoshop 用ツールは UXP プラグインとして実装します。`ywtatoo
 
 ## Texture Generator
 
-PSD直下のレイヤーグループをPBRテクスチャ用途として認識し、元PSDを変更せず
+PSD直下のレイヤーグループをPBRまたはToonテクスチャ用途として認識し、元PSDを変更せず
 `<ベース名>_<用途>.png` へ一括出力します。
 
 認識する標準グループは次のとおりです。大文字小文字と空白、`_`、`-` の違いは
@@ -21,11 +21,26 @@ PSD直下のレイヤーグループをPBRテクスチャ用途として認識�
 - `Height`
 - `Mask`
 
-パネルの **不足グループを作成** で、この構成を現在のPSDへ追加できます。
+Toonテンプレートは次の汎用キャラクター向けグループを作成・認識します。
+
+- `BaseColor`
+- `ShadeColor`
+- `ShadowMask`
+- `Specular`
+- `RimLight`
+- `MatCap`
+- `Emissive`
+- `OutlineMask`
+- `FaceShadow`（`FaceSDF` も別名として認識）
+
+パネルでPBRまたはToonを選び、**不足グループを作成** で選択中の構成を
+現在のPSDへ追加できます。
 書き出し時はドキュメントを一時複製し、対象グループだけを表示した状態でPNGを
 保存してから複製を破棄します。元PSDの表示状態や履歴は変更しません。
 
-用途別PNGに加え、次のRGBAパッキングプリセットを選択できます。
+PBR選択時は、用途別PNGに加え、次のRGBAパッキングプリセットを選択できます。
+Toonの各マスクは用途やシェーダーによって割り当てが異なるため、現段階では個別PNGだけを
+出力します。
 
 - **Generic / Unreal ORM**: R=AO、G=Roughness、B=Metallic
 - **Unity URP Metallic Smoothness**: R=Metallic、A=Smoothness（Roughness反転）

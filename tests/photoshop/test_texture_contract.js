@@ -3,6 +3,8 @@ const assert = require("node:assert/strict");
 
 const {
     TEXTURE_MAPS,
+    TEXTURE_TEMPLATES,
+    TOON_TEXTURE_MAPS,
     buildExportPlan,
     detectTextureGroups,
     normalizeGroupName,
@@ -15,6 +17,18 @@ test("標準PBRマップを一意に定義する", () => {
     assert.equal(
         new Set(TEXTURE_MAPS.map((entry) => entry.suffix)).size,
         TEXTURE_MAPS.length,
+    );
+});
+
+test("PBRとToonのテンプレートを一意に定義する", () => {
+    assert.deepEqual(
+        TEXTURE_TEMPLATES.map((template) => template.id),
+        ["pbr", "toon"],
+    );
+    assert.equal(TOON_TEXTURE_MAPS.length, 9);
+    assert.equal(
+        new Set(TOON_TEXTURE_MAPS.map((entry) => entry.id)).size,
+        TOON_TEXTURE_MAPS.length,
     );
 });
 
@@ -51,3 +65,22 @@ test("空または不正なベース名を安全に処理する", () => {
     assert.equal(sanitizeBaseName("   "), "texture");
 });
 
+test("Toonグループを検出して用途別の名前を作る", () => {
+    const plan = buildExportPlan(
+        "Character.psd",
+        [
+            { name: "Shade Color" },
+            { name: "Face SDF" },
+            { name: "Outline-Mask" },
+        ],
+        TOON_TEXTURE_MAPS,
+    );
+    assert.deepEqual(
+        plan.map((entry) => entry.fileName),
+        [
+            "Character_ShadeColor.png",
+            "Character_OutlineMask.png",
+            "Character_FaceShadow.png",
+        ],
+    );
+});
