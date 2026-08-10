@@ -25,6 +25,22 @@
         <sp-button id="select-folder">出力フォルダを選択</sp-button>
         <p id="output-folder" class="path">未選択</p>
         <label class="checkbox-row">
+          <sp-checkbox id="export-individual" checked></sp-checkbox>
+          用途別PNGを出力
+        </label>
+        <label class="checkbox-row">
+          <sp-checkbox id="export-packed" checked></sp-checkbox>
+          チャンネルパックを出力
+        </label>
+        <label for="packed-preset">パックプリセット</label>
+        <sp-dropdown id="packed-preset">
+          <sp-menu slot="options">
+            <sp-menu-item selected>Generic / Unreal ORM</sp-menu-item>
+            <sp-menu-item>Unity URP Metallic Smoothness</sp-menu-item>
+            <sp-menu-item>Unity HDRP Mask Map</sp-menu-item>
+          </sp-menu>
+        </sp-dropdown>
+        <label class="checkbox-row">
           <sp-checkbox id="overwrite"></sp-checkbox>
           既存ファイルを上書き
         </label>
@@ -40,4 +56,3 @@
     </main>
   </body>
 </html>
-

@@ -9,7 +9,7 @@ Maya 側は [chadmv/cmt](https://github.com/chadmv/cmt) をベースにしてい
 
 - Autodesk Maya 2024 (Python 3.10)
 - Blender（アドオンとして実装）
-- Adobe Photoshop 23.3 以降（UXP Manifest v5 プラグイン）
+- Adobe Photoshop 24.4 以降（UXP Manifest v5 / Imaging API）
 - Windows 11 での開発を前提
 
 ## ディレクトリ構成

@@ -45,6 +45,12 @@ sp-textfield {
     margin: 4px 0 8px;
 }
 
+sp-dropdown {
+    display: block;
+    width: 100%;
+    margin: 4px 0 8px;
+}
+
 sp-button {
     margin: 4px 4px 4px 0;
 }
@@ -64,4 +70,3 @@ ul {
 .error {
     color: #e34850;
 }
-

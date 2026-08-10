@@ -25,12 +25,23 @@ PSD直下のレイヤーグループをPBRテクスチャ用途として認識�
 書き出し時はドキュメントを一時複製し、対象グループだけを表示した状態でPNGを
 保存してから複製を破棄します。元PSDの表示状態や履歴は変更しません。
 
-現段階では各グループを個別PNGへ出力します。ORMやUnity HDRP Mask Mapなどの
-RGBAチャンネルパッキングは未実装です。
+用途別PNGに加え、次のRGBAパッキングプリセットを選択できます。
+
+- **Generic / Unreal ORM**: R=AO、G=Roughness、B=Metallic
+- **Unity URP Metallic Smoothness**: R=Metallic、A=Smoothness（Roughness反転）
+- **Unity HDRP Mask Map**: R=Metallic、G=AO、B=Mask、A=Smoothness
+
+入力グループが無いチャンネルは、AO/Roughnessは白、その他は黒という中立値を
+使います。透明領域も同じ中立値へ合成します。パック処理はPhotoshop Imaging APIで
+各グループを512px高のタイルとして読み、出力も同じ単位で一時ドキュメントへ
+書き戻して解放するため、巨大入力全体のRGBAバッファをメモリへ保持しません。
+出力は現段階では原寸・8bit PNGです。
+
+実機検証が完了するまでは、パッキング出力を本番素材の正本として扱わないでください。
 
 ## 必要なもの
 
-- Adobe Photoshop 23.3 以降
+- Adobe Photoshop 24.4 以降
 - Adobe UXP Developer Tool
 
 UXP Developer Tool は Creative Cloud Desktop からインストールしてください。
@@ -54,6 +65,6 @@ uvx nox -s photoshop_validate
 ```
 
 この検証は manifest の基本 contract、エントリーポイント ID、参照ファイル、
-PBRグループ認識、出力命名を確認します。Photoshop 上での読み込み・実ファイル
-出力確認は UXP Developer Tool が必要です。
+PBRグループ認識、出力命名、RGBA割り当て、透明領域、Roughness反転を確認します。
+Photoshop 上での読み込み・実ファイル出力確認は UXP Developer Tool が必要です。
 

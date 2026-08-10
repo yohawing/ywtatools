@@ -24,7 +24,10 @@ class UxpManifestTest(unittest.TestCase):
         """Photoshop 向け Manifest v5 であることを確認する。"""
         self.assertEqual(self.manifest["manifestVersion"], 5)
         self.assertEqual(self.manifest["host"]["app"], "PS")
-        self.assertTrue(self.manifest["host"]["minVersion"])
+        minimum_version = tuple(
+            int(part) for part in self.manifest["host"]["minVersion"].split(".")
+        )
+        self.assertGreaterEqual(minimum_version, (24, 4, 0))
         self.assertEqual(
             self.manifest["requiredPermissions"]["localFileSystem"], "request"
         )
