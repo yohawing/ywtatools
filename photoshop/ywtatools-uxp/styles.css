@@ -1,10 +1,17 @@
+html,
 body {
+    height: 100vh;
     margin: 0;
+    overflow: hidden;
     color: var(--uxp-host-text-color);
     background: var(--uxp-host-background-color);
 }
 
 main {
+    box-sizing: border-box;
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
     padding: 16px;
 }
 
