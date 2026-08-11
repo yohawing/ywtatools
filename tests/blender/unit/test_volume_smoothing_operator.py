@@ -58,6 +58,72 @@ class VolumeSmoothingOperatorTests(unittest.TestCase):
         bpy.ops.mesh.select_all(action="SELECT")
         return obj
 
+    def test_brush_is_toolbar_tool_and_vertex_menu_only_has_batch_operator(self):
+        """ブラシはToolbar専用とし、Vertexメニューには一括処理だけを表示する。"""
+        from bl_ui.space_toolsystem_toolbar import VIEW3D_PT_tools_active
+
+        operator_ids = []
+        menu = mock.Mock()
+        menu.layout.operator.side_effect = lambda operator_id, **_kwargs: operator_ids.append(operator_id)
+
+        volume_smoothing.menu_func(menu, None)
+
+        self.assertEqual(operator_ids, [volume_smoothing.YWTA_OT_volume_smooth.bl_idname])
+        self.assertEqual(volume_smoothing.YWTA_WST_volume_smooth_brush.bl_context_mode, "EDIT_MESH")
+        self.assertEqual(
+            volume_smoothing.YWTA_WST_volume_smooth_brush.bl_keymap[0][0],
+            volume_smoothing.YWTA_OT_volume_smooth_brush.bl_idname,
+        )
+
+        toolbar_tools = VIEW3D_PT_tools_active._tools["EDIT_MESH"]
+        groups = [item for item in toolbar_tools if isinstance(item, tuple)]
+        brush_groups = [
+            group
+            for group in groups
+            if any(
+                getattr(tool, "idname", None) == volume_smoothing.YWTA_WST_volume_smooth_brush.bl_idname
+                for tool in group
+            )
+        ]
+        self.assertEqual(len(brush_groups), 1)
+        self.assertEqual(
+            [tool.idname for tool in brush_groups[0] if tool is not None],
+            [volume_smoothing.YWTA_WST_volume_smooth_brush.bl_idname],
+        )
+
+    def test_toolbar_draw_settings_exposes_brush_controls(self):
+        """Tool Settingsがモーダルオペレータの永続プロパティを編集する。"""
+        properties = object()
+        tool = mock.Mock()
+        tool.operator_properties.return_value = properties
+        layout = mock.Mock()
+
+        volume_smoothing.YWTA_WST_volume_smooth_brush.draw_settings(None, layout, tool)
+
+        tool.operator_properties.assert_called_once_with(volume_smoothing.YWTA_OT_volume_smooth_brush.bl_idname)
+        self.assertEqual(
+            [call.args[1] for call in layout.prop.call_args_list],
+            [
+                "brush_mode",
+                "radius",
+                "strength",
+                "iterations",
+                "spacing",
+                "use_selection_mask",
+                "preserve_boundary",
+            ],
+        )
+
+    def test_brush_poll_does_not_require_viewport_until_invoke(self):
+        """Toolbar登録用pollとストローク開始時のViewport検証を分離する。"""
+        context = mock.Mock()
+        context.active_object.type = "MESH"
+        context.active_object.mode = "EDIT"
+        context.area = None
+
+        self.assertTrue(volume_smoothing.YWTA_OT_volume_smooth_brush.poll(context))
+        self.assertFalse(volume_smoothing._is_view3d_window_context(context))
+
     def test_closed_mesh_preserves_oracle_volume(self):
         obj = self._create_edit_mesh(
             "ClosedTetra",
