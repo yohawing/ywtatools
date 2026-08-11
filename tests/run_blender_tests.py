@@ -45,7 +45,9 @@ def main():
     # 出力バッファリングの指定
     parser.add_argument("--no-buffer", action="store_true", help="出力バッファリングを無効にする")
 
-    args = parser.parse_args()
+    # Blender自身の引数を除外し、`--` より後だけをスクリプト引数として扱う。
+    script_args = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else None
+    args = parser.parse_args(script_args)
 
     # 環境設定
     TestSettings.environment = "blender"
@@ -69,7 +71,7 @@ def main():
 if __name__ == "__main__":
     # Blender環境内で実行されているかチェック
     try:
-        import bpy
+        import bpy  # noqa: F401
 
         main()
     except ImportError:

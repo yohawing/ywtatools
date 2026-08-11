@@ -14,6 +14,7 @@ Python環境 / mayapy / blender を薄くラップして呼び出すだけにす
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -122,6 +123,83 @@ def autoremesher_build(session: nox.Session) -> None:
     session.log(f"コピー完了: {built_dll} -> {dest}")
 
 
+def _build_mesh_smoothing_dll(session: nox.Session) -> Path:
+    """RustメッシュスムージングDLLをビルドしてbin/windowsへコピーする。"""
+    repo_root = Path(__file__).parent
+    session.run(
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "ywta-mesh-smoothing",
+        external=True,
+    )
+    built_dll = repo_root / "target" / "release" / "ywta_mesh_smoothing.dll"
+    if not built_dll.exists():
+        session.error(f"ビルド後にDLLが見つかりません: {built_dll}")
+    out_dir = repo_root / "bin" / "windows"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    destination = out_dir / "ywta_mesh_smoothing.dll"
+    shutil.copy2(built_dll, destination)
+    session.log(f"コピー完了: {built_dll} -> {destination}")
+    return destination
+
+
+@nox.session(venv_backend="none")
+def mesh_smoothing_build(session: nox.Session) -> None:
+    """RustメッシュスムージングのリリースDLLをビルドする。"""
+    _build_mesh_smoothing_dll(session)
+
+
+@nox.session(venv_backend="none")
+def mesh_smoothing_ffi_smoke(session: nox.Session) -> None:
+    """DLLをビルドし、Python ctypesからC ABIの往復を検証する。"""
+    dll_path = _build_mesh_smoothing_dll(session)
+    environment = dict(os.environ)
+    environment["YWTA_MESH_SMOOTHING_DLL"] = str(dll_path)
+    session.run(
+        sys.executable,
+        "tests/native/test_ywta_mesh_smoothing_ffi.py",
+        env=environment,
+        external=True,
+    )
+
+
+def _resolve_blender_executable(session: nox.Session) -> Path:
+    """環境変数、PATH、Windows標準配置の順でBlenderを解決する。"""
+    configured = os.environ.get("BLENDER_EXECUTABLE")
+    if configured:
+        executable = Path(configured)
+        if executable.is_file():
+            return executable
+        session.error(f"BLENDER_EXECUTABLEが指すファイルが見つかりません: {executable}")
+
+    from_path = shutil.which("blender")
+    if from_path:
+        return Path(from_path)
+
+    if os.name == "nt":
+        program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+        install_root = program_files / "Blender Foundation"
+        candidates = list(install_root.glob("Blender */blender.exe"))
+        if candidates:
+
+            def version_key(executable: Path) -> tuple[int, ...]:
+                """インストールフォルダ名から数値バージョンを返す。"""
+                version = executable.parent.name.removeprefix("Blender ")
+                try:
+                    return tuple(int(part) for part in version.split("."))
+                except ValueError:
+                    return ()
+
+            return max(candidates, key=version_key)
+
+    session.error(
+        "Blender実行ファイルが見つかりません。PATHへ追加するか、"
+        "BLENDER_EXECUTABLEにblender実行ファイルの絶対パスを設定してください。"
+    )
+
+
 @nox.session(venv_backend="none")
 def blender_tests(session: nox.Session) -> None:
     """tests/run_blender_tests.py をラップして実行する。
@@ -132,9 +210,14 @@ def blender_tests(session: nox.Session) -> None:
         uvx nox -s blender_tests
         uvx nox -s blender_tests -- --type integration
     """
+    executable = _resolve_blender_executable(session)
     session.run(
-        sys.executable,
-        "tests/run_blender_tests.py",
+        str(executable),
+        "--background",
+        "--factory-startup",
+        "--python",
+        str(Path(__file__).parent / "tests" / "run_blender_tests.py"),
+        "--",
         *session.posargs,
         external=True,
     )
