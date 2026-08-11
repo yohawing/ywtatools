@@ -54,6 +54,18 @@ class UxpManifestTest(unittest.TestCase):
         javascript = (PLUGIN_ROOT / "index.js").read_text(encoding="utf-8")
         self.assertIn(f'{panels[0]["id"]}:', javascript)
 
+    def test_panel_allows_user_resizing(self) -> None:
+        """フローティングパネルを十分な範囲でリサイズできることを確認する。"""
+        panel = next(
+            entrypoint
+            for entrypoint in self.manifest["entrypoints"]
+            if entrypoint["type"] == "panel"
+        )
+        self.assertGreater(panel["maximumSize"]["width"], panel["minimumSize"]["width"])
+        self.assertGreater(
+            panel["maximumSize"]["height"], panel["minimumSize"]["height"]
+        )
+
     def test_panel_content_remains_reachable_at_minimum_height(self) -> None:
         """低いドッキング領域でも本文を縦スクロールできることを確認する。"""
         stylesheet = (PLUGIN_ROOT / "styles.css").read_text(encoding="utf-8")
