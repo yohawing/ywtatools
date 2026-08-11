@@ -71,6 +71,12 @@ Blender用のツールは、Blenderのアドオンとして実装されていま
 ## インストール方法
 Blenderのアドオンとしてインストールするには、Preferences > File Paths > Scripts Directoriesに、`path/to/ywtatools/blender`を追加してください。
 
+# Photoshop用ツール
+
+Photoshop用のツールは UXP Manifest v5 プラグインとして実装します。
+開発環境の準備と UXP Developer Tool からの読み込み方法は
+[photoshop/README.md](./photoshop/README.md) を参照してください。
+
 
 # テストの実行方法
 

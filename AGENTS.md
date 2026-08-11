@@ -2,13 +2,14 @@
 
 ## プロジェクト概要
 
-Maya / Blender 用のテクニカルアーティストツール集です。個人プロジェクトで使う、リギング・デフォーメーション・アニメーション・メッシュ処理系のツールとユーティリティをまとめています。
+Maya / Blender / Photoshop 用のテクニカルアーティストツール集です。個人プロジェクトで使う、リギング・デフォーメーション・アニメーション・メッシュ・画像処理系のツールとユーティリティをまとめています。
 Maya 側は [chadmv/cmt](https://github.com/chadmv/cmt) をベースにしています。
 
 ### 対応プラットフォーム
 
 - Autodesk Maya 2024 (Python 3.10)
 - Blender（アドオンとして実装）
+- Adobe Photoshop 24.4 以降（UXP Manifest v5 / Imaging API）
 - Windows 11 での開発を前提
 
 ## ディレクトリ構成
@@ -19,10 +20,11 @@ maya/cpp/           Maya C++プラグインソース（CMakeビルド）
 maya/icons/         UIアイコン
 maya/plug-ins/      コンパイル済みプラグイン
 blender/addons/     Blenderアドオン
-tests/              Maya/Blender共通のテストフレームワーク（tests/README.md 参照）
+photoshop/          Photoshop UXPプラグイン
+tests/              Maya/Blender/Photoshopのテスト（tests/README.md 参照）
 ```
 
-新機能を追加するときは、適切なサブモジュール（rig/, deform/, mesh/ 等）に配置し、`menu.py` にメニューエントリを追加、必要ならアイコンを作成し、対応するテストコードを `tests/maya/unit/` または `tests/blender/unit/` に作成してください。
+新機能を追加するときは、対象 DCC の適切なサブモジュールへ配置し、必要なメニューエントリやアイコンを追加してください。対応するテストは `tests/maya/unit/`、`tests/blender/unit/`、または `tests/photoshop/` に作成します。
 
 ## コーディング規約
 
@@ -118,6 +120,7 @@ uvx nox -s lint
   - `anim:` アニメーション関連
   - `deform:` デフォーメーション関連
   - `blender:` Blenderアドオン関連
+  - `photoshop:` Photoshop UXPプラグイン関連
   - `cpp:` C++プラグイン関連
   - `test:` テスト関連
   - `docs:` ドキュメント関連

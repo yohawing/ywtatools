@@ -10,6 +10,7 @@ Python環境 / mayapy / blender を薄くラップして呼び出すだけにす
     uvx nox -s maya_tests -- --type integration
     uvx nox -s blender_tests
     uvx nox -s blender_tests -- --type integration
+    uvx nox -s photoshop_validate
 """
 
 from __future__ import annotations
@@ -219,5 +220,29 @@ def blender_tests(session: nox.Session) -> None:
         str(Path(__file__).parent / "tests" / "run_blender_tests.py"),
         "--",
         *session.posargs,
+        external=True,
+    )
+
+
+@nox.session(venv_backend="none")
+def photoshop_validate(session: nox.Session) -> None:
+    """Photoshop UXP プラグインの manifest contract を検証する。"""
+    session.run(
+        sys.executable,
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests/photoshop",
+        "-p",
+        "test_*.py",
+        external=True,
+    )
+    session.run(
+        "node",
+        "--test",
+        "tests/photoshop/test_texture_contract.js",
+        "tests/photoshop/test_channel_packer.js",
+        "tests/photoshop/test_output_folder_store.js",
         external=True,
     )

@@ -1,0 +1,79 @@
+html,
+body {
+    height: 100vh;
+    margin: 0;
+    overflow: hidden;
+    color: var(--uxp-host-text-color);
+    background: var(--uxp-host-background-color);
+}
+
+main {
+    box-sizing: border-box;
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 16px;
+}
+
+h1 {
+    margin: 0 0 8px;
+    font-size: 18px;
+}
+
+h2 {
+    margin: 0 0 8px;
+    font-size: 14px;
+}
+
+section {
+    margin: 16px 0;
+}
+
+p,
+li,
+label {
+    line-height: 1.5;
+}
+
+.description,
+.path {
+    color: var(--uxp-host-text-color-secondary);
+}
+
+.path,
+#status,
+li {
+    overflow-wrap: anywhere;
+}
+
+sp-textfield {
+    display: block;
+    width: 100%;
+    margin: 4px 0 8px;
+}
+
+sp-dropdown {
+    display: block;
+    width: 100%;
+    margin: 4px 0 8px;
+}
+
+sp-button {
+    margin: 4px 4px 4px 0;
+}
+
+.checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+ul {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.error {
+    color: #e34850;
+}

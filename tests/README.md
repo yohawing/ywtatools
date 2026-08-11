@@ -1,7 +1,7 @@
 # YWTA Tools テストフレームワーク
 
 このディレクトリには、YWTA Toolsのテストフレームワークが含まれています。
-Maya、Blenderなど異なるプラットフォーム向けのテストを実行するための共通基盤を提供します。
+Maya、Blender、Photoshopなど異なるプラットフォーム向けのテストを実行するための共通基盤を提供します。
 
 ## ディレクトリ構造
 
@@ -16,6 +16,7 @@ tests/
 │   ├── unit/         # Blenderの単体テスト
 │   ├── integration/  # Blenderの統合テスト
 │   └── performance/  # Blenderのパフォーマンステスト
+├── photoshop/        # Photoshop UXP contractの静的テスト
 └── utils/            # テスト実行用のユーティリティ
 ```
 
@@ -74,6 +75,18 @@ Blender環境でテストを実行するには、以下のいずれかの方法�
 ```bash
 blender -b -P tests/run_blender_tests.py -- --type integration
 ```
+
+### Photoshop用テストの実行
+
+Photoshop UXP manifestと、DCC非依存のテクスチャ命名・グループ認識contractを
+検証します。PythonとNode.jsを使う静的テストで、Photoshop本体は起動しません。
+
+```bash
+uvx nox -s photoshop_validate
+```
+
+Photoshop内での雛形作成やPNG書き出しは、UXP Developer Toolでプラグインを
+読み込んだ実機smokeとして別途確認します。
 
 ## 新しいテストの作成方法
 
