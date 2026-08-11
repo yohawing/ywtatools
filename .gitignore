@@ -84,3 +84,6 @@ artifacts/
 /bin/
 cpp/autoremesher_core/build*/
 
+# Mesh Core のビルド・プローブ出力 (cpp/mesh_core)
+cpp/mesh_core/build*/
+
