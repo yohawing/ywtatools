@@ -9,7 +9,7 @@ import bmesh
 import bpy
 from bpy_extras import view3d_utils
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
-from bpy.types import Operator
+from bpy.types import Operator, WorkSpaceTool
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
@@ -41,6 +41,17 @@ _BRUSH_MODE_ITEMS = (
 
 _RAIL_CORNER_DOT = -0.8660254037844386
 _WEIGHT_EPSILON = 1.0e-8
+
+
+def _is_view3d_window_context(context) -> bool:
+    """ブラシストロークを開始できる3D ViewportのWindow領域か判定する。"""
+    return (
+        context.area is not None
+        and context.area.type == "VIEW_3D"
+        and context.region is not None
+        and context.region.type == "WINDOW"
+        and context.region_data is not None
+    )
 
 
 def _is_closed_mesh(bm) -> bool:
@@ -444,19 +455,15 @@ class YWTA_OT_volume_smooth_brush(Operator):
 
     @classmethod
     def poll(cls, context):
+        """Edit Meshで利用可能にし、Viewport固有条件はinvoke時に検証する。"""
         obj = context.active_object
-        return (
-            obj is not None
-            and obj.type == "MESH"
-            and obj.mode == "EDIT"
-            and context.area is not None
-            and context.area.type == "VIEW_3D"
-            and context.region is not None
-            and context.region.type == "WINDOW"
-            and context.region_data is not None
-        )
+        return obj is not None and obj.type == "MESH" and obj.mode == "EDIT"
 
     def invoke(self, context, event):
+        if not _is_view3d_window_context(context):
+            self.report({"ERROR"}, "3D Viewport上でブラシストロークを開始してください")
+            return {"CANCELLED"}
+
         obj = context.active_object
         mesh = obj.data
         bm = bmesh.from_edit_mesh(mesh)
@@ -547,7 +554,7 @@ class YWTA_OT_volume_smooth_brush(Operator):
             if self._stroke_active and hit and self._needs_dab(hit[1]):
                 try:
                     self._apply_dab(hit[0], hit[2])
-                except (ValueError, binding.MeshSmoothingError) as error:
+                except (FileNotFoundError, ValueError, binding.MeshSmoothingError) as error:
                     self.report({"ERROR"}, str(error))
                     self._restore_initial()
                     self._cleanup(context)
@@ -666,24 +673,55 @@ class YWTA_OT_volume_smooth_brush(Operator):
             context.area.tag_redraw()
 
 
+class YWTA_WST_volume_smooth_brush(WorkSpaceTool):
+    """Edit Mesh ToolbarからVolume Smooth Brushを起動する薄いツール層。"""
+
+    bl_space_type = "VIEW_3D"
+    bl_context_mode = "EDIT_MESH"
+    bl_idname = "ywta.volume_smooth_brush_tool"
+    bl_label = "Volume Smooth Brush"
+    bl_description = "表面距離falloffを使う体積保持スムージングブラシ"
+    bl_icon = "ops.mesh.vertices_smooth"
+    bl_widget = None
+    bl_keymap = ((YWTA_OT_volume_smooth_brush.bl_idname, {"type": "LEFTMOUSE", "value": "PRESS"}, None),)
+
+    @staticmethod
+    def draw_settings(_context, layout, tool):
+        """Tool Settingsへ通常のブラシ操作に近い主要設定を表示する。"""
+        properties = tool.operator_properties(YWTA_OT_volume_smooth_brush.bl_idname)
+        layout.prop(properties, "brush_mode", expand=True)
+        layout.prop(properties, "radius")
+        layout.prop(properties, "strength")
+        layout.prop(properties, "iterations")
+        layout.prop(properties, "spacing")
+        layout.prop(properties, "use_selection_mask")
+        layout.prop(properties, "preserve_boundary")
+
+
 def menu_func(self, _context):
-    """頂点コンテキストメニューへオペレータを追加する。"""
+    """Vertexメニューへ一括スムージングだけを追加する。"""
     self.layout.operator(YWTA_OT_volume_smooth.bl_idname)
-    self.layout.operator(YWTA_OT_volume_smooth_brush.bl_idname, icon="BRUSH_SMOOTH")
 
 
 classes = [YWTA_OT_volume_smooth, YWTA_OT_volume_smooth_brush]
 
 
 def register():
-    """Blenderへクラスとメニューを登録する。"""
+    """Blenderへオペレータ、Vertexメニュー、Toolbarツールを登録する。"""
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.VIEW3D_MT_edit_mesh_vertices.append(menu_func)
+    bpy.utils.register_tool(
+        YWTA_WST_volume_smooth_brush,
+        after={"builtin.select_box"},
+        separator=True,
+        group=True,
+    )
 
 
 def unregister():
-    """Blenderからクラスとメニューを解除する。"""
+    """BlenderからToolbarツール、メニュー、オペレータを解除する。"""
+    bpy.utils.unregister_tool(YWTA_WST_volume_smooth_brush)
     bpy.types.VIEW3D_MT_edit_mesh_vertices.remove(menu_func)
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

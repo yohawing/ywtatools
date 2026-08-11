@@ -45,7 +45,7 @@ DLLは `bin/windows/ywta_mesh_smoothing.dll` に生成されます。このフ�
 `YWTA_MESH_SMOOTHING_DLL`へDLLの絶対パスを設定してください。
 
 - **Maya**: モジュールをインストールしてMayaを起動し、メッシュまたは頂点を選択して YWTA > Mesh > Volume Preserving Smoothing、ブラシ操作は YWTA > Mesh > Volume Smooth Brush を選びます
-- **Blender**: アドオンを有効化し、Edit Modeの Mesh メニューから Volume Preserving Smooth または Volume Smooth Brush を選びます
+- **Blender**: アドオンを有効化し、Edit Modeの Vertex メニューから Volume Preserving Smooth を実行します。Volume Smooth Brush は3D Viewport左側のToolbar（Tキー）で選択し、Tool Settingsから Smooth / Volume / Remove Bumps、半径、強度を調整します
 
 通常スムージングは連続マスクと輪郭railに対応します。
 
