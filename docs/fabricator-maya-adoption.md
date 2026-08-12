@@ -256,6 +256,9 @@ Undo の共通 contract が完成するまで追加しません。
 - skinCluster接続を切断するDisconnect/Reconnect All Skins
 - Scene Audit の自動修復
 - thumbnail 付き Pose / Animation library UI
+- Fabricator component address / `FAB_RigBinding` / `world_ctrl` roleに依存するroot motion自動除外とIK→FK比率差fallback
+- UE5固定名のEngine IK reference joint自動生成
+- Fabricator component / Limb / Moduleの複製（汎用joint hierarchy複製のみ採用）
 - Joint Offset / Spread のlive slider（axisのlocal/world契約と分岐hierarchyの評価順が未定義）
 - Paint on Select の常駐selection callback（scene-wide scriptJobとtool context状態の設計が必要）
 
