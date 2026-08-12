@@ -55,6 +55,7 @@ from ywta.rig.control import (
     mirror_curve,
     import_curve_files_on_selected,
     import_new_curve_files,
+    import_new_curve_files_at_selection,
     combine_control_shapes,
     mirror_selected_control_shapes,
     select_control_cvs,
@@ -176,6 +177,9 @@ class ControlWindow(SingletonWindowMixin, MayaQWidgetBaseMixin, QMainWindow):
         b = QPushButton("Build at Origin")
         b.released.connect(self.build_at_origin)
         hbox.addWidget(b)
+        b = QPushButton("Build at Selection")
+        b.released.connect(self.build_at_selection)
+        hbox.addWidget(b)
         b = QPushButton("Create Selected")
         b.released.connect(self.create_selected)
         hbox.addWidget(b)
@@ -289,6 +293,16 @@ class ControlWindow(SingletonWindowMixin, MayaQWidgetBaseMixin, QMainWindow):
         if not control_files:
             raise ValueError("作成するcontrol shapeを1つ以上選択してください。")
         curves = import_new_curve_files(control_files)
+        cmds.select(curves, replace=True)
+
+    def build_at_selection(self):
+        """Library shapeをviewport選択全体の中心へ新規作成する。"""
+        control_files = [
+            os.path.join(CONTROLS_DIRECTORY, "{0}.json".format(item.text())) for item in self.control_list.selectedItems()
+        ]
+        if not control_files:
+            raise ValueError("作成するcontrol shapeを1つ以上選択してください。")
+        curves = import_new_curve_files_at_selection(control_files)
         cmds.select(curves, replace=True)
 
     def remove_selected(self):

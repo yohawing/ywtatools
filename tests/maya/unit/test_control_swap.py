@@ -331,6 +331,38 @@ class ControlSwapTests(TestCase):
         cmds.undo()
         self.assertFalse(any(cmds.objExists(node) for node in created))
 
+    def test_library_files_build_at_selection_center_and_undo(self):
+        """複数library controlを選択bounds中心へ作成し、1回でUndoする。"""
+        curve = self._line([(0, 0, 0), (1, 0, 0)])
+        curve.transform = "placed_ctrl"
+        path = self.get_temp_filename("placed_control.json")
+        control._write_curve_data([curve], path)
+        guide = cmds.polyCube(name="guide", width=2, height=4, depth=6)[0]
+        cmds.setAttr(guide + ".translate", 3.0, -2.0, 5.0)
+        cmds.select(guide, replace=True)
+
+        created = control.import_new_curve_files_at_selection([path])
+
+        self.assertEqual(["placed_ctrl"], created)
+        self.assertEqual([3.0, -2.0, 5.0], cmds.xform(created[0], query=True, worldSpace=True, translation=True))
+        self.assertEqual(["|guide"], cmds.ls(selection=True, long=True))
+        cmds.undo()
+        self.assertFalse(cmds.objExists("placed_ctrl"))
+        cmds.redo()
+        self.assertEqual([3.0, -2.0, 5.0], cmds.xform(created[0], query=True, worldSpace=True, translation=True))
+
+    def test_library_build_rejects_invalid_position_before_creation(self):
+        """不正な配置位置ではcontrolを部分作成しない。"""
+        curve = self._line([(0, 0, 0), (1, 0, 0)])
+        curve.transform = "would_create"
+        path = self.get_temp_filename("invalid_position.json")
+        control._write_curve_data([curve], path)
+
+        with self.assertRaises(ValueError):
+            control.import_new_curve_files([path], world_position=(0.0, float("nan"), 0.0))
+
+        self.assertFalse(cmds.objExists("would_create"))
+
     def test_multiple_library_files_validate_before_creating(self):
         """後続JSONが壊れていれば先行entryも作成しない。"""
         curve = self._line([(0, 0, 0), (1, 0, 0)])

@@ -259,10 +259,29 @@ def import_new_curves(file_path=None, tag_as_controller=False):
     return import_new_curve_files([file_path], tag_as_controller=tag_as_controller)
 
 
-def import_new_curve_files(file_paths, tag_as_controller=False):
-    """複数Control JSONを事前検証し、原点へ1回のUndoで新規作成する。"""
+def import_new_curve_files(file_paths, tag_as_controller=False, world_position=None):
+    """複数Control JSONを事前検証し、1回のUndoで新規作成する。
+
+    Args:
+        file_paths: Control JSON path列。
+        tag_as_controller: controller tagを付けるか。
+        world_position: 作成先のworld位置。省略時は原点。
+
+    Returns:
+        作成したcontrol transform名列。
+    """
     if isinstance(file_paths, (str, bytes)) or not file_paths:
         raise ValueError("Control JSON pathを1つ以上指定してください。")
+    if world_position is None:
+        world_position = (0.0, 0.0, 0.0)
+    if (
+        not isinstance(world_position, (list, tuple))
+        or len(world_position) != 3
+        or any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in world_position)
+        or not all(math.isfinite(value) for value in world_position)
+    ):
+        raise ValueError("world_positionは有限な数値3要素で指定してください。")
+    world_position = tuple(float(value) for value in world_position)
     records = []
     for file_index, file_path in enumerate(file_paths):
         controls = load_curves(file_path)
@@ -288,9 +307,24 @@ def import_new_curve_files(file_paths, tag_as_controller=False):
             curve.create(transform, tag_as_controller)
             if transform not in transforms:
                 transforms.append(transform)
+        for transform in transforms:
+            cmds.xform(transform, worldSpace=True, translation=world_position)
         return transforms
 
     return _run_curve_creation("Import New Control Curves", create)
+
+
+def import_new_curve_files_at_selection(file_paths, tag_as_controller=False):
+    """Control JSONを現在選択のworld bounds中心へ新規作成する。"""
+    from ywta.rig.create_joint import _selection_center
+
+    selection = cmds.ls(selection=True, flatten=True, long=True) or []
+    position = _selection_center(selection)
+    return import_new_curve_files(
+        file_paths,
+        tag_as_controller=tag_as_controller,
+        world_position=position,
+    )
 
 
 def import_curves(file_path=None, tag_as_controller=False):
