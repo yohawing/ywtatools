@@ -30,6 +30,14 @@ class SelectionToolsTests(TestCase):
 
         self.assertEqual(["body_mesh"], [node.rsplit("|", 1)[-1] for node in result])
 
+    def test_select_child_meshes_includes_root_mesh_transform(self):
+        """mesh transform自身をroot指定した場合も選択対象に含める。"""
+        mesh = cmds.polyCube(name="body_mesh")[0]
+
+        result = selection_tools.select_child_meshes([mesh])
+
+        self.assertEqual(["body_mesh"], [node.rsplit("|", 1)[-1] for node in result])
+
     def test_skin_navigation_round_trip(self):
         mesh = cmds.polyPlane(name="cloth")[0]
         cmds.select(clear=True)
