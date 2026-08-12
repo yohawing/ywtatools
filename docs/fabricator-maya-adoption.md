@@ -53,6 +53,7 @@ Fabricator 本体は Business Source License 1.1、YWTA は MIT License です�
 - Separateはsource input geometryとbindPreMatrixを継承し、animation中も同じskin変形を維持
 - Separateの出力名はsource namespaceを継承し、Mayaのcurrent namespaceに依存しない
 - Combine / Separateの明示名は、namespaceなしならroot namespaceの完全名として扱う
+- Combine / Separateはjoint-global lockを変えないようlocked source influenceを編集前拒否
 - skinCluster後段でtopologyが変わったmeshはinput/output fingerprint不一致として編集前拒否
 
 Skin JSON は geometry と weight を含むため、大きいメッシュではファイルサイズも

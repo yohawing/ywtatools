@@ -92,6 +92,18 @@ class CombineSkinnedTests(TestCase):
         self.assertTrue(cmds.objExists(self.right))
         self.assertEqual({self.left, self.right}, set(cmds.ls(selection=True)))
 
+    def test_locked_source_influence_rejects_before_combine(self):
+        """新規skinCluster作成でsource joint lockを解除しない。"""
+        cmds.setAttr(self.left_joint + ".lockInfluenceWeights", True)
+
+        with self.assertRaises(ValueError):
+            combine_skinned.combine([self.left, self.right], name="body_mesh")
+
+        self.assertFalse(cmds.objExists("body_mesh"))
+        self.assertTrue(cmds.objExists(self.left))
+        self.assertTrue(cmds.objExists(self.right))
+        self.assertTrue(cmds.getAttr(self.left_joint + ".lockInfluenceWeights"))
+
     def test_skin_io_saves_multiple_meshes_without_scene_changes(self):
         """複数meshを1 JSONへ保存し、一時結合meshとscene差分を残さない。"""
         left_uuid = cmds.ls(self.left, uuid=True)[0]

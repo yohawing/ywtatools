@@ -52,6 +52,18 @@ class SeparateSkinnedTests(TestCase):
         rows = [list(values[index * influence_count : (index + 1) * influence_count]) for index in range(count)]
         return influences, rows
 
+    def test_locked_source_influence_rejects_before_separate(self):
+        """新規pieceのskinCluster作成でsource joint lockを解除しない。"""
+        source, left, _right, _shading_groups = self._source()
+        cmds.setAttr(left + ".lockInfluenceWeights", True)
+
+        with self.assertRaises(ValueError):
+            separate_skinned.separate(source)
+
+        self.assertTrue(cmds.objExists(source))
+        self.assertFalse(cmds.objExists("body_shell01"))
+        self.assertTrue(cmds.getAttr(left + ".lockInfluenceWeights"))
+
     def test_separate_preserves_exact_weights_uvs_and_materials(self):
         """同位置shellでも元index mappingでweightとface属性を分離する。"""
         source, left, right, shading_groups = self._source()

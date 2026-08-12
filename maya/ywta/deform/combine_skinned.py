@@ -105,6 +105,7 @@ def combine(meshes=None, name="combined_skinned_mesh"):
             if influence not in seen_influences:
                 seen_influences.add(influence)
                 influence_paths.append(influence)
+    skin_io._require_unlocked_nodes(influence_paths)
 
     original_selection = cmds.ls(selection=True, long=True) or []
     undo_utils.require_enabled("Combine Skinned Meshes")

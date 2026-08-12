@@ -235,6 +235,7 @@ def separate(mesh, base_name=None):
         raise ValueError("出力名が既に存在します: {}".format(", ".join(occupied)))
 
     resolved_influences = skin_io._resolve_influences(data["influences"])
+    skin_io._require_unlocked_nodes(resolved_influences)
     source_matrix = skin_io._dag_path(shape).inclusiveMatrix()
     normal_matrix = source_matrix.inverse().transpose()
     source_points = [point * source_matrix for point in input_function.getPoints(om.MSpace.kObject)]
