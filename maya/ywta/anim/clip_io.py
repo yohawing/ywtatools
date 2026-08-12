@@ -202,10 +202,8 @@ def _apply_mode(mode, replace):
     return mode
 
 
-def _shift_keys_for_insert(nodes, start_time, duration):
-    """対象controlの開始時刻以降の全キーを後ろへ移動する。"""
-    if duration == 0.0:
-        return 0
+def _shift_keys_for_insert(nodes, start_time, offset):
+    """対象controlの開始時刻以降の全キーを指定量だけ後ろへ移動する。"""
     shifted = 0
     for node in nodes:
         times = cmds.keyframe(node, query=True, timeChange=True) or []
@@ -216,7 +214,7 @@ def _shift_keys_for_insert(nodes, start_time, duration):
                 edit=True,
                 time=(time, time),
                 relative=True,
-                timeChange=duration,
+                timeChange=offset,
             )
     return shifted
 
@@ -230,7 +228,7 @@ def apply(data, nodes=None, start_time=None, replace=True, mode=None):
         start_time: clip の開始フレーム。None は現在フレーム。
         replace: 後方互換引数。mode 未指定時に True は replace、False は place。
         mode: place / replace / insert。insert は解決済みcontrolの全キーを
-            clip duration 分だけ後ろへ移動してから適用する。
+            clipの占有フレーム数だけ後ろへ移動してから適用する。
 
     Returns:
         applied_channels / applied_keys / skipped を持つ結果辞書。
@@ -274,8 +272,10 @@ def apply(data, nodes=None, start_time=None, replace=True, mode=None):
     try:
         end_time = start_time + data["duration"]
         shifted_keys = 0
+        insert_offset = 0.0
         if mode == "insert":
-            shifted_keys = _shift_keys_for_insert(sorted(resolved_nodes), start_time, data["duration"])
+            insert_offset = data["duration"] + 1.0
+            shifted_keys = _shift_keys_for_insert(sorted(resolved_nodes), start_time, insert_offset)
         for plug, channel in operations:
             if mode == "replace":
                 cmds.cutKey(plug, time=(start_time, end_time), clear=True)
@@ -303,6 +303,7 @@ def apply(data, nodes=None, start_time=None, replace=True, mode=None):
         "applied_channels": len(operations),
         "applied_keys": applied_keys,
         "shifted_keys": shifted_keys,
+        "insert_offset": insert_offset,
         "mode": mode,
         "skipped": skipped,
     }

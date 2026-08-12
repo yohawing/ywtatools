@@ -72,6 +72,7 @@ class ClipIoTests(TestCase):
         cmds.delete(source)
         target = self._control("target")
         other = self._control("target", "other_ctrl")
+        cmds.setKeyframe(target, attribute="rotateZ", time=100, value=9.0)
         cmds.setKeyframe(target, attribute="translateX", time=105, value=-2.0)
         cmds.setKeyframe(target, attribute="translateY", time=120, value=3.0)
         cmds.setKeyframe(other, attribute="translateY", time=120, value=4.0)
@@ -79,14 +80,19 @@ class ClipIoTests(TestCase):
         result = clip_io.apply(data, nodes=[target], start_time=100, mode="insert")
 
         self.assertEqual("insert", result["mode"])
-        self.assertEqual(2, result["shifted_keys"])
+        self.assertEqual(3, result["shifted_keys"])
+        self.assertEqual(11.0, result["insert_offset"])
         self.assertEqual(
-            [100.0, 110.0, 115.0],
+            [100.0, 110.0, 116.0],
             cmds.keyframe(target, attribute="translateX", query=True, timeChange=True),
         )
         self.assertEqual(
-            [130.0],
+            [131.0],
             cmds.keyframe(target, attribute="translateY", query=True, timeChange=True),
+        )
+        self.assertEqual(
+            [111.0],
+            cmds.keyframe(target, attribute="rotateZ", query=True, timeChange=True),
         )
         self.assertEqual(
             [120.0],
@@ -100,6 +106,10 @@ class ClipIoTests(TestCase):
         self.assertEqual(
             [120.0],
             cmds.keyframe(target, attribute="translateY", query=True, timeChange=True),
+        )
+        self.assertEqual(
+            [100.0],
+            cmds.keyframe(target, attribute="rotateZ", query=True, timeChange=True),
         )
 
     def test_selected_scope_does_not_apply_other_control(self):

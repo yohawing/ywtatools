@@ -50,7 +50,7 @@ Skin JSON は geometry と weight を含むため、大きいメッシュでは�
 - `ywtaPoseId` string 属性による改名に強い明示アドレス
 - blend、選択 control 限定適用、開始フレーム offset、範囲内キー置換
 - Animation ClipのPlace / Replace / Insert適用モード
-- Insert時は解決・適用可能なcontrolだけの後続キーをclip長ぶん移動
+- Insert時は解決・適用可能なcontrolだけの後続キーをclip占有フレーム数ぶん移動
 - animCurve は現在フレームへ key を設定し、constraint や計算node駆動属性は上書きしない
 - 同一アドレス候補が複数ある場合は推測せず拒否
 
