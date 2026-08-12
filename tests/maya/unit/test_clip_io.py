@@ -446,6 +446,23 @@ class ClipIoTests(TestCase):
             cmds.keyframe(target, attribute="translateY", query=True, timeChange=True),
         )
 
+    def test_all_driven_clip_is_noop_when_undo_is_disabled(self):
+        """全channel skipのreportはUndo queueを必要としない。"""
+        source, data = self._source_clip()
+        cmds.delete(source)
+        target = self._control("target")
+        driver = cmds.createNode("multiplyDivide")
+        cmds.connectAttr(driver + ".outputX", target + ".translateX")
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            result = clip_io.apply(data, nodes=[target], start_time=10, mode="insert")
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+        self.assertEqual(0, result["applied_channels"])
+        self.assertEqual(0.0, result["insert_offset"])
+        self.assertEqual("driven", result["skipped"][0]["reason"])
+
     def test_invalid_key_order_fails_before_edit(self):
         source, data = self._source_clip()
         target = self._control("target")

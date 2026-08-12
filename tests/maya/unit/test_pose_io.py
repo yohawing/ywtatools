@@ -142,6 +142,21 @@ class PoseIoTests(TestCase):
         with self.assertRaises(ValueError):
             pose_io.capture([source, "missing_ctrl"])
 
+    def test_missing_pose_target_is_noop_when_undo_is_disabled(self):
+        """全target欠落のreportはUndo queueを必要としない。"""
+        source = self._control("source")
+        data = pose_io.capture([source])
+        cmds.delete(source)
+        target = self._control("target", "different_ctrl")
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            result = pose_io.apply(data, nodes=[target])
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+        self.assertEqual(0, result["applied"])
+        self.assertEqual("target_missing", result["skipped"][0]["reason"])
+
     def test_ambiguous_name_fails_before_edit(self):
         source = self._control("source")
         cmds.setAttr(source + ".translateX", 8.0)

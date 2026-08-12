@@ -492,6 +492,28 @@ def apply(
         resolved_nodes.add(plug.split(".", 1)[0])
     operations = safe_operations
 
+    if not operations:
+        scene_units = {
+            "time_unit": cmds.currentUnit(query=True, time=True),
+            "linear_unit": cmds.currentUnit(query=True, linear=True),
+            "angle_unit": cmds.currentUnit(query=True, angle=True),
+        }
+        unit_mismatches = [key for key in scene_units if data.get(key) and data[key] != scene_units[key]]
+        return {
+            "applied_channels": 0,
+            "applied_keys": 0,
+            "shifted_keys": 0,
+            "insert_offset": 0.0,
+            "mode": mode,
+            "source_time_unit": data.get("time_unit"),
+            "scene_time_unit": scene_units["time_unit"],
+            "time_unit_mismatch": "time_unit" in unit_mismatches,
+            "unit_mismatches": unit_mismatches,
+            "source_units": {key: data.get(key) for key in scene_units},
+            "scene_units": scene_units,
+            "skipped": skipped,
+        }
+
     undo_utils.require_enabled("Animation Clip Apply")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Animation Clip Apply")
     failed = False

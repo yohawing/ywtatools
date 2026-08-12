@@ -417,23 +417,24 @@ def apply(data, nodes=None, blend=1.0):
                 value = _blended_value(cmds.getAttr(plug), saved, current_type, float(blend))
             operations.append((node, attribute["name"], plug, value, bool(incoming)))
 
-    undo_utils.require_enabled("Pose Apply")
-    cmds.undoInfo(openChunk=True, chunkName="YWTA Pose Apply")
-    failed = False
-    try:
-        for node, attribute, plug, value, animated in operations:
-            if animated:
-                cmds.setKeyframe(node, attribute=attribute, value=value)
-                cmds.dgdirty(plug)
-            else:
-                cmds.setAttr(plug, value)
-    except Exception:
-        failed = True
-        raise
-    finally:
-        cmds.undoInfo(closeChunk=True)
-        if failed:
-            cmds.undo()
+    if operations:
+        undo_utils.require_enabled("Pose Apply")
+        cmds.undoInfo(openChunk=True, chunkName="YWTA Pose Apply")
+        failed = False
+        try:
+            for node, attribute, plug, value, animated in operations:
+                if animated:
+                    cmds.setKeyframe(node, attribute=attribute, value=value)
+                    cmds.dgdirty(plug)
+                else:
+                    cmds.setAttr(plug, value)
+        except Exception:
+            failed = True
+            raise
+        finally:
+            cmds.undoInfo(closeChunk=True)
+            if failed:
+                cmds.undo()
     return {
         "applied": len(operations),
         "skipped": skipped,
