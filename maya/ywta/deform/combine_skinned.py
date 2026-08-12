@@ -16,6 +16,11 @@ from ywta.core import undo_utils
 POSITION_TOLERANCE = 1.0e-6
 
 
+def _absolute_name(name):
+    """namespace付き名をcurrent namespace非依存にする。"""
+    return ":" + name.lstrip(":") if ":" in name else name
+
+
 def _selected_meshes(meshes):
     """指定または選択されたmesh transformを一意なロングパスで返す。"""
     source = meshes if meshes is not None else cmds.ls(selection=True, long=True)
@@ -83,8 +88,10 @@ def combine(meshes=None, name="combined_skinned_mesh"):
     """
     if not isinstance(name, str) or not name.strip() or "|" in name:
         raise ValueError("nameは空でないDAG short nameにしてください。")
-    name = name.strip()
-    if cmds.objExists(name):
+    name = name.strip().lstrip(":")
+    if not name:
+        raise ValueError("nameは空でないDAG short nameにしてください。")
+    if cmds.objExists(_absolute_name(name)):
         raise ValueError("結合先名が既に存在します: {}".format(name))
     sources = _selected_meshes(meshes)
     captures = [skin_io.capture(source) for source in sources]
@@ -111,7 +118,7 @@ def combine(meshes=None, name="combined_skinned_mesh"):
             duplicates,
             constructionHistory=False,
             mergeUVSets=True,
-            name=name,
+            name=_absolute_name(name),
         )[0]
         combined = (cmds.ls(combined, long=True) or [combined])[0]
         if combined.rsplit("|", 1)[-1] != name:

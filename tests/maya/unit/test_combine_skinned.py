@@ -108,3 +108,17 @@ class CombineSkinnedTests(TestCase):
 
         self.assertEqual(before, set(cmds.ls(long=True)))
         self.assertTrue(cmds.objExists(occupied))
+
+    def test_explicit_namespace_is_independent_of_current_namespace(self):
+        cmds.namespace(add="character")
+        cmds.namespace(add="working")
+        cmds.namespace(set="working")
+
+        result = combine_skinned.combine(
+            [self.left, self.right],
+            name="character:body_mesh",
+        )
+        cmds.namespace(set=":")
+
+        self.assertEqual("character:body_mesh", result["mesh"].rsplit("|", 1)[-1])
+        self.assertFalse(cmds.objExists(":working:character:body_mesh"))
