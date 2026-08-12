@@ -101,6 +101,9 @@ def rename_nodes(nodes, names):
             }
         )
 
+    if all(record["name"] == _resolve_uuid(record["uuid"]).rsplit("|", 1)[-1] for record in records):
+        return [_resolve_uuid(record["uuid"]) for record in records]
+
     undo_utils.require_enabled("Name Tools")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Name Tools")
     failed = False

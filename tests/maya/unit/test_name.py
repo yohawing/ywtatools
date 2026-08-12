@@ -45,6 +45,19 @@ class NameToolsTests(TestCase):
 
         self.assertEqual("right_Arm_CTRL", result[0].rsplit("|", 1)[-1])
 
+    def test_noop_find_replace_does_not_require_undo(self):
+        """全件no-opの検索置換はscene編集を開始しない。"""
+        node = cmds.createNode("transform", name="hand_ctrl")
+        cmds.select(node, replace=True)
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            result = name_tools.find_replace("missing", "other", [node])
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+        self.assertEqual(["|hand_ctrl"], result)
+        self.assertEqual([node], cmds.ls(selection=True))
+
     def test_affixes_preserve_namespace(self):
         cmds.namespace(add="character")
         node = cmds.createNode("transform", name="character:hand")
