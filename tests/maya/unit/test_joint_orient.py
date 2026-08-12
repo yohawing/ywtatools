@@ -1,5 +1,6 @@
 """静的Joint OrientationのMaya単体テスト。"""
 
+import math
 from unittest import mock
 
 import maya.cmds as cmds
@@ -60,6 +61,30 @@ class JointOrientTests(TestCase):
             sum(abs(value) for value in cmds.getAttr(child + ".jointOrient")[0]),
             1.0,
         )
+
+    def test_negative_x_chain_aims_local_x_and_preserves_descendants(self):
+        """ミラー側chainでもlocal +Xを子方向へ向けworld姿勢を保つ。"""
+        cmds.select(clear=True)
+        parent = cmds.joint(name="R_parent_jnt", position=(0.0, 0.0, 0.0))
+        child = cmds.joint(name="R_child_jnt", position=(-3.0, 1.0, 0.0))
+        grandchild = cmds.joint(name="R_tip_jnt", position=(-5.0, 2.0, 1.0))
+        before_child = self._matrix(child)
+        before_grandchild = self._matrix(grandchild)
+
+        joint_orient.orient_to_children([parent])
+
+        matrix = self._matrix(parent)
+        aim = [before_child[12] - matrix[12], before_child[13] - matrix[13], before_child[14] - matrix[14]]
+        aim_length = math.sqrt(sum(value * value for value in aim))
+        local_x = matrix[:3]
+        alignment = sum(axis * direction / aim_length for axis, direction in zip(local_x, aim))
+        self.assertAlmostEqual(1.0, alignment, places=7)
+        self.assert_matrix_almost_equal(before_child, self._matrix(child))
+        self.assert_matrix_almost_equal(before_grandchild, self._matrix(grandchild))
+
+        cmds.undo()
+        self.assert_matrix_almost_equal(before_child, self._matrix(child))
+        self.assert_matrix_almost_equal(before_grandchild, self._matrix(grandchild))
 
     def test_invalid_later_joint_preflights_before_first_edit(self):
         parent, _child, _grandchild = self._chain("a_")
