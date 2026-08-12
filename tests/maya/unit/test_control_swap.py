@@ -457,6 +457,22 @@ class ControlSwapTests(TestCase):
             for expected_value, actual_value in zip(expected_point, actual_point):
                 self.assertAlmostEqual(expected_value, actual_value)
 
+    def test_smart_mirror_shape_namespace_ignores_current_namespace(self):
+        """作成shapeをcurrent namespaceではなくtarget transformと同じnamespaceへ置く。"""
+        cmds.namespace(add="char")
+        cmds.namespace(add="working")
+        source = cmds.circle(name=":char:L_hand_ctrl")[0]
+        target = cmds.circle(name=":char:R_hand_ctrl")[0]
+        cmds.namespace(set="working")
+
+        control.mirror_control_shapes(source)
+        cmds.namespace(set=":")
+
+        shapes = cmds.listRelatives(target, shapes=True, fullPath=True, type="nurbsCurve")
+        self.assertTrue(shapes)
+        self.assertTrue(all(shape.rsplit("|", 1)[-1].startswith("char:") for shape in shapes))
+        self.assertFalse(any(shape.rsplit("|", 1)[-1].startswith("working:") for shape in shapes))
+
     def test_smart_mirror_preserves_all_source_shapes(self):
         """Multi-shape controlの全curveをworld YZ反転する。"""
         source = cmds.circle(name="L_multi_ctrl", degree=1, sections=4)[0]

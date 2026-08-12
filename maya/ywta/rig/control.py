@@ -520,7 +520,7 @@ class CurveShape(object):
                 cmds.setAttr("{}.overrideColorRGB".format(shape), *self.color)
         cmds.parent(shape, transform, r=True, s=True)
         short_name = transform.rsplit("|", 1)[-1]
-        shape = cmds.rename(shape, "{}Shape".format(short_name))
+        shape = cmds.rename(shape, ":{}Shape".format(short_name.lstrip(":")))
         cmds.delete(curve)
         if as_controller:
             cmds.controller(transform)
