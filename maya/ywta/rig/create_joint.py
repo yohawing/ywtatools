@@ -5,6 +5,23 @@ import maya.cmds as cmds
 from ywta.core import undo_utils
 
 
+def _validated_node_name(name, inherited_namespace=""):
+    """Maya正規名と作成先namespaceを検証し、絶対名を返す。"""
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("node名が不正です。")
+    name = name.strip().lstrip(":")
+    if ":" not in name and inherited_namespace:
+        name = inherited_namespace.strip(":") + ":" + name
+    segments = name.split(":")
+    if any(not segment or cmds.namespace(validateName=segment) != segment for segment in segments):
+        raise ValueError("Mayaが自動変換するnode名は使用できません: {}".format(name))
+    if len(segments) > 1:
+        namespace = ":".join(segments[:-1])
+        if not cmds.namespace(exists=":" + namespace):
+            raise ValueError("作成先namespaceがありません: {}".format(namespace))
+    return ":" + name
+
+
 def _selection_center(selection):
     """選択全体のworld bounding box中心、空選択なら原点を返す。"""
     if not selection:
@@ -36,20 +53,20 @@ def create_joint_at_selection(name="joint", parent_to_last_joint=True):
     Returns:
         作成したjointのロングパス。
     """
-    if not isinstance(name, str) or not name.strip() or "|" in name:
-        raise ValueError("joint名が不正です。")
     if not isinstance(parent_to_last_joint, bool):
         raise ValueError("parent_to_last_jointはboolで指定してください。")
     selection = cmds.ls(selection=True, flatten=True, long=True) or []
     center = _selection_center(selection)
     parent = _selected_parent_joint() if parent_to_last_joint else None
+    parent_namespace = parent.rsplit("|", 1)[-1].rpartition(":")[0] if parent else ""
+    name = _validated_node_name(name, inherited_namespace=parent_namespace)
 
     undo_utils.require_enabled("Create Joint at Selection")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Create Joint at Selection")
     failed = False
     try:
         cmds.select(clear=True)
-        joint = cmds.joint(name=name.strip(), position=center)
+        joint = cmds.joint(name=name, position=center)
         if parent:
             joint = cmds.parent(joint, parent)[0]
         joint = (cmds.ls(joint, long=True, type="joint") or [joint])[0]

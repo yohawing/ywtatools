@@ -48,3 +48,21 @@ class CreateObjectTests(TestCase):
             create_object.create_at_selection("torus")
 
         self.assertEqual(before, set(cmds.ls()))
+
+    def test_object_name_is_root_absolute_and_validated_before_undo(self):
+        """単純名はcurrent namespaceに依存せず、不正名を作成前に拒否する。"""
+        cmds.namespace(add="working")
+        cmds.namespace(set="working")
+
+        result = create_object.create_at_selection("null", name="root_object")
+
+        self.assertEqual("|root_object", result)
+        self.assertFalse(cmds.objExists(":working:root_object"))
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            for invalid in ("bad name", "1object", "object#", "object-name", "missing:object"):
+                with self.assertRaises(ValueError):
+                    create_object.create_at_selection("null", name=invalid)
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+            cmds.namespace(set=":")

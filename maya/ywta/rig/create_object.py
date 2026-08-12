@@ -3,7 +3,7 @@
 import maya.cmds as cmds
 
 from ywta.core import undo_utils
-from ywta.rig.create_joint import _selection_center
+from ywta.rig.create_joint import _selection_center, _validated_node_name
 
 
 OBJECT_CREATORS = {
@@ -31,8 +31,7 @@ def create_at_selection(kind, name=None):
     default_name, creator = OBJECT_CREATORS[kind]
     if name is None:
         name = default_name
-    if not isinstance(name, str) or not name.strip() or "|" in name:
-        raise ValueError("object名が不正です。")
+    name = _validated_node_name(name)
     selection = cmds.ls(selection=True, flatten=True, long=True) or []
     center = _selection_center(selection)
 
@@ -40,7 +39,7 @@ def create_at_selection(kind, name=None):
     cmds.undoInfo(openChunk=True, chunkName="YWTA Create {} at Selection".format(kind.title()))
     failed = False
     try:
-        transform = creator(name.strip())
+        transform = creator(name)
         cmds.xform(transform, worldSpace=True, translation=center)
         transform = (cmds.ls(transform, long=True, type="transform") or [transform])[0]
         cmds.select(transform, replace=True)

@@ -56,6 +56,36 @@ class CreateJointTests(TestCase):
 
         self.assertEqual([], cmds.ls(type="joint"))
 
+    def test_name_is_deterministic_and_parent_namespace_is_inherited(self):
+        """単純名はparent namespaceを継承し、親なしではrootへ作成する。"""
+        cmds.namespace(add="character")
+        cmds.namespace(add="working")
+        cmds.select(clear=True)
+        parent = cmds.joint(name=":character:parent_joint")
+        cmds.namespace(set="working")
+        cmds.select(parent, replace=True)
+
+        child = create_joint.create_joint_at_selection(name="child_joint")
+        cmds.select(clear=True)
+        root = create_joint.create_joint_at_selection(name="root_joint")
+        cmds.namespace(set=":")
+
+        self.assertEqual("|character:parent_joint|character:child_joint", child)
+        self.assertEqual("|root_joint", root)
+        self.assertFalse(cmds.objExists(":working:root_joint"))
+
+    def test_sanitized_name_and_missing_namespace_reject_before_undo(self):
+        """不正名と未作成namespaceではUndo queueを要求しない。"""
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            for invalid in ("bad name", "1joint", "joint#", "joint-name", "missing:joint"):
+                with self.assertRaises(ValueError):
+                    create_joint.create_joint_at_selection(name=invalid)
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+        self.assertEqual([], cmds.ls(type="joint"))
+
     def test_legacy_vertex_entry_uses_arithmetic_average(self):
         """旧vertex APIはbounding boxではなく選択頂点平均を維持する。"""
         mesh = cmds.polyCreateFacet(point=[(0, 0, 0), (9, 0, 0), (0, 3, 0)])[0]
