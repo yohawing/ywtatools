@@ -54,6 +54,7 @@ Fabricator 本体は Business Source License 1.1、YWTA は MIT License です�
 - 全output meshを走査する未使用influence削除（locked influenceは既定で保護）
 - 未使用influence診断/削除APIは単一mesh文字列とmesh列の両方に対応
 - bulk write 用の同梱 Python plugin による単一 Undo / Redo
+- plugin公開ラッパーでも個別weightを0～1に制限し、上位検証の迂回を防止
 - 元meshを残し、結合後の頂点順を全頂点検証するSkinned Mesh Combine
 - Combineへ明示したnamespace付き出力名はMayaのcurrent namespaceに依存しない
 - 元meshを残し、shellごとの元vertex/face index mappingで分割するSkinned Mesh Separate

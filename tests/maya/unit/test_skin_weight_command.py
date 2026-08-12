@@ -67,6 +67,14 @@ class SkinWeightCommandTests(TestCase):
                 [0],
                 [float("nan")],
             )
+        with self.assertRaises(ValueError):
+            skin_weight_command.execute(
+                self.cluster,
+                self.shape,
+                [0],
+                [0],
+                [1.1],
+            )
 
     def test_direct_command_write_is_undoable(self):
         skin_weight_command.execute(
