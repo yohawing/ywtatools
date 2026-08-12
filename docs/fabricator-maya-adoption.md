@@ -84,6 +84,7 @@ Skinned Mesh Combineは実行時のjoint・mesh評価姿勢を新しいskinClust
 - `ywtaPoseId` string 属性による改名に強い明示アドレス
 - blend、選択 control 限定適用、開始フレーム offset、範囲内キー置換
 - PoseのBlend / Selected-onlyを保存・実行できるMaya Option UI
+- Poseの0% Blendは現在値と同じanimation keyも作らない完全なno-op
 - file dialogなしで再利用できるユーザー単位のTemporary Pose Clipboard
 - Animation ClipのPlace / Replace / Insert適用モード
 - file dialogなしで再利用できるユーザー単位のTemporary Animation Clip

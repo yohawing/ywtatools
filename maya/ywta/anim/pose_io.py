@@ -369,6 +369,19 @@ def apply(data, nodes=None, blend=1.0):
         raise ValueError("blend は 0.0～1.0 の有限値にしてください。")
     if blend < 0.0 or blend > 1.0:
         raise ValueError("blend は 0.0～1.0 にしてください。")
+    scene_units = {
+        "linear_unit": cmds.currentUnit(query=True, linear=True),
+        "angle_unit": cmds.currentUnit(query=True, angle=True),
+    }
+    unit_mismatches = [key for key in scene_units if data.get(key) and data[key] != scene_units[key]]
+    if blend == 0.0:
+        return {
+            "applied": 0,
+            "skipped": [],
+            "unit_mismatches": unit_mismatches,
+            "source_units": {key: data.get(key) for key in scene_units},
+            "scene_units": scene_units,
+        }
     index, ambiguous = _target_index(nodes)
     operations = []
     skipped = []
@@ -417,11 +430,6 @@ def apply(data, nodes=None, blend=1.0):
         cmds.undoInfo(closeChunk=True)
         if failed:
             cmds.undo()
-    scene_units = {
-        "linear_unit": cmds.currentUnit(query=True, linear=True),
-        "angle_unit": cmds.currentUnit(query=True, angle=True),
-    }
-    unit_mismatches = [key for key in scene_units if data.get(key) and data[key] != scene_units[key]]
     return {
         "applied": len(operations),
         "skipped": skipped,

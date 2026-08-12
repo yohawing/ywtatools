@@ -206,6 +206,22 @@ class PoseIoTests(TestCase):
         self.assertAlmostEqual(5.0, cmds.getAttr(target + ".translateX"))
         self.assertEqual([1.0], cmds.keyframe(target, attribute="translateX", query=True, timeChange=True))
 
+    def test_zero_blend_does_not_add_animation_key(self):
+        """0% blendは現在値と同じkeyを新設しない。"""
+        source = self._control("source")
+        cmds.setAttr(source + ".translateX", 5.0)
+        data = pose_io.capture([source])
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.setKeyframe(target, attribute="translateX", time=1, value=2.0)
+        cmds.currentTime(5)
+
+        result = pose_io.apply(data, blend=0.0)
+
+        self.assertEqual(0, result["applied"])
+        self.assertAlmostEqual(2.0, cmds.getAttr(target + ".translateX"))
+        self.assertEqual([1.0], cmds.keyframe(target, attribute="translateX", query=True, timeChange=True))
+
     def test_computed_channel_is_skipped(self):
         source = self._control("source")
         cmds.setAttr(source + ".translateX", 5.0)
