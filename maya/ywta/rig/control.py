@@ -59,6 +59,7 @@ from __future__ import division
 from __future__ import print_function
 
 import json
+import math
 import os
 import logging
 import webbrowser
@@ -535,6 +536,76 @@ def select_control_cvs(transforms=None):
         raise ValueError("編集するcontrolを1つ以上選択してください。")
     cmds.select(components, replace=True)
     return components
+
+
+def set_control_color(rgb, transforms=None):
+    """control shapeへRGB override colorを単一Undoで設定する。
+
+    Args:
+        rgb: 0から1の範囲にあるRGB値。
+        transforms: 対象control。省略時は現在選択を使用する。
+
+    Returns:
+        色を変更したcurve shapeのロングパス一覧。
+    """
+    if not isinstance(rgb, (list, tuple)) or len(rgb) != 3:
+        raise ValueError("RGBは3要素のlistまたはtupleで指定してください。")
+    if any(
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(float(value))
+        or not 0.0 <= float(value) <= 1.0
+        for value in rgb
+    ):
+        raise ValueError("RGB値は0から1の有限数で指定してください。")
+    color = tuple(float(value) for value in rgb)
+
+    if transforms is None:
+        transforms = cmds.ls(selection=True, long=True, type="transform") or []
+    shapes = []
+    seen = set()
+    for transform in transforms or []:
+        matches = cmds.ls(transform, long=True, type="transform") or []
+        if len(matches) != 1:
+            raise ValueError("controlを一意に解決できません: {}".format(transform))
+        target = matches[0]
+        node_uuid = (cmds.ls(target, uuid=True) or [None])[0]
+        if node_uuid in seen:
+            continue
+        seen.add(node_uuid)
+        target_shapes = _curve_shapes(target)
+        if not target_shapes:
+            raise ValueError("NURBS curve shapeがありません: {}".format(target))
+        for shape in target_shapes:
+            blocked = [
+                attribute
+                for attribute in ("overrideEnabled", "overrideRGBColors", "overrideColorRGB")
+                if not cmds.getAttr("{}.{}".format(shape, attribute), settable=True)
+            ]
+            if blocked:
+                raise ValueError("表示色が編集できません: {} ({})".format(shape, ", ".join(blocked)))
+        shapes.extend(target_shapes)
+    if not shapes:
+        raise ValueError("色を変更するcontrolを1つ以上選択してください。")
+
+    selection = cmds.ls(selection=True, long=True) or []
+    undo_utils.require_enabled("Set Control Color")
+    cmds.undoInfo(openChunk=True, chunkName="YWTA Set Control Color")
+    failed = False
+    try:
+        for shape in shapes:
+            cmds.setAttr(shape + ".overrideEnabled", True)
+            cmds.setAttr(shape + ".overrideRGBColors", True)
+            cmds.setAttr(shape + ".overrideColorRGB", *color, type="double3")
+        cmds.select(selection, replace=True) if selection else cmds.select(clear=True)
+    except Exception:
+        failed = True
+        raise
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        if failed:
+            cmds.undo()
+    return shapes
 
 
 def combine_control_shapes(transforms=None):

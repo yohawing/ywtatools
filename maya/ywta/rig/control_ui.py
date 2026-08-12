@@ -2,14 +2,48 @@
 
 from functools import partial
 import os
-from PySide2.QtCore import *
-from PySide2.QtWidgets import *
-from PySide2.QtGui import *
+
+try:
+    # Maya本体のQt bindingと揃え、両方が見える環境でmetaclassを混在させない。
+    from PySide2.QtCore import Qt
+    from PySide2.QtGui import QColor, QDoubleValidator, QIcon, QPixmap
+    from PySide2.QtWidgets import (
+        QAbstractItemView,
+        QColorDialog,
+        QGridLayout,
+        QHBoxLayout,
+        QLabel,
+        QLineEdit,
+        QListWidget,
+        QMainWindow,
+        QMessageBox,
+        QPushButton,
+        QVBoxLayout,
+        QWidget,
+    )
+except ImportError:
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QColor, QDoubleValidator, QIcon, QPixmap
+    from PySide6.QtWidgets import (
+        QAbstractItemView,
+        QColorDialog,
+        QGridLayout,
+        QHBoxLayout,
+        QLabel,
+        QLineEdit,
+        QListWidget,
+        QMainWindow,
+        QMessageBox,
+        QPushButton,
+        QVBoxLayout,
+        QWidget,
+    )
 
 import maya.cmds as cmds
 from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 
 import ywta.shortcuts as shortcuts
+from ywta.core.ui_utils import SingletonWindowMixin
 from ywta.rig.control import (
     get_control_paths_in_library,
     rotate_components,
@@ -18,6 +52,7 @@ from ywta.rig.control import (
     mirror_curve,
     import_curves_on_selected,
     import_new_curves,
+    set_control_color,
     documentation,
 )
 
@@ -26,7 +61,7 @@ def show():
     ControlWindow.show_window()
 
 
-class ControlWindow(shortcuts.SingletonWindowMixin, MayaQWidgetBaseMixin, QMainWindow):
+class ControlWindow(SingletonWindowMixin, MayaQWidgetBaseMixin, QMainWindow):
     """The UI used to create and manipulate curves from the curve library."""
 
     def __init__(self, parent=None):
@@ -172,16 +207,13 @@ class ControlWindow(shortcuts.SingletonWindowMixin, MayaQWidgetBaseMixin, QMainW
         """Open a dialog to set the override RGB color of the selected nodes."""
         nodes = cmds.ls(sl=True) or []
         if nodes:
-            color = cmds.getAttr("{}.overrideColorRGB".format(nodes[0]))[0]
+            shape = shortcuts.get_shape(nodes[0])
+            color = cmds.getAttr("{}.overrideColorRGB".format(shape))[0]
             color = QColor(color[0] * 255, color[1] * 255, color[2] * 255)
             color = QColorDialog.getColor(color, self, "Set Curve Color")
             if color.isValid():
                 color = [color.redF(), color.greenF(), color.blueF()]
-                for node in nodes:
-                    shape = shortcuts.get_shape(node)
-                    cmds.setAttr("{}.overrideEnabled".format(shape), True)
-                    cmds.setAttr("{}.overrideRGBColors".format(shape), True)
-                    cmds.setAttr("{}.overrideColorRGB".format(shape), *color)
+                set_control_color(color, nodes)
 
     def mirror_curve(self):
         """Mirrors the curve of the first selected to the second selected."""

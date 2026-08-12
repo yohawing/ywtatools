@@ -110,6 +110,44 @@ class ControlSwapTests(TestCase):
 
         self.assertEqual(cmds.ls(selection=True, long=True), ["|valid_ctrl"])
 
+    def test_set_control_color_updates_multi_shapes_and_undoes(self):
+        """全shapeを同色にし、選択を維持して1回でUndoする。"""
+        target = cmds.circle(name="color_ctrl", sections=4)[0]
+        extra = cmds.circle(name="extra_color_ctrl", sections=6)[0]
+        extra_shapes = cmds.listRelatives(extra, shapes=True, fullPath=True)
+        cmds.parent(extra_shapes, target, shape=True, relative=True)
+        cmds.delete(extra)
+        sentinel = cmds.spaceLocator(name="selection_sentinel")[0]
+        cmds.select(sentinel, replace=True)
+
+        shapes = control.set_control_color((0.2, 0.4, 0.8), [target])
+
+        self.assertEqual(2, len(shapes))
+        self.assertEqual([sentinel], cmds.ls(selection=True))
+        for shape in shapes:
+            self.assertTrue(cmds.getAttr(shape + ".overrideEnabled"))
+            self.assertTrue(cmds.getAttr(shape + ".overrideRGBColors"))
+            for actual, expected in zip(cmds.getAttr(shape + ".overrideColorRGB")[0], (0.2, 0.4, 0.8)):
+                self.assertAlmostEqual(expected, actual)
+
+        cmds.undo()
+        for shape in shapes:
+            self.assertFalse(cmds.getAttr(shape + ".overrideEnabled"))
+        cmds.redo()
+        for shape in shapes:
+            self.assertTrue(cmds.getAttr(shape + ".overrideEnabled"))
+
+    def test_set_control_color_rejects_invalid_rgb_before_edit(self):
+        """範囲外や非有限RGBで既存表示状態を変更しない。"""
+        target = cmds.circle(name="color_ctrl")[0]
+        shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
+
+        for invalid in ((1.1, 0.0, 0.0), (float("nan"), 0.0, 0.0), (True, 0.0, 0.0)):
+            with self.assertRaises(ValueError):
+                control.set_control_color(invalid, [target])
+
+        self.assertFalse(cmds.getAttr(shape + ".overrideEnabled"))
+
     def test_combine_control_shapes_preserves_world_shape_and_undo(self):
         """source形状をworld位置のままtargetへ移し、1回でUndoする。"""
         source = cmds.curve(name="source_ctrl", degree=1, point=[(0, 0, 0), (1, 2, 0), (2, 0, 1)])
