@@ -56,6 +56,16 @@ def _address(node):
     return "name:" + _base_name(node)
 
 
+def resolve_controls(nodes=None):
+    """Pose/Clip 対象を順序保持したロングパスへ解決する。"""
+    return _long_nodes(nodes)
+
+
+def control_address(node):
+    """Pose/Clip 共通の namespace 非依存アドレスを返す。"""
+    return _address(node)
+
+
 def set_pose_id(node, pose_id):
     """コントロールへ rig 間で安定した Pose ID を設定する。"""
     if not pose_id or not pose_id.strip():
@@ -206,6 +216,11 @@ def _target_index(nodes=None):
     for address in ambiguous:
         index.pop(address, None)
     return index, ambiguous
+
+
+def target_index(nodes=None):
+    """Pose/Clip 適用対象の一意アドレス index と曖昧アドレスを返す。"""
+    return _target_index(nodes)
 
 
 def _enum_index(plug, label):

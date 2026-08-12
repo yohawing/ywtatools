@@ -38,4 +38,24 @@ def create_animation_menu(parent_menu):
         annotation="ポーズを現在選択中のコントロールだけへ適用します",
     )
 
+    cmds.menuItem(parent=animation_menu, divider=True, dividerLabel="Animation Clip")
+    cmds.menuItem(
+        parent=animation_menu,
+        label="Save Selected Animation Clip",
+        command="import ywta.anim.clip_io as clip_io; clip_io.save_selected()",
+        annotation="選択コントロールのplayback rangeキーを可搬JSONへ保存します",
+    )
+    cmds.menuItem(
+        parent=animation_menu,
+        label="Load Animation Clip",
+        command="import ywta.anim.clip_io as clip_io; clip_io.load_clip()",
+        annotation="clipを現在フレームからscene内の一致するコントロールへ適用します",
+    )
+    cmds.menuItem(
+        parent=animation_menu,
+        label="Load Animation Clip to Selected",
+        command="import ywta.anim.clip_io as clip_io; clip_io.load_clip(selected_only=True)",
+        annotation="clipを現在フレームから選択コントロールだけへ適用します",
+    )
+
     return animation_menu
