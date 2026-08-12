@@ -347,6 +347,17 @@ class ClipIoTests(TestCase):
 
         self.assertIsNone(cmds.keyframe(target, attribute="translateX", query=True, timeChange=True))
 
+    def test_non_boolean_legacy_replace_fails_before_edit(self):
+        """曖昧なlegacy replace値で既存keyを削除しない。"""
+        _source, data = self._source_clip()
+        target = self._control("target")
+        cmds.setKeyframe(target, attribute="translateX", time=1, value=3.0)
+
+        with self.assertRaises(ValueError):
+            clip_io.apply(data, nodes=[target], start_time=1, replace="no")
+
+        self.assertEqual([1.0], cmds.keyframe(target, attribute="translateX", query=True, timeChange=True))
+
     def test_save_and_read_round_trip(self):
         source, _data = self._source_clip()
         path = self.get_temp_filename("clip.json")

@@ -355,6 +355,8 @@ def load_temp(
 def _apply_mode(mode, replace):
     """新旧引数から clip 適用モードを解決する。"""
     if mode is None:
+        if not isinstance(replace, bool):
+            raise ValueError("replaceはboolにしてください。")
         return "replace" if replace else "place"
     if mode not in {"place", "replace", "insert"}:
         raise ValueError("mode は place / replace / insert のいずれかにしてください。")
