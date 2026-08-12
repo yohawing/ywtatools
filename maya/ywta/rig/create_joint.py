@@ -65,21 +65,63 @@ def create_joint_at_selection(name="joint", parent_to_last_joint=True):
 
 
 def create_joint_from_selected_verts():
-    """選択頂点全体の中心へjointを1つ作成する互換入口。"""
+    """選択頂点のworld位置平均へjointを1つ作成する互換入口。"""
     vertices = cmds.filterExpand(selectionMask=31, expand=True) or []
     if not vertices:
-        raise ValueError("頂点を1つ以上選択してください。")
-    return create_joint_at_selection()
+        cmds.warning("頂点が選択されていません。")
+        return None
+    return _create_joints_at_positions([_average_position(vertices)])[0]
 
 
 def create_joint_from_selected_faces():
-    """選択face全体の中心へjointを1つ作成する互換入口。"""
+    """選択faceごとの頂点平均へjointを1つずつ作成する互換入口。"""
     faces = cmds.filterExpand(selectionMask=34, expand=True) or []
     if not faces:
-        raise ValueError("faceを1つ以上選択してください。")
-    return create_joint_at_selection()
+        cmds.warning("faceが選択されていません。")
+        return None
+    positions = []
+    for face in faces:
+        vertices = cmds.polyListComponentConversion(face, toVertex=True) or []
+        vertices = cmds.filterExpand(vertices, selectionMask=31, expand=True) or []
+        if not vertices:
+            raise RuntimeError("face頂点を解決できません: {}".format(face))
+        positions.append(_average_position(vertices))
+    return _create_joints_at_positions(positions)
 
 
 def create_joint_from_selected_component():
-    """メニュー用入口。object/component選択中心または原点へ作成する。"""
-    return create_joint_at_selection()
+    """旧component APIを頂点優先で振り分ける。"""
+    if cmds.filterExpand(selectionMask=31, expand=True):
+        return create_joint_from_selected_verts()
+    if cmds.filterExpand(selectionMask=34, expand=True):
+        return create_joint_from_selected_faces()
+    cmds.warning("頂点またはfaceが選択されていません。")
+    return None
+
+
+def _average_position(components):
+    """component列のworld位置平均を返す。"""
+    positions = [cmds.pointPosition(component, world=True) for component in components]
+    return [sum(position[axis] for position in positions) / len(positions) for axis in range(3)]
+
+
+def _create_joints_at_positions(positions):
+    """world位置列へjointを1 transactionで作成する。"""
+    undo_utils.require_enabled("Create Joints from Components")
+    cmds.undoInfo(openChunk=True, chunkName="YWTA Create Joints from Components")
+    failed = False
+    try:
+        created = []
+        for position in positions:
+            cmds.select(clear=True)
+            created.append(cmds.joint(name="joint", position=position))
+        created = [(cmds.ls(joint, long=True, type="joint") or [joint])[0] for joint in created]
+        cmds.select(created, replace=True)
+    except Exception:
+        failed = True
+        raise
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        if failed:
+            cmds.undo()
+    return created

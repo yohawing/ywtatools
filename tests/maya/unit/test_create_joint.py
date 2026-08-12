@@ -53,3 +53,23 @@ class CreateJointTests(TestCase):
             create_joint.create_joint_at_selection(name=" ")
 
         self.assertEqual([], cmds.ls(type="joint"))
+
+    def test_legacy_vertex_entry_uses_arithmetic_average(self):
+        """旧vertex APIはbounding boxではなく選択頂点平均を維持する。"""
+        mesh = cmds.polyCreateFacet(point=[(0, 0, 0), (9, 0, 0), (0, 3, 0)])[0]
+        cmds.select(mesh + ".vtx[0:2]", replace=True)
+
+        joint = create_joint.create_joint_from_selected_verts()
+
+        self.assertEqual([3.0, 1.0, 0.0], cmds.xform(joint, query=True, worldSpace=True, translation=True))
+
+    def test_legacy_face_entry_creates_one_joint_per_face(self):
+        """旧face APIは各face中心へ別jointを作成する。"""
+        mesh = cmds.polyPlane(subdivisionsX=2, subdivisionsY=1)[0]
+        cmds.select(mesh + ".f[0:1]", replace=True)
+
+        joints = create_joint.create_joint_from_selected_faces()
+
+        self.assertEqual(2, len(joints))
+        cmds.undo()
+        self.assertFalse(any(cmds.objExists(joint) for joint in joints))
