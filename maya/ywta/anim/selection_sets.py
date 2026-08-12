@@ -152,7 +152,7 @@ def _validate(data):
     if not isinstance(data, dict) or data.get("format") != FORMAT:
         raise ValueError("YWTA Selection Sets ファイルではありません。")
     data = copy.deepcopy(data)
-    if data.get("version") != VERSION:
+    if not isinstance(data.get("version"), int) or isinstance(data.get("version"), bool) or data["version"] != VERSION:
         raise ValueError("未対応の Selection Sets version です: {}".format(data.get("version")))
     entries = data.get("sets")
     if not isinstance(entries, list) or not entries:

@@ -170,6 +170,24 @@ class SkinWeightsTests(TestCase):
 
         self.assertEqual(before, self._weights(self.vertices[3]))
 
+    def test_clipboard_schema_version_requires_integer(self):
+        """真偽値や浮動小数点をclipboard versionとして受理しない。"""
+        path = self.get_temp_filename("versioned_weight_clipboard.json")
+        data = skin_weights.capture_vertex_weights(self.vertices[0])
+
+        for version in (True, 1.0):
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "format": skin_weights.CLIPBOARD_FORMAT,
+                        "version": version,
+                        "data": data,
+                    },
+                    handle,
+                )
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                skin_weights.read_clipboard(path)
+
     def test_invalid_clipboard_identity_and_oversized_weight_fail_before_edit(self):
         """空identityと1超weightをtarget skinへ渡さない。"""
         data = skin_weights.capture_vertex_weights(self.vertices[0])

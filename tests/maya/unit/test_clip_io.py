@@ -610,6 +610,16 @@ class ClipIoTests(TestCase):
         self.assertEqual(clip_io.FORMAT, data["format"])
         self.assertEqual(10.0, data["duration"])
 
+    def test_schema_version_requires_integer(self):
+        """真偽値や浮動小数点を整数schema versionとして受理しない。"""
+        _source, data = self._source_clip()
+
+        for version in (True, 1.0):
+            invalid = copy.deepcopy(data)
+            invalid["version"] = version
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                clip_io._validate(invalid)
+
     def test_temporary_clip_round_trip_uses_validated_engine(self):
         source, _data = self._source_clip()
         path = self.get_temp_filename("temporary_clip.json")

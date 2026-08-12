@@ -176,7 +176,11 @@ def read_clipboard(file_path=None):
         raise ValueError("スキンウェイトclipboard JSONを読み込めません。") from error
     if not isinstance(payload, dict) or payload.get("format") != CLIPBOARD_FORMAT:
         raise ValueError("YWTAスキンウェイトclipboardではありません。")
-    if payload.get("version") != CLIPBOARD_VERSION:
+    if (
+        not isinstance(payload.get("version"), int)
+        or isinstance(payload.get("version"), bool)
+        or payload["version"] != CLIPBOARD_VERSION
+    ):
         raise ValueError("未対応のclipboard versionです: {}".format(payload.get("version")))
     return _validate_weights(payload.get("data"))
 

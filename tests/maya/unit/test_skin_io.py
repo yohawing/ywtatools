@@ -90,6 +90,16 @@ class SkinIoTests(TestCase):
         self.assertEqual(cmds.currentUnit(query=True, linear=True), data["scene"]["linear_unit"])
         self.assertEqual(cmds.upAxis(query=True, axis=True), data["scene"]["up_axis"])
 
+    def test_schema_version_requires_integer(self):
+        """真偽値や浮動小数点を整数schema versionとして受理しない。"""
+        data = skin_io.capture(self.mesh)
+
+        for version in (True, 1.0):
+            invalid = copy.deepcopy(data)
+            invalid["version"] = version
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                skin_io._validate_data(invalid)
+
     def test_temporary_skin_round_trip_uses_validated_engine(self):
         path = self.get_temp_filename("temp_skin.json")
         expected = skin_io.capture(self.mesh)["weights"]

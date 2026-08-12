@@ -172,6 +172,18 @@ class SelectionSetsTests(TestCase):
         self.assertEqual(selection_sets.FORMAT, data["format"])
         self.assertEqual("Hands", data["sets"][0]["label"])
 
+    def test_schema_version_requires_integer(self):
+        """真偽値や浮動小数点を整数schema versionとして受理しない。"""
+        hand = self._control("character", "hand_ctrl")
+        node = selection_sets.create_selection_set("Hands", [hand])
+        data = selection_sets.capture([node])
+
+        for version in (True, 1.0):
+            invalid = copy.deepcopy(data)
+            invalid["version"] = version
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                selection_sets._validate(invalid)
+
     def test_capture_accepts_single_set_string(self):
         """単一objectSet名を文字単位に分解しない。"""
         control = self._control("source", "hand_ctrl")

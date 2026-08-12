@@ -11,6 +11,9 @@ Fabricator 本体は Business Source License 1.1、YWTA は MIT License です�
 単一Undoと失敗時rollbackを契約にする変更操作は、Maya Undoが無効な場合はsceneを
 編集せずに拒否します。
 
+全versioned JSONはversionをboolやfloatではなく厳密な整数として検証し、Pythonの
+`True == 1`によるschema判定の迂回を許しません。
+
 ## 利用できる機能
 
 ### Name Tools

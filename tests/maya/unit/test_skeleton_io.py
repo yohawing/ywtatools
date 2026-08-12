@@ -280,6 +280,17 @@ class SkeletonIoTests(TestCase):
 
         self.assertFalse(cmds.ls(type="joint"))
 
+    def test_schema_version_requires_integer(self):
+        """真偽値や浮動小数点を整数schema versionとして受理しない。"""
+        root, _child = self._skeleton()
+        data = skeleton_io.capture(root)
+
+        for version in (True, 1.0):
+            invalid = copy.deepcopy(data)
+            invalid["version"] = version
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                skeleton_io._validate(invalid)
+
     def test_save_and_read_round_trip(self):
         root, _child = self._skeleton()
         path = self.get_temp_filename("skeleton.skeleton.json")

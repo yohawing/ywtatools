@@ -246,7 +246,7 @@ def _validate(data):
     """外部 clip JSON を scene 編集前に完全検証する。"""
     if not isinstance(data, dict) or data.get("format") != FORMAT:
         raise ValueError("YWTA Animation Clip ではありません。")
-    if data.get("version") != VERSION:
+    if not isinstance(data.get("version"), int) or isinstance(data.get("version"), bool) or data["version"] != VERSION:
         raise ValueError("未対応の Animation Clip version です: {}".format(data.get("version")))
     duration = _finite_number(data.get("duration"), "duration")
     if duration < 0.0:

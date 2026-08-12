@@ -92,7 +92,12 @@ def validate_state(raw):
         state = json.loads(raw) if isinstance(raw, str) and raw else {}
     except (TypeError, ValueError):
         return None
-    if not isinstance(state, dict) or state.get("version") != STATE_VERSION:
+    if (
+        not isinstance(state, dict)
+        or not isinstance(state.get("version"), int)
+        or isinstance(state.get("version"), bool)
+        or state["version"] != STATE_VERSION
+    ):
         return None
     scenes = state.get("scenes")
     script = state.get("script")

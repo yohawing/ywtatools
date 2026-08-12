@@ -130,6 +130,19 @@ cmds.setAttr('asset.completed', True)
 
         self.assertEqual(state, batch_runner.validate_state(json.dumps(state)))
 
+    def test_saved_ui_state_version_requires_integer(self):
+        """真偽値や浮動小数点を保存状態versionとして受理しない。"""
+        state = {
+            "scenes": ["asset.ma"],
+            "script": "print('ok')",
+            "save": False,
+        }
+
+        for version in (True, 1.0):
+            invalid = dict(state, version=version)
+            with self.subTest(version=version):
+                self.assertIsNone(batch_runner.validate_state(json.dumps(invalid)))
+
     def test_invalid_script_is_rejected_before_process_launch(self):
         scene = self._scene("invalid_script")
 

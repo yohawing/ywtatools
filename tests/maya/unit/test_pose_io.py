@@ -214,6 +214,16 @@ class PoseIoTests(TestCase):
         self.assertEqual(cmds.currentUnit(query=True, linear=True), data["linear_unit"])
         self.assertEqual(cmds.currentUnit(query=True, angle=True), data["angle_unit"])
 
+    def test_schema_version_requires_integer(self):
+        """真偽値や浮動小数点を整数schema versionとして受理しない。"""
+        data = pose_io.capture([self._control("source")])
+
+        for version in (True, 1.0):
+            invalid = copy.deepcopy(data)
+            invalid["version"] = version
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                pose_io._validate(invalid)
+
     def test_temporary_pose_round_trip_uses_validated_engine(self):
         source = self._control("source")
         cmds.setAttr(source + ".translateX", 7.5)

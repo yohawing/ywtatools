@@ -272,7 +272,7 @@ def _validate_data(data):
     """外部 JSON を Maya に触れる前に検証する。"""
     if not isinstance(data, dict) or data.get("format") != FORMAT:
         raise ValueError("YWTA Skin IO ファイルではありません。")
-    if data.get("version") != VERSION:
+    if not isinstance(data.get("version"), int) or isinstance(data.get("version"), bool) or data["version"] != VERSION:
         raise ValueError("未対応の Skin IO version です: {}".format(data.get("version")))
     scene = data.get("scene")
     if scene is not None and (

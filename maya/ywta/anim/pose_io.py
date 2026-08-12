@@ -204,7 +204,7 @@ def _validate(data):
     """外部 JSON を scene 編集前に完全検証する。"""
     if not isinstance(data, dict) or data.get("format") != FORMAT:
         raise ValueError("YWTA Pose ファイルではありません。")
-    if data.get("version") != VERSION:
+    if not isinstance(data.get("version"), int) or isinstance(data.get("version"), bool) or data["version"] != VERSION:
         raise ValueError("未対応の Pose version です: {}".format(data.get("version")))
     for unit_name in ("linear_unit", "angle_unit"):
         if unit_name in data and (not isinstance(data[unit_name], str) or not data[unit_name]):
