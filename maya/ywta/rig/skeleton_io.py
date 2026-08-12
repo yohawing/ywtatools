@@ -361,15 +361,30 @@ def read(file_path):
         return _validate(json.load(handle))
 
 
+def _normalized_namespace(namespace):
+    """入力namespaceの全segmentをscene編集前に検証する。"""
+    if namespace is None:
+        return ""
+    if not isinstance(namespace, str):
+        raise ValueError("namespaceは文字列で指定してください。")
+    namespace = namespace.strip().strip(":")
+    if not namespace:
+        return ""
+    segments = namespace.split(":")
+    if any(not segment or cmds.namespace(validateName=segment) != segment for segment in segments):
+        raise ValueError("namespace名が不正です: {}".format(namespace))
+    return namespace
+
+
 def _namespace_prefix(namespace):
     """入力 namespace を Maya の絶対でない prefix へ正規化する。"""
-    namespace = (namespace or "").strip().strip(":")
+    namespace = _normalized_namespace(namespace)
     return namespace + ":" if namespace else ""
 
 
 def _ensure_namespace(namespace):
     """入れ子 namespace を root から順に作成する。"""
-    namespace = (namespace or "").strip().strip(":")
+    namespace = _normalized_namespace(namespace)
     if not namespace:
         return
     parent = ":"

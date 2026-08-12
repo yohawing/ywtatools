@@ -157,6 +157,18 @@ class SkeletonIoTests(TestCase):
         self.assertEqual("target:root_jnt", created[0].rsplit("|", 1)[-1])
         self.assertFalse(cmds.namespace(exists="working:target"))
 
+    def test_invalid_namespace_fails_before_partial_namespace_creation(self):
+        """不正な入れ子namespaceで先頭segmentだけを残さない。"""
+        root, _child = self._skeleton()
+        data = skeleton_io.capture(root)
+        cmds.delete(root)
+
+        for namespace in ("valid::broken", "valid:bad name", 42):
+            with self.assertRaises(ValueError):
+                skeleton_io.create(data, namespace=namespace)
+
+        self.assertFalse(cmds.namespace(exists="valid"))
+
     def test_existing_root_collision_is_rejected_before_edit(self):
         root, _child = self._skeleton()
         data = skeleton_io.capture(root)
