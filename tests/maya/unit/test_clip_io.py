@@ -322,6 +322,43 @@ class ClipIoTests(TestCase):
             cmds.keyTangent(target_plug, query=True, time=(20, 20), outWeight=True)[0],
         )
 
+    def test_weighted_mode_conflict_skips_without_changing_outside_keys(self):
+        """curve全体のweighted modeでclip範囲外キーを変更しない。"""
+        source = self._control("source")
+        cmds.setKeyframe(source, attribute="translateX", time=1, value=1.0)
+        cmds.setKeyframe(source, attribute="translateX", time=2, value=2.0)
+        cmds.keyTangent(source + ".translateX", edit=True, weightedTangents=False)
+        data = clip_io.capture([source], start=1, end=2)
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.setKeyframe(target, attribute="translateX", time=0, value=9.0)
+        cmds.keyTangent(target + ".translateX", edit=True, weightedTangents=True)
+
+        result = clip_io.apply(data, [target], start_time=1, mode="replace")
+
+        self.assertEqual(0, result["applied_channels"])
+        self.assertEqual("weighted_tangent_conflict", result["skipped"][0]["reason"])
+        self.assertEqual([0.0], cmds.keyframe(target + ".translateX", query=True, timeChange=True))
+        self.assertTrue(cmds.keyTangent(target + ".translateX", query=True, weightedTangents=True)[0])
+
+    def test_replace_can_change_weighted_mode_when_all_keys_are_replaced(self):
+        """既存curveを全消去できるReplaceではsource modeを適用する。"""
+        source = self._control("source")
+        cmds.setKeyframe(source, attribute="translateX", time=1, value=1.0)
+        cmds.setKeyframe(source, attribute="translateX", time=2, value=2.0)
+        cmds.keyTangent(source + ".translateX", edit=True, weightedTangents=False)
+        data = clip_io.capture([source], start=1, end=2)
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.setKeyframe(target, attribute="translateX", time=1, value=8.0)
+        cmds.setKeyframe(target, attribute="translateX", time=2, value=9.0)
+        cmds.keyTangent(target + ".translateX", edit=True, weightedTangents=True)
+
+        result = clip_io.apply(data, [target], start_time=1, mode="replace")
+
+        self.assertEqual(1, result["applied_channels"])
+        self.assertFalse(cmds.keyTangent(target + ".translateX", query=True, weightedTangents=True)[0])
+
     def test_time_unit_mismatch_is_reported_without_retiming(self):
         original = cmds.currentUnit(query=True, time=True)
         try:

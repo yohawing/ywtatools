@@ -88,6 +88,7 @@ Skinned Mesh Combineは実行時のjoint・mesh評価姿勢を新しいskinClust
 - ModeとSelected-onlyを任意組合せで保存・実行できるClip Option UI
 - Insert時は解決・適用可能なcontrolだけの後続キーをclip占有フレーム数ぶん移動
 - animCurve は現在フレームへ key を設定し、constraint や計算node駆動属性は上書きしない
+- Clipと既存animCurveのweighted tangent modeが異なる場合、範囲外キーを残すchannelは副作用を避けてskip
 - 同一アドレス候補が複数ある場合は推測せず拒否
 
 現段階は JSON の保存・適用と Selection Sets 管理が中心です。カード型ライブラリ、

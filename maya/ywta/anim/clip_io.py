@@ -407,6 +407,19 @@ def _shift_keys_for_insert(nodes, start_time, offset):
     return shifted
 
 
+def _weighted_tangent_conflict(plug, channel, mode, start_time, end_time):
+    """curve全体のweighted modeが範囲外キーを変える場合はTrueを返す。"""
+    if "weighted_tangents" not in channel:
+        return False
+    times = [float(time) for time in (cmds.keyframe(plug, query=True, timeChange=True) or [])]
+    if not times:
+        return False
+    current = bool((cmds.keyTangent(plug, query=True, weightedTangents=True) or [False])[0])
+    if current == channel["weighted_tangents"]:
+        return False
+    return mode != "replace" or any(time < start_time or time > end_time for time in times)
+
+
 def apply(
     data,
     nodes=None,
@@ -461,15 +474,29 @@ def apply(
             if incoming and not all(cmds.nodeType(source.split(".", 1)[0]).startswith("animCurve") for source in incoming):
                 skipped.append({"address": address, "attribute": attribute, "reason": "driven"})
                 continue
-            operations.append((plug, channel))
-            resolved_nodes.add(node)
+            operations.append((plug, channel, address))
+
+    end_time = start_time + data["duration"]
+    safe_operations = []
+    for plug, channel, address in operations:
+        if _weighted_tangent_conflict(plug, channel, mode, start_time, end_time):
+            skipped.append(
+                {
+                    "address": address,
+                    "attribute": channel["name"],
+                    "reason": "weighted_tangent_conflict",
+                }
+            )
+            continue
+        safe_operations.append((plug, channel))
+        resolved_nodes.add(plug.split(".", 1)[0])
+    operations = safe_operations
 
     undo_utils.require_enabled("Animation Clip Apply")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Animation Clip Apply")
     failed = False
     applied_keys = 0
     try:
-        end_time = start_time + data["duration"]
         shifted_keys = 0
         insert_offset = 0.0
         if mode == "insert":
