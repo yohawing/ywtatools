@@ -132,6 +132,8 @@ def hash_rename(pattern, nodes=None, start=1):
     """``#`` の連続をゼロ埋め番号へ置換して選択順に変更する。"""
     if not pattern:
         raise ValueError("名前パターンが空です。")
+    if not isinstance(start, int) or isinstance(start, bool) or start < 1:
+        raise ValueError("開始番号は1以上の整数にしてください。")
     match = re.search(r"#+", pattern)
     if not match:
         raise ValueError("名前パターンには # を1つ以上含めてください。")
@@ -191,8 +193,10 @@ def remove_affixes(prefix="", suffix="", nodes=None):
 
 def renumber(nodes=None, separator="_", padding=2, start=1):
     """末尾の区切り文字と番号を除去し、選択順に振り直す。"""
-    if padding < 1:
+    if not isinstance(padding, int) or isinstance(padding, bool) or padding < 1:
         raise ValueError("桁数は1以上にしてください。")
+    if not isinstance(start, int) or isinstance(start, bool) or start < 1:
+        raise ValueError("開始番号は1以上の整数にしてください。")
     selected = _selected_nodes(nodes)
     pattern = re.compile(_TRAILING_NUMBER_PATTERN.format(separator=re.escape(separator)))
     names = []

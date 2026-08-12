@@ -63,6 +63,17 @@ class NameToolsTests(TestCase):
 
         self.assertEqual(["finger_005", "thumb_006"], [node.rsplit("|", 1)[-1] for node in result])
 
+    def test_invalid_numbering_options_fail_before_edit(self):
+        """boolや非整数の番号設定でnode名を変えない。"""
+        node = cmds.createNode("transform", name="original")
+
+        with self.assertRaises(ValueError):
+            name_tools.hash_rename("ctrl_##", [node], start=True)
+        with self.assertRaises(ValueError):
+            name_tools.renumber([node], padding="2")
+
+        self.assertTrue(cmds.objExists("original"))
+
     def test_duplicate_target_names_are_rejected_before_edit(self):
         first = cmds.createNode("transform", name="first")
         second = cmds.createNode("transform", name="second")
