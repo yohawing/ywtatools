@@ -8,6 +8,7 @@ from ywta.menu import menu_animation
 from ywta.menu import menu_deform
 from ywta.menu import menu_rigging
 from ywta.menu import menu_utility
+from ywta.menu import core as menu_core
 from ywta.test import TestCase
 
 
@@ -87,3 +88,35 @@ class FabricatorMenuTests(TestCase):
         labels = self._build(menu_utility.create_utility_menu)
 
         self.assertIn("Scene Audit", labels)
+
+    def test_top_level_batch_and_fbx_entries_are_reachable(self):
+        calls = []
+
+        def menu_item(*_args, **kwargs):
+            calls.append(kwargs)
+            return "ywtaTopItem{}".format(len(calls))
+
+        with (
+            mock.patch.object(cmds, "menu", return_value="ywtaTestMenu"),
+            mock.patch.object(cmds, "menuItem", side_effect=menu_item),
+            mock.patch.object(menu_core, "delete_menu"),
+            mock.patch.object(menu_core.mel, "eval", return_value="MayaWindow"),
+            mock.patch.object(menu_core.menu_animation, "create_animation_menu"),
+            mock.patch.object(menu_core.menu_mesh, "create_mesh_menu"),
+            mock.patch.object(menu_core.menu_rigging, "create_rigging_menu"),
+            mock.patch.object(menu_core.menu_deform, "create_deform_menu"),
+            mock.patch.object(menu_core.menu_utility, "create_utility_menu"),
+        ):
+            menu_core.create_menu()
+
+        labels = {call.get("label") for call in calls if call.get("label")}
+        self.assertTrue(
+            {
+                "Batch Runner",
+                "Export Selected FBX",
+                "Export Animation FBX",
+            }.issubset(labels)
+        )
+        for call in calls:
+            if isinstance(call.get("command"), str):
+                compile(call["command"], "<YWTA Menu Command>", "exec")
