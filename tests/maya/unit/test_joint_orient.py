@@ -123,6 +123,37 @@ class JointOrientTests(TestCase):
 
         self.assertEqual(before, cmds.getAttr(parent + ".jointOrient")[0])
 
+    def test_keyed_joint_rejects_before_orientation_change(self):
+        """animCurve接続を保持したままjointOrient契約を変えない。"""
+        parent, _child, _grandchild = self._chain()
+        cmds.setKeyframe(parent, attribute="rotateX", time=1, value=0.0)
+        cmds.setKeyframe(parent, attribute="rotateX", time=10, value=45.0)
+        before_keys = cmds.keyframe(
+            parent,
+            attribute="rotateX",
+            query=True,
+            valueChange=True,
+        )
+        before_orient = cmds.getAttr(parent + ".jointOrient")[0]
+
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            with self.assertRaises(ValueError):
+                joint_orient.orient_to_children([parent])
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+        self.assertEqual(before_orient, cmds.getAttr(parent + ".jointOrient")[0])
+        self.assertEqual(
+            before_keys,
+            cmds.keyframe(
+                parent,
+                attribute="rotateX",
+                query=True,
+                valueChange=True,
+            ),
+        )
+
     def test_second_orient_failure_rolls_back_first(self):
         parent, child, _grandchild = self._chain()
         before_parent = cmds.getAttr(parent + ".jointOrient")[0]

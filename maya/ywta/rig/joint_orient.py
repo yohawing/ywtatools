@@ -51,7 +51,16 @@ def _validate_editable(joint, child):
         for compound in compounds:
             for axis in "XYZ":
                 plug = "{}.{}{}".format(node, compound, axis)
-                if not cmds.getAttr(plug, settable=True):
+                incoming = (
+                    cmds.listConnections(
+                        plug,
+                        source=True,
+                        destination=False,
+                        plugs=True,
+                    )
+                    or []
+                )
+                if incoming or not cmds.getAttr(plug, settable=True):
                     blocked.append(plug)
     if blocked:
         raise ValueError("orientに必要なchannelが編集できません: {}".format(", ".join(blocked)))
