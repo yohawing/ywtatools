@@ -47,11 +47,11 @@ def create_rigging_menu(parent_menu):
 
     cmds.menuItem(
         parent=rig_menu,
-        label="Rename Chain",
-        command="import ywta.name; ywta.name.rename_chain_ui()",
+        label="Name Tools",
+        command="import ywta.name; ywta.name.show()",
         image="menuIconModify.png",
         imageOverlayLabel="name",
-        annotation="ジョイントチェーンの名前を一括変更します",
+        annotation="選択ノードの連番、検索置換、prefix/suffix、番号を一括編集します",
     )
 
     cmds.menuItem(
