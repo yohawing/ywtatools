@@ -51,6 +51,8 @@ class ControlSwapTests(TestCase):
 
     def test_multi_shape_swap_is_single_undoable_action(self):
         target, old_shape, _driver = self._target()
+        sentinel = cmds.spaceLocator(name="selection_sentinel")[0]
+        cmds.select(sentinel, replace=True)
         curves = [
             self._line([(0, 0, 0), (1, 0, 0)]),
             self._line([(0, 0, 0), (0, 1, 0)]),
@@ -59,6 +61,7 @@ class ControlSwapTests(TestCase):
         control.swap_curve_shapes([target], curves)
 
         self.assertEqual(2, len(cmds.listRelatives(target, shapes=True, type="nurbsCurve")))
+        self.assertEqual([sentinel], cmds.ls(selection=True))
         cmds.undo()
         self.assertTrue(cmds.objExists(old_shape))
         self.assertEqual(1, len(cmds.listRelatives(target, shapes=True, type="nurbsCurve")))

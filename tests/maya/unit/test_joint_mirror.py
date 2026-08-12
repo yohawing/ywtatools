@@ -42,6 +42,7 @@ class JointMirrorTests(TestCase):
         self.assertTrue(cmds.objExists(root))
         cmds.redo()
         self.assertTrue(cmds.ls(root_uuid, uuid=True))
+        self.assertEqual("R_arm_jnt", cmds.ls(selection=True)[0])
 
     def test_missing_side_token_fails_before_edit(self):
         cmds.select(clear=True)
