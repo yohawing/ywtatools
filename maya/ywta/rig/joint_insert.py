@@ -22,6 +22,11 @@ def _leaf_name(node):
     return node.rsplit("|", 1)[-1]
 
 
+def _absolute_name(name):
+    """namespace付きnameをcurrent namespace非依存の絶対名へする。"""
+    return ":" + name if ":" in name and not name.startswith(":") else name
+
+
 def _resolve_uuid(node_uuid):
     """UUIDから現在のjointロングパスを返す。"""
     matches = cmds.ls(node_uuid, long=True, type="joint") or []
@@ -43,10 +48,12 @@ def _planned_names(parent, count, pattern):
     names = []
     for index in range(1, count + 1):
         leaf = pattern[: match.start()] + str(index).zfill(width) + pattern[match.end() :]
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", leaf) is None:
+            raise ValueError("挿入joint名は英数字とunderscoreだけにしてください: {}".format(leaf))
         names.append(prefix + leaf)
     if len(set(names)) != len(names):
         raise ValueError("挿入joint名が重複しています。")
-    conflicts = [name for name in names if cmds.objExists(name)]
+    conflicts = [name for name in names if cmds.objExists(_absolute_name(name))]
     if conflicts:
         raise ValueError("挿入joint名がsceneに既にあります: {}".format(", ".join(conflicts)))
     return names
@@ -113,7 +120,9 @@ def insert_joints(parent, child, count=1, name_pattern="insert_##_jnt"):
         current_parent = parent
         for index, name in enumerate(names, start=1):
             inserted = cmds.insertJoint(current_parent)
-            inserted = cmds.rename(inserted, name)
+            inserted = cmds.rename(inserted, _absolute_name(name))
+            if _leaf_name(inserted) != name:
+                raise RuntimeError("挿入joint名がMayaに変更されました: {}".format(inserted))
             fraction = float(index) / float(count + 1)
             position = [start[axis] + (end[axis] - start[axis]) * fraction for axis in range(3)]
             cmds.xform(inserted, worldSpace=True, translation=position)
@@ -121,7 +130,7 @@ def insert_joints(parent, child, count=1, name_pattern="insert_##_jnt"):
             created.append(inserted)
             current_parent = inserted
         cmds.xform(_resolve_uuid(child_uuid), worldSpace=True, matrix=child_matrix)
-        created = [(_joint(name)) for name in names]
+        created = [_joint(_absolute_name(name)) for name in names]
         cmds.select(created, replace=True)
     except Exception:
         failed = True

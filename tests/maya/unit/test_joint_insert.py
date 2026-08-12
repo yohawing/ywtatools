@@ -107,6 +107,20 @@ class JointInsertTests(TestCase):
 
         self.assertEqual(["|character:parent_jnt|character:insert_01_jnt"], created)
 
+    def test_namespace_resolution_ignores_current_namespace(self):
+        cmds.namespace(add="character")
+        cmds.namespace(add="working")
+        cmds.select(clear=True)
+        parent = cmds.joint(name=":character:parent_jnt", position=(0.0, 0.0, 0.0))
+        child = cmds.joint(name=":character:child_jnt", position=(3.0, 0.0, 0.0))
+        cmds.namespace(set="working")
+
+        created = joint_insert.insert_joints(parent, child)
+        cmds.namespace(set=":")
+
+        self.assertEqual(["|character:parent_jnt|character:insert_01_jnt"], created)
+        self.assertFalse(cmds.objExists(":working:character:insert_01_jnt"))
+
     def test_second_insert_failure_rolls_back_first_insert(self):
         parent, child = self._chain()
         original_insert = joint_insert.cmds.insertJoint
