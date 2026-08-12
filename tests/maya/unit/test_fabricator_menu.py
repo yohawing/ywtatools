@@ -41,6 +41,7 @@ class FabricatorMenuTests(TestCase):
                 "Create Joint",
                 "Insert Joints Between Selected...",
                 "Orient Selected Joints to Children",
+                "Duplicate Joint Hierarchy...",
                 "Create at Selection Center",
                 "Null",
                 "Locator",

@@ -150,6 +150,15 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - 分岐、同一位置の親子、参照、skinCluster / constraint / IK、接続・lock channelを編集前拒否
 - `Joint Edit Tools`内の`Align with Child`も同じ原子的な階層orient経路を使用
 
+### Duplicate Joint Hierarchy
+
+メニュー: `YWTA > Rigging > Duplicate Joint Hierarchy...`
+
+- 選択root以下のjoint hierarchy全体をFind / Replace後の名前で複製
+- 全jointへの置換成功、namespace維持、階層内重複、scene衝突を複製前検証
+- joint以外の子DAG nodeや参照階層は部分複製せず拒否
+- 元階層を変更せず、複製・一時rename・最終rename・選択を単一Undo / Redo
+
 ### Constraints
 
 メニュー: `YWTA > Rigging > Constraints`

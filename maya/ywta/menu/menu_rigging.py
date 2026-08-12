@@ -67,6 +67,13 @@ def create_rigging_menu(parent_menu):
         annotation="未リグの選択joint階層を+X軸で子方向へ静的orientします",
     )
 
+    cmds.menuItem(
+        parent=rig_menu,
+        label="Duplicate Joint Hierarchy...",
+        command="import ywta.rig.joint_duplicate as joint_duplicate; joint_duplicate.show_options()",
+        annotation="Find/Replace名を事前検証して選択joint階層を複製します",
+    )
+
     create_menu = cmds.menuItem(
         parent=rig_menu,
         subMenu=True,
