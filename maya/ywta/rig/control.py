@@ -62,6 +62,7 @@ import json
 import math
 import os
 import logging
+import re
 import webbrowser
 import tempfile
 
@@ -92,6 +93,12 @@ def export_curves(controls=None, file_path=None):
     if controls is None:
         controls = cmds.ls(sl=True)
     data = get_curve_data(controls)
+    _write_curve_data(data, file_path)
+    return data
+
+
+def _write_curve_data(data, file_path):
+    """CurveShape列を原子的JSONとして書き出す。"""
     target = os.path.abspath(file_path)
     directory = os.path.dirname(target)
     if not os.path.isdir(directory):
@@ -114,7 +121,56 @@ def export_curves(controls=None, file_path=None):
         if os.path.exists(temporary):
             os.remove(temporary)
     logger.info("Exported controls to {}".format(target))
-    return data
+    return target
+
+
+def export_shape_to_library(controls, name, overwrite=False, directory=CONTROLS_DIRECTORY):
+    """複数controlのworld形状を1つのlibrary entryとして保存する。
+
+    Args:
+        controls: 保存対象control transform。
+        name: library上のshape名。
+        overwrite: 既存entryの置換を明示許可するか。
+        directory: 保存先library directory。
+
+    Returns:
+        保存したJSONの絶対path。
+    """
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", name.strip()):
+        raise ValueError("library名は英数字、underscore、hyphenだけにしてください。")
+    if not isinstance(overwrite, bool):
+        raise ValueError("overwriteはboolで指定してください。")
+    directory = os.path.abspath(directory)
+    if not os.path.isdir(directory):
+        raise ValueError("control library directoryがありません: {}".format(directory))
+    target = os.path.join(directory, name.strip() + ".json")
+    if os.path.exists(target) and not overwrite:
+        raise ValueError("Control library entryが既に存在します: {}".format(name.strip()))
+
+    data = []
+    seen = set()
+    for control in controls or []:
+        matches = cmds.ls(control, long=True, type="transform") or []
+        if len(matches) != 1:
+            raise ValueError("controlを一意に解決できません: {}".format(control))
+        transform = matches[0]
+        node_uuid = (cmds.ls(transform, uuid=True) or [None])[0]
+        if node_uuid in seen:
+            continue
+        seen.add(node_uuid)
+        shapes = _curve_shapes(transform)
+        if not shapes:
+            raise ValueError("NURBS curve shapeがありません: {}".format(transform))
+        matrix = _dag_path(transform).inclusiveMatrix()
+        for shape in shapes:
+            curve = _curve_data_from_shape(shape)
+            world_points = [OpenMaya.MPoint(*point) * matrix for point in curve.cvs]
+            curve.cvs = [(point.x, point.y, point.z) for point in world_points]
+            curve.transform = name.strip()
+            data.append(curve)
+    if not data:
+        raise ValueError("保存するcontrolを1つ以上指定してください。")
+    return _write_curve_data(data, target)
 
 
 def get_curve_data(controls=None):

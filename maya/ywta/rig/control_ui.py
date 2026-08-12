@@ -17,6 +17,7 @@ try:
         QListWidget,
         QMainWindow,
         QMessageBox,
+        QInputDialog,
         QPushButton,
         QVBoxLayout,
         QWidget,
@@ -34,6 +35,7 @@ except ImportError:
         QListWidget,
         QMainWindow,
         QMessageBox,
+        QInputDialog,
         QPushButton,
         QVBoxLayout,
         QWidget,
@@ -48,7 +50,7 @@ from ywta.rig.control import (
     get_control_paths_in_library,
     rotate_components,
     CONTROLS_DIRECTORY,
-    export_curves,
+    export_shape_to_library,
     mirror_curve,
     import_curves_on_selected,
     import_new_curves,
@@ -207,11 +209,28 @@ class ControlWindow(SingletonWindowMixin, MayaQWidgetBaseMixin, QMainWindow):
 
     def export_to_library(self):
         """Exports the selected curves into the CONTROLS_DIRECTORY."""
-        controls = cmds.ls(sl=True)
-        for control in controls:
-            name = control.split("|")[-1].split(":")[-1]
-            file_path = os.path.join(CONTROLS_DIRECTORY, "{}.json".format(name))
-            export_curves([control], file_path)
+        controls = cmds.ls(selection=True, long=True, type="transform") or []
+        if not controls:
+            raise ValueError("保存するcontrolを1つ以上選択してください。")
+        default_name = controls[-1].rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        name, accepted = QInputDialog.getText(self, "Save Control Shape", "Library Name:", text=default_name)
+        if not accepted:
+            return
+        file_path = os.path.join(CONTROLS_DIRECTORY, "{}.json".format(name.strip()))
+        overwrite = False
+        if os.path.exists(file_path):
+            overwrite = (
+                QMessageBox.question(
+                    self,
+                    "Overwrite Control Shape",
+                    "'{}' already exists. Overwrite it?".format(name.strip()),
+                    QMessageBox.Yes | QMessageBox.No,
+                )
+                == QMessageBox.Yes
+            )
+            if not overwrite:
+                return
+        export_shape_to_library(controls, name, overwrite=overwrite)
         self.populate_controls()
 
     def set_color(self):

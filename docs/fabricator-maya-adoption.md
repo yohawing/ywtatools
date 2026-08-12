@@ -163,6 +163,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - 複数shape controlを1つのtransformとして原子的JSON保存・再作成
 - 外部Control JSONの全curve schema / CV / knot / colorを作成前検証
 - Control JSON Importはmulti-shapeを単一Undoで作成し、途中失敗時rollback
+- Library Saveは複数controlのworld形状を1 entryへbakeし、既存名の上書きを明示確認
 - 事前検証と単一Undo / Redo
 
 ### Scene Audit

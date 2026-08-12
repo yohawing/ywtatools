@@ -1,6 +1,7 @@
 """Control curve shape差し替えのMaya単体テスト。"""
 
 import json
+import os
 from unittest import mock
 
 import maya.cmds as cmds
@@ -230,6 +231,53 @@ class ControlSwapTests(TestCase):
                 control.import_new_curves(path)
 
         self.assertFalse(cmds.objExists("multi_ctrl"))
+
+    def test_library_save_combines_world_shapes_under_one_name(self):
+        """複数transformのworld形状を1つのlibrary controlへ保存する。"""
+        first = cmds.curve(name="first_ctrl", degree=1, point=[(0, 0, 0), (1, 0, 0)])
+        second = cmds.curve(name="second_ctrl", degree=1, point=[(0, 0, 0), (0, 2, 0)])
+        cmds.setAttr(first + ".translate", 3.0, 0.0, 0.0)
+        cmds.setAttr(second + ".translate", 0.0, 4.0, 0.0)
+        expected = []
+        for transform in (first, second):
+            shape = cmds.listRelatives(transform, shapes=True, fullPath=True)[0]
+            expected.append(
+                [
+                    cmds.pointPosition("{}.cv[{}]".format(shape, index), world=True)
+                    for index in range(cmds.getAttr(shape + ".controlPoints", size=True))
+                ]
+            )
+        directory = os.path.dirname(self.get_temp_filename("library_marker.tmp"))
+
+        path = control.export_shape_to_library([first, second], "combined", directory=directory)
+        cmds.delete(first, second)
+        created = control.import_new_curves(path)
+
+        self.assertEqual(["combined"], created)
+        shapes = cmds.listRelatives(created[0], shapes=True, fullPath=True, type="nurbsCurve")
+        self.assertEqual(2, len(shapes))
+        for shape, expected_points in zip(shapes, expected):
+            actual = [
+                cmds.pointPosition("{}.cv[{}]".format(shape, index), world=True)
+                for index in range(cmds.getAttr(shape + ".controlPoints", size=True))
+            ]
+            for actual_point, expected_point in zip(actual, expected_points):
+                for actual_value, expected_value in zip(actual_point, expected_point):
+                    self.assertAlmostEqual(expected_value, actual_value)
+
+    def test_library_save_requires_explicit_overwrite(self):
+        """既存entryを明示許可なしに置換しない。"""
+        target = cmds.circle(name="control")[0]
+        directory = os.path.dirname(self.get_temp_filename("library_marker.tmp"))
+        path = os.path.join(directory, "existing.json")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("sentinel")
+
+        with self.assertRaises(ValueError):
+            control.export_shape_to_library([target], "existing", directory=directory)
+
+        with open(path, "r", encoding="utf-8") as handle:
+            self.assertEqual("sentinel", handle.read())
 
     def test_combine_control_shapes_preserves_world_shape_and_undo(self):
         """source形状をworld位置のままtargetへ移し、1回でUndoする。"""
