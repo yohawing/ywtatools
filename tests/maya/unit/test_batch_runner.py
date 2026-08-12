@@ -168,6 +168,39 @@ cmds.setAttr('asset.completed', True)
         self.assertEqual(["error", "ok"], [item["report"]["status"] for item in results])
         self.assertIn("読み込めません", results[0]["report"]["error"])
 
+    def test_process_launch_failure_becomes_result_and_batch_continues(self):
+        """Popen失敗をscene errorへ変換して後続sceneを処理する。"""
+        first = self._scene("first")
+        second = self._scene("second")
+        launches = {"count": 0}
+
+        class FakeProcess:
+            """2回目だけ正常reportを返す即時process。"""
+
+            def __init__(self, arguments, **_kwargs):
+                launches["count"] += 1
+                if launches["count"] == 1:
+                    raise PermissionError("expected launch failure")
+                self.stdout = io.StringIO("")
+                self.returncode = 0
+                with open(arguments[2], "r", encoding="utf-8") as payload_handle:
+                    payload = json.load(payload_handle)
+                with open(arguments[3], "w", encoding="utf-8") as handle:
+                    json.dump(
+                        {"scene": payload["scene"], "status": "ok", "stages": ["opened"]},
+                        handle,
+                    )
+
+            def poll(self):
+                return self.returncode
+
+        with mock.patch.object(batch_runner.subprocess, "Popen", FakeProcess):
+            results = batch_runner.run_batch([first, second], mayapy_path=sys.executable)
+
+        self.assertEqual(["error", "ok"], [item["report"]["status"] for item in results])
+        self.assertIsNone(results[0]["returncode"])
+        self.assertIn("起動できません", results[0]["report"]["error"])
+
     def test_nonzero_child_exit_overrides_success_report(self):
         scene = self._scene("nonzero")
 

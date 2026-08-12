@@ -233,16 +233,35 @@ def run_batch(
             existing_pythonpath = environment.get("PYTHONPATH", "")
             environment["PYTHONPATH"] = os.pathsep.join(value for value in [maya_root, existing_pythonpath] if value)
             environment["PYTHONUTF8"] = "1"
-            process = subprocess.Popen(
-                [mayapy_path, worker, payload_path, report_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
-                env=environment,
-            )
+            try:
+                process = subprocess.Popen(
+                    [mayapy_path, worker, payload_path, report_path],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    bufsize=1,
+                    env=environment,
+                )
+            except OSError as error:
+                report = {
+                    "scene": scene,
+                    "status": "error",
+                    "error": "child processを起動できません: {}".format(error),
+                    "stages": [],
+                }
+                results.append(
+                    {
+                        "scene": scene,
+                        "returncode": None,
+                        "report": report,
+                        "logs": [],
+                    }
+                )
+                if on_log:
+                    on_log("[batch] RESULT ERROR {}".format(scene))
+                continue
             output_queue = queue.Queue()
             logs = []
             reader = threading.Thread(
