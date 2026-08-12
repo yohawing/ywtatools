@@ -76,14 +76,18 @@ class CombineSkinnedTests(TestCase):
                 self.assertAlmostEqual(expected_value, actual)
 
     def test_combine_is_single_undoable_action(self):
+        cmds.select(self.left, self.right, replace=True)
         result = combine_skinned.combine([self.left, self.right], name="body_mesh")
         combined_uuid = cmds.ls(result["mesh"], uuid=True)[0]
+
+        self.assertEqual(["body_mesh"], cmds.ls(selection=True))
 
         cmds.undo()
 
         self.assertFalse(cmds.ls(combined_uuid, uuid=True))
         self.assertTrue(cmds.objExists(self.left))
         self.assertTrue(cmds.objExists(self.right))
+        self.assertEqual({self.left, self.right}, set(cmds.ls(selection=True)))
 
     def test_unskinned_source_fails_before_edit(self):
         plain = cmds.polyCube(name="plain_mesh")[0]
