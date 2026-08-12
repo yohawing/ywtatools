@@ -128,6 +128,19 @@ class PoseIoTests(TestCase):
         self.assertEqual(cmds.currentUnit(query=True, linear=True), data["linear_unit"])
         self.assertEqual(cmds.currentUnit(query=True, angle=True), data["angle_unit"])
 
+    def test_temporary_pose_round_trip_uses_validated_engine(self):
+        source = self._control("source")
+        cmds.setAttr(source + ".translateX", 7.5)
+        path = self.get_temp_filename("temporary_pose.json")
+        pose_io.save_temp([source], file_path=path)
+        cmds.delete(source)
+        target = self._control("target")
+
+        result = pose_io.load_temp(nodes=[target], file_path=path)
+
+        self.assertGreater(result["applied"], 0)
+        self.assertAlmostEqual(7.5, cmds.getAttr(target + ".translateX"))
+
     def test_unit_mismatch_is_reported_without_value_conversion(self):
         source = self._control("source")
         cmds.setAttr(source + ".translateX", 5.0)

@@ -57,6 +57,7 @@ Skin JSON は geometry と weight を含むため、大きいメッシュでは�
 - `ywtaPoseId` string 属性による改名に強い明示アドレス
 - blend、選択 control 限定適用、開始フレーム offset、範囲内キー置換
 - PoseのBlend / Selected-onlyを保存・実行できるMaya Option UI
+- file dialogなしで再利用できるユーザー単位のTemporary Pose Clipboard
 - Animation ClipのPlace / Replace / Insert適用モード
 - ModeとSelected-onlyを任意組合せで保存・実行できるClip Option UI
 - Insert時は解決・適用可能なcontrolだけの後続キーをclip占有フレーム数ぶん移動

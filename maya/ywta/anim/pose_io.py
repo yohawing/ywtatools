@@ -15,6 +15,7 @@ VERSION = 1
 POSE_ID_ATTRIBUTE = "ywtaPoseId"
 BLEND_OPTION = "ywtaPoseLoadBlend"
 SELECTED_ONLY_OPTION = "ywtaPoseLoadSelectedOnly"
+TEMP_POSE_FILENAME = "ywta_temp_pose.json"
 NUMERIC_TYPES = {
     "double",
     "doubleAngle",
@@ -231,6 +232,21 @@ def read(file_path):
         return _validate(json.load(handle))
 
 
+def temp_pose_path():
+    """Mayaユーザー用の一時Pose JSONパスを返す。"""
+    return os.path.join(cmds.internalVar(userAppDir=True), TEMP_POSE_FILENAME)
+
+
+def save_temp(nodes, file_path=None):
+    """control poseを固定または指定の一時JSONへ保存する。"""
+    return save(nodes, file_path or temp_pose_path())
+
+
+def load_temp(nodes=None, blend=1.0, file_path=None):
+    """一時Pose JSONを既存の検証済み適用経路でロードする。"""
+    return apply(read(file_path or temp_pose_path()), nodes=nodes, blend=blend)
+
+
 def _target_index(nodes=None):
     """適用範囲の address から node への一意な index を作る。"""
     if nodes is None:
@@ -380,6 +396,28 @@ def save_selected():
     if not paths:
         return None
     return save(selected, paths[0])
+
+
+def save_temp_selected():
+    """選択controlをMayaユーザー用の一時Pose JSONへ保存する。"""
+    selected = _long_nodes()
+    path = save_temp(selected)
+    cmds.inViewMessage(
+        statusMessage="Saved temporary pose.",
+        position="topCenter",
+        fade=True,
+    )
+    return path
+
+
+def load_temp_with_settings():
+    """保存済みBlend/Selected-only設定で一時Poseを適用する。"""
+    blend, selected_only = get_load_settings()
+    selected = _long_nodes() if selected_only else None
+    result = load_temp(nodes=selected, blend=blend)
+    if result["unit_mismatches"]:
+        cmds.warning("Pose unit mismatch {}; raw値で適用しました。".format(", ".join(result["unit_mismatches"])))
+    return result
 
 
 def load_pose(selected_only=False, blend=1.0):

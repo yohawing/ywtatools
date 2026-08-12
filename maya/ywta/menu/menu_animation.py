@@ -51,6 +51,18 @@ def create_animation_menu(parent_menu):
         command="import ywta.anim.pose_io as pose_io; pose_io.load_pose(selected_only=True, blend=pose_io.get_load_settings()[0])",
         annotation="保存済みBlendで現在選択中のコントロールだけへ適用します",
     )
+    cmds.menuItem(
+        parent=animation_menu,
+        label="Save Temporary Pose",
+        command="import ywta.anim.pose_io as pose_io; pose_io.save_temp_selected()",
+        annotation="選択controlをMayaユーザー用の一時Pose JSONへ保存します",
+    )
+    cmds.menuItem(
+        parent=animation_menu,
+        label="Load Temporary Pose (Configured)",
+        command="import ywta.anim.pose_io as pose_io; pose_io.load_temp_with_settings()",
+        annotation="保存済みBlend/Selected-only設定で一時Poseを適用します",
+    )
 
     cmds.menuItem(parent=animation_menu, divider=True, dividerLabel="Animation Clip")
     cmds.menuItem(
