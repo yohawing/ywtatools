@@ -419,6 +419,19 @@ def save_temp(root, file_path=None):
     return save(root, file_path or temp_skeleton_path())
 
 
+def hierarchy_root(joint):
+    """選択jointからjoint parentだけを辿ったhierarchy rootを返す。"""
+    matches = cmds.ls(joint, type="joint", long=True) or []
+    if len(matches) != 1:
+        raise ValueError("jointを一意に解決できません: {}".format(joint))
+    root = matches[0]
+    while True:
+        parents = cmds.listRelatives(root, parent=True, type="joint", fullPath=True) or []
+        if not parents:
+            return root
+        root = parents[0]
+
+
 def load_temp(
     file_path=None,
     namespace="",
@@ -453,11 +466,11 @@ def save_selected():
 
 
 def save_temp_selected():
-    """選択root jointをMayaユーザー用の一時JSONへ保存する。"""
+    """選択jointのhierarchy rootをMayaユーザー用の一時JSONへ保存する。"""
     selected = cmds.ls(selection=True, type="joint", long=True) or []
     if len(selected) != 1:
-        raise ValueError("一時保存するroot jointを1つ選択してください。")
-    path = save_temp(selected[0])
+        raise ValueError("一時保存するjointを1つ選択してください。")
+    path = save_temp(hierarchy_root(selected[0]))
     cmds.inViewMessage(
         statusMessage="Saved temporary skeleton.",
         position="topCenter",

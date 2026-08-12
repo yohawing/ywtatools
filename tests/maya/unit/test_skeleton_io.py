@@ -1,6 +1,7 @@
 """Versioned Skeleton IO の Maya 単体テスト。"""
 
 import copy
+import os
 from unittest import mock
 
 import maya.cmds as cmds
@@ -194,6 +195,20 @@ class SkeletonIoTests(TestCase):
 
         self.assertEqual("temporary:root_jnt", created[0].rsplit("|", 1)[-1])
         self.assertEqual("temporary:spine_jnt", created[1].rsplit("|", 1)[-1])
+
+    def test_temporary_save_resolves_selected_child_to_joint_root(self):
+        """Scratch保存は選択childだけでなくtop jointからhierarchyを保存する。"""
+        root, child = self._skeleton()
+        path = self.get_temp_filename("selected_child_temp.skeleton.json")
+        cmds.select(child, replace=True)
+
+        with mock.patch.object(skeleton_io, "temp_skeleton_path", return_value=path):
+            result = skeleton_io.save_temp_selected()
+
+        self.assertEqual(os.path.abspath(path), result)
+        data = skeleton_io.read(path)
+        self.assertEqual(root.rsplit("|", 1)[-1], data["joints"][0]["name"])
+        self.assertEqual(2, len(data["joints"]))
 
     def test_scene_convention_mismatch_is_rejected_before_edit(self):
         root, _child = self._skeleton()
