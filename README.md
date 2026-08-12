@@ -6,8 +6,9 @@
 
 [chadmv/cmt](https://github.com/chadmv/cmt)をベースにしています。
 
-Name Tools、Skin/Skeleton IO、Pose/Animation Clip、Selection Sets、Scene Audit、
-Batch Runner、FBX Exporter の利用方法と採用境界は
+Name Tools、Joint Authoring、Constraints、Control Library、Selection Navigation、
+Skin/Skeleton IO、Pose/Animation Clip、Selection Sets、Scene Audit、Batch Runner、
+FBX Exporter の利用方法と採用境界は
 [Fabricator 機能を参考にした Maya ツール拡充](./docs/fabricator-maya-adoption.md)を参照してください。
 
 ## インストール方法
