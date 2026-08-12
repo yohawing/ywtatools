@@ -46,6 +46,7 @@ Fabricator 本体は Business Source License 1.1、YWTA は MIT License です�
 - Skin Weight Mirrorはlocked influenceを編集前拒否し、単一Undo / Redo
 - 選択componentの隣接頂点平均による局所Smooth（複数mesh、locked influence対応）
 - 全output meshを走査する未使用influence削除（locked influenceは既定で保護）
+- 未使用influence診断/削除APIは単一mesh文字列とmesh列の両方に対応
 - bulk write 用の同梱 Python plugin による単一 Undo / Redo
 - 元meshを残し、結合後の頂点順を全頂点検証するSkinned Mesh Combine
 - Combineへ明示したnamespace付き出力名はMayaのcurrent namespaceに依存しない

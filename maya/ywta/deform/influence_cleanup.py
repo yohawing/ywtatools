@@ -98,6 +98,8 @@ def _is_locked(influence):
 def _selected_clusters(meshes=None):
     """選択または指定 mesh 群から skinCluster を重複なしで取得する。"""
     source = meshes if meshes is not None else cmds.ls(selection=True, long=True)
+    if isinstance(source, str):
+        source = [source]
     if not source:
         raise ValueError("スキンされた mesh を1つ以上選択してください。")
     clusters = []

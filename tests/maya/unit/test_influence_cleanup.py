@@ -56,6 +56,12 @@ class InfluenceCleanupTests(TestCase):
         self.assertEqual(["unused_jnt"], self._short_names(records))
         self.assertEqual(0.0, records[0]["maximum_weight"])
 
+    def test_single_mesh_string_is_not_iterated_as_characters(self):
+        """公開APIは単一mesh文字列を1要素として診断する。"""
+        result = influence_cleanup.find_unused_influences(self.mesh)
+
+        self.assertEqual(["unused_jnt"], self._short_names(result[self.cluster]))
+
     def test_remove_unused_is_single_undoable_action(self):
         before = cmds.skinCluster(self.cluster, query=True, influence=True)
         sentinel = cmds.spaceLocator(name="selection_sentinel")[0]
