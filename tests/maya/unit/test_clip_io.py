@@ -35,6 +35,31 @@ class ClipIoTests(TestCase):
         cmds.setKeyframe(source, attribute="translateX", time=20, value=5.0, inTangentType="flat", outTangentType="flat")
         return source, clip_io.capture([source], start=10, end=20)
 
+    def test_mid_apply_failure_rolls_back_prior_keys(self):
+        """後続setKeyframe失敗時に先行keyを残さない。"""
+        source = self._control("source")
+        for attribute, value in (("translateX", 1.0), ("translateY", 2.0)):
+            cmds.setKeyframe(source, attribute=attribute, time=1, value=value)
+            cmds.setKeyframe(source, attribute=attribute, time=2, value=value * 2.0)
+        data = clip_io.capture([source], start=1, end=2)
+        cmds.delete(source)
+        target = self._control("target")
+        original_set_keyframe = clip_io.cmds.setKeyframe
+        calls = 0
+
+        def fail_second(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("expected failure")
+            return original_set_keyframe(*args, **kwargs)
+
+        with mock.patch.object(clip_io.cmds, "setKeyframe", side_effect=fail_second):
+            with self.assertRaises(RuntimeError):
+                clip_io.apply(data, start_time=10, mode="place")
+
+        self.assertFalse(cmds.keyframe(target, query=True, timeChange=True))
+
     def test_capture_time_range_prefers_highlighted_frames(self):
         """Time sliderが返すハイライト開始・終了frameを使用する。"""
 

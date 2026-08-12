@@ -53,6 +53,37 @@ class PoseIoTests(TestCase):
         self.assertAlmostEqual(0.0, cmds.getAttr(target + ".translateX"))
         self.assertAlmostEqual(0.0, cmds.getAttr(target + ".rotateY"))
 
+    def test_mid_apply_failure_rolls_back_prior_attributes(self):
+        """後続setAttr失敗時に先行channelを残さない。"""
+        source = self._control("source")
+        cmds.setAttr(source + ".translateX", 10.0)
+        cmds.setAttr(source + ".translateY", 20.0)
+        data = pose_io.capture([source])
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.setAttr(target + ".translateX", 1.0)
+        cmds.setAttr(target + ".translateY", 2.0)
+        before = {
+            attribute: cmds.getAttr("{}.{}".format(target, attribute))
+            for attribute in cmds.listAttr(target, keyable=True, scalar=True) or []
+        }
+        original_set_attr = pose_io.cmds.setAttr
+        calls = 0
+
+        def fail_second(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("expected failure")
+            return original_set_attr(*args, **kwargs)
+
+        with mock.patch.object(pose_io.cmds, "setAttr", side_effect=fail_second):
+            with self.assertRaises(RuntimeError):
+                pose_io.apply(data)
+
+        for attribute, value in before.items():
+            self.assertEqual(value, cmds.getAttr("{}.{}".format(target, attribute)))
+
     def test_explicit_pose_id_survives_control_rename(self):
         source = self._control("source", "left_hand")
         pose_io.set_pose_id(source, "arm.left.ik")
