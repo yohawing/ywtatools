@@ -162,3 +162,7 @@ class JointInsertTests(TestCase):
 
         self.assertFalse(cmds.objExists("insert_01_jnt"))
         self.assertEqual(["child_jnt"], cmds.listRelatives(parent, children=True, type="joint"))
+
+    def test_options_window_builds(self):
+        """Insert Jointsのcmds UIをMaya上で構築できる。"""
+        self.assertEqual("ywtaInsertJointsWindow", joint_insert.show_options())

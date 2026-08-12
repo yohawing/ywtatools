@@ -214,3 +214,7 @@ class SceneAuditTests(TestCase):
             scene_audit.audit_selected_meshes()
 
         self.assertEqual([locator], cmds.ls(selection=True))
+
+    def test_window_builds(self):
+        """Scene Auditの局所監査buttonを含むcmds UIを構築できる。"""
+        self.assertEqual("ywtaSceneAuditWindow", scene_audit.show())

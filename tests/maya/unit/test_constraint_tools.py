@@ -113,3 +113,7 @@ class ConstraintToolsTests(TestCase):
             )
 
         self.assertEqual([], cmds.ls(type="aimConstraint"))
+
+    def test_options_window_builds(self):
+        """Constraint Optionsのcmds UIをMaya上で構築できる。"""
+        self.assertEqual("ywtaConstraintOptionsWindow", constraint_tools.show_options())
