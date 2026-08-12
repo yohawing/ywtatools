@@ -60,6 +60,9 @@ Maya環境でテストを実行するには、以下のいずれかの方法を�
    python tests/run_maya_tests.py --type unit --pattern test_*.py --maya 2024
    ```
 
+   CLI runnerは一時 `MAYA_APP_DIR` を使用し、ユーザーの `userSetup.py`、optionVar、
+   clipboardなどを読み書きしない隔離環境で実行します。
+
 オプションを指定することもできます：
 
 ```bash

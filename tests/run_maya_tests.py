@@ -11,6 +11,7 @@ import platform
 import subprocess
 import sys
 import argparse
+import tempfile
 from pathlib import Path
 
 # プロジェクトルートをPythonパスに追加
@@ -111,11 +112,14 @@ def main():
         "--pattern",
         args.pattern,
     ]
-    os.environ["MAYA_SCRIPT_PATH"] = ""
-    os.environ["MAYA_MODULE_PATH"] = YWTA_ROOT_DIR
+    environment = os.environ.copy()
+    environment["MAYA_SCRIPT_PATH"] = ""
+    environment["MAYA_MODULE_PATH"] = YWTA_ROOT_DIR
 
     try:
-        subprocess.check_call(command)
+        with tempfile.TemporaryDirectory(prefix="ywta_maya_tests_") as maya_app_dir:
+            environment["MAYA_APP_DIR"] = maya_app_dir
+            subprocess.check_call(command, env=environment)
     except subprocess.CalledProcessError as e:
         print(f"テストの実行に失敗しました: {e}")
         sys.exit(1)
