@@ -58,6 +58,7 @@ class FabricatorMenuTests(TestCase):
                 "Aim Constraint",
                 "Delete Constraints",
                 "Mirror Joint Hierarchy (Static YZ)",
+                "Joint Size Tools",
                 "Export Skeleton",
                 "Import Skeleton",
                 "Import Skeleton (Clean Joint TRS)",

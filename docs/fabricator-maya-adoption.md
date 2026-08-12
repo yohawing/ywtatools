@@ -159,6 +159,14 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - 分岐、同一位置の親子、参照、skinCluster / constraint / IK、接続・lock channelを編集前拒否
 - `Joint Edit Tools`内の`Align with Child`も同じ原子的な階層orient経路を使用
 
+### Joint Display Size
+
+メニュー: `YWTA > Rigging > Joint Size Tools`
+
+- 選択joint階層またはscene全jointのdisplay radiusを一括設定
+- 非正・非有限サイズ、参照joint、lock / 入力接続済みradiusを編集前拒否
+- 対象全体を単一Undo / Redoとし、途中失敗時は部分適用を残さない
+
 ### Duplicate Joint Hierarchy
 
 メニュー: `YWTA > Rigging > Duplicate Joint Hierarchy...`
