@@ -343,6 +343,7 @@ import失敗はskipへ変換せず、検証失敗として扱います。
 - skinCluster接続を切断するDisconnect/Reconnect All Skins
 - Scene Audit の自動修復
 - thumbnail 付き Pose / Animation library UI
+- per-control channel mirror mapを持たない汎用mirrored pose
 - Fabricator component address / `FAB_RigBinding` / `world_ctrl` roleに依存するroot motion自動除外とIK→FK比率差fallback
 - UE5固定名のEngine IK reference joint自動生成
 - Fabricator component / Limb / Moduleの複製（汎用joint hierarchy複製のみ採用）
