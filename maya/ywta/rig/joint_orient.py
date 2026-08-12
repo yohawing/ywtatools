@@ -104,6 +104,8 @@ def orient_to_children(joints):
 
 def orient_selected(include_descendants=True):
     """選択jointまたはその階層の非leaf jointを子方向へorientする。"""
+    if not isinstance(include_descendants, bool):
+        raise ValueError("include_descendantsはboolにしてください。")
     selected = _joints(None)
     if include_descendants:
         candidates = list(selected)

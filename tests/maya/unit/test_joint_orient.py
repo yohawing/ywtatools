@@ -62,6 +62,21 @@ class JointOrientTests(TestCase):
             1.0,
         )
 
+    def test_hierarchy_entry_rejects_non_boolean_scope_before_edit(self):
+        """truthy文字列で意図せず子孫までorientしない。"""
+        parent, child, _grandchild = self._chain()
+        before = {
+            parent: cmds.getAttr(parent + ".jointOrient")[0],
+            child: cmds.getAttr(child + ".jointOrient")[0],
+        }
+        cmds.select(parent, replace=True)
+
+        with self.assertRaises(ValueError):
+            joint_orient.orient_selected(include_descendants="false")
+
+        self.assertEqual(before[parent], cmds.getAttr(parent + ".jointOrient")[0])
+        self.assertEqual(before[child], cmds.getAttr(child + ".jointOrient")[0])
+
     def test_negative_x_chain_aims_local_x_and_preserves_descendants(self):
         """ミラー側chainでもlocal +Xを子方向へ向けworld姿勢を保つ。"""
         cmds.select(clear=True)
