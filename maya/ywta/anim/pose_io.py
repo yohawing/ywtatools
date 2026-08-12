@@ -94,15 +94,28 @@ def control_address(node):
 
 def set_pose_id(node, pose_id):
     """コントロールへ rig 間で安定した Pose ID を設定する。"""
-    if not pose_id or not pose_id.strip():
+    if not isinstance(pose_id, str) or not pose_id.strip():
         raise ValueError("Pose ID が空です。")
     matches = cmds.ls(node, long=True) or []
     if len(matches) != 1:
         raise ValueError("ノードを一意に解決できません: {}".format(node))
     plug = "{}.{}".format(matches[0], POSE_ID_ATTRIBUTE)
-    if not cmds.objExists(plug):
-        cmds.addAttr(matches[0], longName=POSE_ID_ATTRIBUTE, dataType="string")
-    cmds.setAttr(plug, pose_id.strip(), type="string")
+    if cmds.objExists(plug) and cmds.getAttr(plug, type=True) != "string":
+        raise ValueError("既存Pose ID属性がstringではありません: {}".format(plug))
+    undo_utils.require_enabled("Set Pose ID")
+    cmds.undoInfo(openChunk=True, chunkName="YWTA Set Pose ID")
+    failed = False
+    try:
+        if not cmds.objExists(plug):
+            cmds.addAttr(matches[0], longName=POSE_ID_ATTRIBUTE, dataType="string")
+        cmds.setAttr(plug, pose_id.strip(), type="string")
+    except Exception:
+        failed = True
+        raise
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        if failed:
+            cmds.undo()
     return plug
 
 

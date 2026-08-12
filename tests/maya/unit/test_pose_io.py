@@ -65,6 +65,26 @@ class PoseIoTests(TestCase):
 
         self.assertAlmostEqual(7.0, cmds.getAttr(target + ".translateZ"))
 
+    def test_pose_id_creation_is_one_undoable_action(self):
+        """Pose ID属性の追加と値設定をまとめてUndo/Redoできる。"""
+        control = self._control("character")
+
+        plug = pose_io.set_pose_id(control, "arm.left.ik")
+        self.assertEqual("arm.left.ik", cmds.getAttr(plug))
+        cmds.undo()
+        self.assertFalse(cmds.objExists(plug))
+        cmds.redo()
+        self.assertEqual("arm.left.ik", cmds.getAttr(plug))
+
+    def test_pose_id_rejects_non_string_before_edit(self):
+        """文字列以外のPose IDで属性を作成しない。"""
+        control = self._control("character")
+
+        with self.assertRaises(ValueError):
+            pose_io.set_pose_id(control, 42)
+
+        self.assertFalse(cmds.objExists(control + "." + pose_io.POSE_ID_ATTRIBUTE))
+
     def test_blend_and_enum_label(self):
         source = self._control("source")
         cmds.setAttr(source + ".translateX", 10.0)
