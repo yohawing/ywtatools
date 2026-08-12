@@ -89,6 +89,60 @@ class SkeletonIoTests(TestCase):
         self.assertTrue(cmds.getAttr(rebuilt + ".rotateX", lock=True))
         self.assertFalse(cmds.getAttr(rebuilt + ".rotateX", keyable=True))
 
+    def test_user_defined_static_attributes_round_trip(self):
+        """対応するuser attributeの型・値・enum・channel状態を復元する。"""
+        root, child = self._skeleton()
+        cmds.addAttr(child, longName="stretch", attributeType="double", keyable=True)
+        cmds.setAttr(child + ".stretch", 2.5)
+        cmds.setAttr(child + ".stretch", lock=True)
+        cmds.addAttr(child, longName="enabled", attributeType="bool")
+        cmds.setAttr(child + ".enabled", True)
+        cmds.addAttr(child, longName="space", attributeType="enum", enumName="World=1:Chest=5")
+        cmds.setAttr(child + ".space", 5)
+        cmds.addAttr(child, longName="note", dataType="string")
+        cmds.setAttr(child + ".note", "elbow helper", type="string")
+        cmds.addAttr(child, longName="bias", attributeType="double3")
+        for axis in "XYZ":
+            cmds.addAttr(child, longName="bias" + axis, attributeType="double", parent="bias")
+        cmds.setAttr(child + ".bias", 1.0, 2.0, 3.0, type="double3")
+        cmds.setAttr(child + ".biasX", keyable=True)
+        cmds.setAttr(child + ".bias", lock=True)
+        data = skeleton_io.capture(root)
+        cmds.delete(root)
+
+        rebuilt = skeleton_io.create(data)[1]
+
+        self.assertEqual("double", cmds.getAttr(rebuilt + ".stretch", type=True))
+        self.assertAlmostEqual(2.5, cmds.getAttr(rebuilt + ".stretch"))
+        self.assertTrue(cmds.getAttr(rebuilt + ".stretch", lock=True))
+        self.assertTrue(cmds.getAttr(rebuilt + ".stretch", keyable=True))
+        self.assertTrue(cmds.getAttr(rebuilt + ".enabled"))
+        self.assertEqual(5, cmds.getAttr(rebuilt + ".space"))
+        self.assertEqual("World=1:Chest=5", cmds.addAttr(rebuilt + ".space", query=True, enumName=True))
+        self.assertEqual("elbow helper", cmds.getAttr(rebuilt + ".note"))
+        self.assertEqual((1.0, 2.0, 3.0), cmds.getAttr(rebuilt + ".bias")[0])
+        self.assertTrue(cmds.getAttr(rebuilt + ".biasX", keyable=True))
+        self.assertTrue(cmds.getAttr(rebuilt + ".bias", lock=True))
+
+    def test_invalid_user_attribute_fails_before_namespace_creation(self):
+        """built-in名や非有限値を外部JSONから追加しない。"""
+        root, _child = self._skeleton()
+        data = skeleton_io.capture(root)
+        data["joints"][0]["user_attributes"] = [
+            {
+                "name": "translate",
+                "type": "double",
+                "value": float("nan"),
+                "channel": {"locked": False, "keyable": True, "channel_box": False},
+            }
+        ]
+        cmds.delete(root)
+
+        with self.assertRaises(ValueError):
+            skeleton_io.create(data, namespace="invalid_import")
+
+        self.assertFalse(cmds.namespace(exists="invalid_import"))
+
     def test_create_namespace_is_absolute_from_current_namespace(self):
         root, _child = self._skeleton("source")
         data = skeleton_io.capture(root)
@@ -129,6 +183,7 @@ class SkeletonIoTests(TestCase):
         data["version"] = 1
         for joint in data["joints"]:
             del joint["channels"]
+            del joint["user_attributes"]
             for attribute in (
                 "minRotLimit",
                 "maxRotLimit",
@@ -140,6 +195,19 @@ class SkeletonIoTests(TestCase):
                 "otherType",
             ):
                 joint["attributes"].pop(attribute, None)
+        cmds.delete(root)
+
+        created = skeleton_io.create(data)
+
+        self.assertEqual(2, len(created))
+
+    def test_version_two_without_user_attributes_remains_readable(self):
+        """version 2 JSONはuser_attributesなしで読込できる。"""
+        root, _child = self._skeleton()
+        data = skeleton_io.capture(root)
+        data["version"] = 2
+        for joint in data["joints"]:
+            del joint["user_attributes"]
         cmds.delete(root)
 
         created = skeleton_io.create(data)
@@ -176,7 +244,7 @@ class SkeletonIoTests(TestCase):
         data = skeleton_io.read(path)
 
         self.assertEqual(skeleton_io.FORMAT, data["format"])
-        self.assertEqual(2, data["version"])
+        self.assertEqual(skeleton_io.VERSION, data["version"])
         self.assertEqual(["root_jnt", "spine_jnt"], [joint["name"] for joint in data["joints"]])
         self.assertEqual(cmds.currentUnit(query=True, linear=True), data["scene"]["linear_unit"])
         self.assertEqual(cmds.currentUnit(query=True, angle=True), data["scene"]["angle_unit"])

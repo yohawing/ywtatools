@@ -5,6 +5,7 @@ from __future__ import absolute_import
 import json
 import math
 import os
+import re
 import tempfile
 
 import maya.cmds as cmds
@@ -13,8 +14,8 @@ from ywta.core import undo_utils
 
 
 FORMAT = "ywta.skeleton"
-VERSION = 2
-SUPPORTED_VERSIONS = {1, VERSION}
+VERSION = 3
+SUPPORTED_VERSIONS = {1, 2, VERSION}
 TEMP_SKELETON_FILENAME = "ywta_temp_skeleton.json"
 VECTOR_ATTRIBUTES = (
     "translate",
@@ -55,6 +56,8 @@ CHANNEL_ATTRIBUTES = (
     "scaleZ",
     "visibility",
 )
+USER_ATTRIBUTE_TYPES = {"double", "float", "long", "short", "byte", "bool", "enum", "string", "double3"}
+USER_ATTRIBUTE_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _joint_path(joint):
@@ -80,6 +83,46 @@ def _attribute_value(joint, attribute):
     return value
 
 
+def _channel_state(plug):
+    """属性のlock/keyable/channel box状態を返す。"""
+    return {
+        "locked": bool(cmds.getAttr(plug, lock=True)),
+        "keyable": bool(cmds.getAttr(plug, keyable=True)),
+        "channel_box": bool(cmds.getAttr(plug, channelBox=True)),
+    }
+
+
+def _capture_user_attributes(joint):
+    """対応するuser-defined静的属性を可搬recordへ変換する。"""
+    records = []
+    for attribute in cmds.listAttr(joint, userDefined=True) or []:
+        if cmds.attributeQuery(attribute, node=joint, listParent=True):
+            continue
+        plug = "{}.{}".format(joint, attribute)
+        attribute_type = cmds.getAttr(plug, type=True)
+        if attribute_type not in USER_ATTRIBUTE_TYPES:
+            continue
+        record = {
+            "name": attribute,
+            "type": attribute_type,
+            "value": _attribute_value(joint, attribute),
+            "channel": _channel_state(plug),
+        }
+        if attribute_type == "enum":
+            record["enum_name"] = cmds.addAttr(plug, query=True, enumName=True)
+        elif attribute_type == "double3":
+            children = cmds.attributeQuery(attribute, node=joint, listChildren=True) or []
+            record["children"] = [
+                {
+                    "name": child,
+                    "channel": _channel_state("{}.{}".format(joint, child)),
+                }
+                for child in children
+            ]
+        records.append(record)
+    return records
+
+
 def capture(root):
     """joint hierarchy を親 index 付き辞書へ変換する。"""
     root = _joint_path(root)
@@ -92,20 +135,14 @@ def capture(root):
             for attribute in ALL_ATTRIBUTES
             if cmds.objExists("{}.{}".format(joint, attribute))
         }
-        channels = {
-            attribute: {
-                "locked": bool(cmds.getAttr("{}.{}".format(joint, attribute), lock=True)),
-                "keyable": bool(cmds.getAttr("{}.{}".format(joint, attribute), keyable=True)),
-                "channel_box": bool(cmds.getAttr("{}.{}".format(joint, attribute), channelBox=True)),
-            }
-            for attribute in CHANNEL_ATTRIBUTES
-        }
+        channels = {_attribute: _channel_state("{}.{}".format(joint, _attribute)) for _attribute in CHANNEL_ATTRIBUTES}
         joints.append(
             {
                 "name": _portable_name(joint),
                 "parent": parent_index,
                 "attributes": attributes,
                 "channels": channels,
+                "user_attributes": _capture_user_attributes(joint),
             }
         )
         children = cmds.listRelatives(joint, children=True, type="joint", fullPath=True) or []
@@ -132,6 +169,78 @@ def _finite_values(value, count, label):
     for item in value:
         if not isinstance(item, (int, float)) or isinstance(item, bool) or not math.isfinite(float(item)):
             raise ValueError("{} に不正な数値があります。".format(label))
+
+
+def _validate_channel_state(state, label):
+    """保存したchannel表示・lock状態を検証する。"""
+    if not isinstance(state, dict) or set(state) != {"locked", "keyable", "channel_box"}:
+        raise ValueError("{}が不正です。".format(label))
+    if any(not isinstance(state[key], bool) for key in state):
+        raise ValueError("{}が不正です。".format(label))
+
+
+def _validate_user_attributes(records, joint_name):
+    """version 3のuser-defined静的属性recordを完全検証する。"""
+    if not isinstance(records, list):
+        raise ValueError("{}.user_attributesが不正です。".format(joint_name))
+    names = set()
+    for record in records:
+        if not isinstance(record, dict):
+            raise ValueError("{}.user_attributes entryが不正です。".format(joint_name))
+        attribute_type = record.get("type")
+        expected = {"name", "type", "value", "channel"}
+        if attribute_type == "enum":
+            expected.add("enum_name")
+        elif attribute_type == "double3":
+            expected.add("children")
+        if set(record) != expected or attribute_type not in USER_ATTRIBUTE_TYPES:
+            raise ValueError("{}.user_attributes entryが不正です。".format(joint_name))
+        name = record["name"]
+        if (
+            not isinstance(name, str)
+            or not USER_ATTRIBUTE_NAME_PATTERN.fullmatch(name)
+            or name in names
+            or cmds.attributeQuery(name, type="joint", exists=True)
+        ):
+            raise ValueError("{}.user attribute名が不正です: {}".format(joint_name, name))
+        names.add(name)
+        _validate_channel_state(record["channel"], "{}.{} channel".format(joint_name, name))
+        value = record["value"]
+        if attribute_type in {"double", "float"}:
+            valid = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+        elif attribute_type in {"long", "short", "byte", "enum"}:
+            valid = isinstance(value, int) and not isinstance(value, bool)
+        elif attribute_type == "bool":
+            valid = isinstance(value, bool)
+        elif attribute_type == "string":
+            valid = isinstance(value, str)
+        else:
+            try:
+                _finite_values(value, 3, "{}.{}".format(joint_name, name))
+                valid = True
+            except ValueError:
+                valid = False
+        if not valid:
+            raise ValueError("{}.{} valueが不正です。".format(joint_name, name))
+        if attribute_type == "enum" and (not isinstance(record["enum_name"], str) or not record["enum_name"]):
+            raise ValueError("{}.{} enum定義が不正です。".format(joint_name, name))
+        if attribute_type == "double3":
+            children = record["children"]
+            if not isinstance(children, list) or len(children) != 3:
+                raise ValueError("{}.{} childrenが不正です。".format(joint_name, name))
+            for child in children:
+                if not isinstance(child, dict) or set(child) != {"name", "channel"}:
+                    raise ValueError("{}.{} childが不正です。".format(joint_name, name))
+                child_name = child["name"]
+                if (
+                    not isinstance(child_name, str)
+                    or not USER_ATTRIBUTE_NAME_PATTERN.fullmatch(child_name)
+                    or child_name in names
+                    or cmds.attributeQuery(child_name, type="joint", exists=True)
+                ):
+                    raise ValueError("{}.{} child名が不正です: {}".format(joint_name, name, child_name))
+                names.add(child_name)
+                _validate_channel_state(child["channel"], "{}.{} channel".format(joint_name, child_name))
 
 
 def _validate(data):
@@ -210,10 +319,11 @@ def _validate(data):
             if not isinstance(channels, dict) or set(channels) - set(CHANNEL_ATTRIBUTES):
                 raise ValueError("{}.channelsが不正です。".format(name))
             for attribute, state in channels.items():
-                if not isinstance(state, dict) or set(state) != {"locked", "keyable", "channel_box"}:
-                    raise ValueError("{}.channels.{}が不正です。".format(name, attribute))
-                if any(not isinstance(state[key], bool) for key in state):
-                    raise ValueError("{}.channels.{}が不正です。".format(name, attribute))
+                _validate_channel_state(state, "{}.channels.{}".format(name, attribute))
+        if "user_attributes" in joint:
+            _validate_user_attributes(joint.get("user_attributes"), name)
+        elif data["version"] >= 3:
+            raise ValueError("{}.user_attributesがありません。".format(name))
     return data
 
 
@@ -297,14 +407,46 @@ def _set_attributes(joint, attributes):
 def _set_channel_states(joint, states):
     """bake後に検証済みchannel表示・lock状態を復元する。"""
     for attribute, state in (states or {}).items():
-        plug = "{}.{}".format(joint, attribute)
-        cmds.setAttr(plug, lock=False)
-        cmds.setAttr(
-            plug,
-            keyable=state["keyable"],
-            channelBox=state["channel_box"],
-        )
-        cmds.setAttr(plug, lock=state["locked"])
+        _set_channel_state("{}.{}".format(joint, attribute), state)
+
+
+def _set_channel_state(plug, state):
+    """1属性へ検証済みchannel状態を適用する。"""
+    cmds.setAttr(plug, lock=False)
+    cmds.setAttr(
+        plug,
+        keyable=state["keyable"],
+        channelBox=state["channel_box"],
+    )
+    cmds.setAttr(plug, lock=state["locked"])
+
+
+def _set_user_attributes(joint, records):
+    """検証済みuser-defined静的属性を作成して値と状態を復元する。"""
+    for record in records or []:
+        name = record["name"]
+        attribute_type = record["type"]
+        if attribute_type == "string":
+            cmds.addAttr(joint, longName=name, dataType="string")
+        elif attribute_type == "enum":
+            cmds.addAttr(joint, longName=name, attributeType="enum", enumName=record["enum_name"])
+        elif attribute_type == "double3":
+            cmds.addAttr(joint, longName=name, attributeType="double3")
+            for child in record["children"]:
+                cmds.addAttr(joint, longName=child["name"], attributeType="double", parent=name)
+        else:
+            cmds.addAttr(joint, longName=name, attributeType=attribute_type)
+
+        plug = "{}.{}".format(joint, name)
+        if attribute_type == "string":
+            cmds.setAttr(plug, record["value"], type="string")
+        elif attribute_type == "double3":
+            cmds.setAttr(plug, *record["value"], type="double3")
+        else:
+            cmds.setAttr(plug, record["value"])
+        for child in record.get("children", []):
+            _set_channel_state("{}.{}".format(joint, child["name"]), child["channel"])
+        _set_channel_state(plug, record["channel"])
 
 
 def _scene_convention_mismatches(data):
@@ -360,6 +502,7 @@ def create(
             if joint.rsplit("|", 1)[-1] != expected_leaf:
                 raise RuntimeError("joint 名が競合しています: {} -> {}".format(name, joint))
             _set_attributes(joint, item["attributes"])
+            _set_user_attributes(joint, item.get("user_attributes"))
             created.append((cmds.ls(joint, long=True) or [joint])[0])
         if zero_joint_scales:
             for joint in created:
