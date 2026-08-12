@@ -361,6 +361,13 @@ def rotate_components(rx, ry, rz, nodes=None):
         cmds.rotate(rx, ry, rz, "{0}.cv[*]".format(node), r=True, p=pivot, os=True, fo=True)
 
 
+def _dag_path(node):
+    """DAG nodeのAPI 2.0 MDagPathを返す。"""
+    selection = OpenMaya.MSelectionList()
+    selection.add(node)
+    return selection.getDagPath(0)
+
+
 def mirror_curve(source, destination):
     """Mirrors the curve on source across the YZ plane to destination.
 
@@ -372,10 +379,10 @@ def mirror_curve(source, destination):
     """
     source_curve = CurveShape(source)
 
-    path_source = shortcuts.get_dag_path2(source)
+    path_source = _dag_path(source)
     matrix = path_source.inclusiveMatrix()
 
-    path_destination = shortcuts.get_dag_path2(destination)
+    path_destination = _dag_path(destination)
     inverse_matrix = path_destination.inclusiveMatrixInverse()
 
     world_cvs = [OpenMaya.MPoint(*x) * matrix for x in source_curve.cvs]
@@ -387,6 +394,97 @@ def mirror_curve(source, destination):
     source_curve.transform = destination
     source_curve.create(destination, as_controller=is_controller)
     return source_curve
+
+
+_SIDE_TOKENS = {
+    "l": "R",
+    "r": "L",
+    "lf": "rt",
+    "rt": "lf",
+    "left": "right",
+    "right": "left",
+}
+
+
+def _mirrored_control_name(source):
+    """namespaceを保持して最初のside tokenを反転したcontrol名を返す。"""
+    leaf = source.rsplit("|", 1)[-1]
+    namespace, separator, base = leaf.rpartition(":")
+    if not separator:
+        namespace = ""
+        base = leaf
+    parts = base.split("_")
+    for index, part in enumerate(parts):
+        opposite = _SIDE_TOKENS.get(part.casefold())
+        if opposite is None:
+            continue
+        if part.isupper():
+            opposite = opposite.upper()
+        elif part.islower():
+            opposite = opposite.lower()
+        elif part[:1].isupper():
+            opposite = opposite.capitalize()
+        parts[index] = opposite
+        mirrored = "_".join(parts)
+        return "{}:{}".format(namespace, mirrored) if namespace else mirrored
+    raise ValueError("side tokenがありません: {}".format(leaf))
+
+
+def _curve_data_from_shape(shape):
+    """1つのNURBS curve shapeをCurveShapeデータへ変換する。"""
+    return CurveShape(
+        cvs=cmds.getAttr(shape + ".cv[*]"),
+        degree=cmds.getAttr(shape + ".degree"),
+        form=cmds.getAttr(shape + ".form"),
+        knots=get_knots(shape),
+    )
+
+
+def mirror_control_shapes(source, destination=None):
+    """sourceの全curve shapeをworld YZ反転して反対側controlへ差し替える。
+
+    destination transform自体とその接続、表示設定は維持する。destination省略時は
+    L/R、lf/rt、left/rightのunderscore区切りtokenから同namespace内で解決する。
+    """
+    source_matches = cmds.ls(source, long=True, type="transform") or []
+    if len(source_matches) != 1:
+        raise ValueError("source controlを一意に解決できません: {}".format(source))
+    source = source_matches[0]
+    if destination is None:
+        destination = _mirrored_control_name(source)
+    destination_matches = cmds.ls(destination, long=True, type="transform") or []
+    if len(destination_matches) != 1:
+        raise ValueError("mirror先controlを一意に解決できません: {}".format(destination))
+    destination = destination_matches[0]
+    if (cmds.ls(source, uuid=True) or [None])[0] == (cmds.ls(destination, uuid=True) or [None])[0]:
+        raise ValueError("sourceとdestinationは別controlにしてください。")
+    source_shapes = _curve_shapes(source)
+    if not source_shapes:
+        raise ValueError("sourceにNURBS curve shapeがありません: {}".format(source))
+    if not _curve_shapes(destination):
+        raise ValueError("destinationにNURBS curve shapeがありません: {}".format(destination))
+
+    source_matrix = _dag_path(source).inclusiveMatrix()
+    destination_inverse = _dag_path(destination).inclusiveMatrixInverse()
+    curves = []
+    for shape in source_shapes:
+        curve = _curve_data_from_shape(shape)
+        world_points = [OpenMaya.MPoint(*point) * source_matrix for point in curve.cvs]
+        for point in world_points:
+            point.x *= -1.0
+        local_points = [point * destination_inverse for point in world_points]
+        curve.cvs = [(point.x, point.y, point.z) for point in local_points]
+        curves.append(curve)
+    swap_curve_shapes([destination], curves)
+    return destination
+
+
+def mirror_selected_control_shapes():
+    """選択した1つのcontrol shapeを名前解決した反対側へmirrorする。"""
+    selected = cmds.ls(selection=True, long=True, type="transform") or []
+    if len(selected) != 1:
+        raise ValueError("mirror元controlを1つ選択してください。")
+    return mirror_control_shapes(selected[0])
 
 
 def _curve_shapes(transform):

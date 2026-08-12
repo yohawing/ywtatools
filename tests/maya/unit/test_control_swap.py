@@ -74,3 +74,45 @@ class ControlSwapTests(TestCase):
 
         self.assertTrue(cmds.objExists(old_shape))
         self.assertEqual(1, len(cmds.listRelatives(target, shapes=True, type="nurbsCurve")))
+
+    def test_smart_mirror_resolves_namespace_and_world_space_shape(self):
+        cmds.namespace(add="char")
+        source = cmds.curve(
+            name="char:L_hand_ctrl",
+            degree=1,
+            point=[(0, 0, 0), (1, 2, 0), (2, 1, 1)],
+        )
+        target = cmds.circle(name="char:R_hand_ctrl", degree=1, sections=4)[0]
+        cmds.setAttr(source + ".translate", 3.0, 1.0, -2.0)
+        cmds.setAttr(source + ".rotate", 15.0, 25.0, -10.0)
+        cmds.setAttr(target + ".translate", -4.0, 2.0, 1.0)
+        cmds.setAttr(target + ".rotate", -12.0, 30.0, 8.0)
+        source_shape = cmds.listRelatives(source, shapes=True, fullPath=True)[0]
+        expected = []
+        for index in range(cmds.getAttr(source_shape + ".controlPoints", size=True)):
+            point = cmds.pointPosition("{}.cv[{}]".format(source_shape, index), world=True)
+            expected.append((-point[0], point[1], point[2]))
+        target_uuid = cmds.ls(target, uuid=True)[0]
+
+        result = control.mirror_control_shapes(source)
+
+        self.assertEqual("|char:R_hand_ctrl", result)
+        self.assertEqual(target_uuid, cmds.ls(target, uuid=True)[0])
+        target_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
+        actual = [
+            cmds.pointPosition("{}.cv[{}]".format(target_shape, index), world=True)
+            for index in range(cmds.getAttr(target_shape + ".controlPoints", size=True))
+        ]
+        for expected_point, actual_point in zip(expected, actual):
+            for expected_value, actual_value in zip(expected_point, actual_point):
+                self.assertAlmostEqual(expected_value, actual_value)
+
+    def test_smart_mirror_rejects_missing_side_token_before_edit(self):
+        source = cmds.circle(name="center_ctrl")[0]
+        target = cmds.circle(name="target_ctrl")[0]
+        target_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
+
+        with self.assertRaises(ValueError):
+            control.mirror_control_shapes(source)
+
+        self.assertTrue(cmds.objExists(target_shape))

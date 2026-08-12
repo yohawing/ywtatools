@@ -141,6 +141,13 @@ def create_rigging_menu(parent_menu):
         annotation="transform接続とshape表示状態を維持して選択controlの形状を差し替えます",
     )
 
+    cmds.menuItem(
+        parent=rig_menu,
+        label="Mirror Selected Control Shape",
+        command="import ywta.rig.control as control; control.mirror_selected_control_shapes()",
+        annotation="選択した片側control形状をworld YZ反転して反対側controlへ差し替えます",
+    )
+
     # HumanIK関連
     cmds.menuItem(parent=rig_menu, divider=True, dividerLabel="HumanIK")
 
