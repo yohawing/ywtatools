@@ -173,6 +173,49 @@ def export_shape_to_library(controls, name, overwrite=False, directory=CONTROLS_
     return _write_curve_data(data, target)
 
 
+def rename_library_shape(old_name, new_name, directory=CONTROLS_DIRECTORY):
+    """Control library entryを検証して原子的に改名する。
+
+    Args:
+        old_name: 現在のlibrary名。
+        new_name: 新しいlibrary名。
+        directory: Control library directory。
+
+    Returns:
+        改名後JSONの絶対path。
+    """
+    name_pattern = r"[A-Za-z0-9_-]+"
+    if not isinstance(old_name, str) or not re.fullmatch(name_pattern, old_name.strip()):
+        raise ValueError("現在のlibrary名が不正です。")
+    if not isinstance(new_name, str) or not re.fullmatch(name_pattern, new_name.strip()):
+        raise ValueError("library名は英数字、underscore、hyphenだけにしてください。")
+    old_name = old_name.strip()
+    new_name = new_name.strip()
+    if old_name == new_name:
+        raise ValueError("新しいlibrary名を指定してください。")
+    directory = os.path.abspath(directory)
+    if not os.path.isdir(directory):
+        raise ValueError("control library directoryがありません: {}".format(directory))
+    source = os.path.join(directory, old_name + ".json")
+    target = os.path.join(directory, new_name + ".json")
+    if not os.path.isfile(source):
+        raise ValueError("Control library entryがありません: {}".format(old_name))
+    if os.path.exists(target):
+        raise ValueError("Control library entryが既に存在します: {}".format(new_name))
+
+    curves = load_curves(source)
+    for curve in curves:
+        curve.transform = new_name
+    _write_curve_data(curves, target)
+    try:
+        os.remove(source)
+    except Exception:
+        if os.path.exists(target):
+            os.remove(target)
+        raise
+    return target
+
+
 def get_curve_data(controls=None):
     """Get the serializable data of the given controls.
 

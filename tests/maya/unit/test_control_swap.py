@@ -279,6 +279,40 @@ class ControlSwapTests(TestCase):
         with open(path, "r", encoding="utf-8") as handle:
             self.assertEqual("sentinel", handle.read())
 
+    def test_library_rename_updates_file_and_internal_transform(self):
+        """Entry改名時にJSON内部の作成名も新しい名前へ揃える。"""
+        target = cmds.circle(name="control")[0]
+        directory = os.path.dirname(self.get_temp_filename("library_marker.tmp"))
+        source = control.export_shape_to_library([target], "old_shape", directory=directory)
+
+        result = control.rename_library_shape("old_shape", "new_shape", directory=directory)
+
+        self.assertFalse(os.path.exists(source))
+        self.assertEqual(os.path.join(directory, "new_shape.json"), result)
+        curves = control.load_curves(result)
+        self.assertTrue(curves)
+        self.assertEqual({"new_shape"}, {curve.transform for curve in curves})
+
+    def test_library_rename_does_not_overwrite_existing_entry(self):
+        """改名先が存在する場合は両entryを変更しない。"""
+        first = cmds.circle(name="first")[0]
+        second = cmds.circle(name="second")[0]
+        directory = os.path.dirname(self.get_temp_filename("library_marker.tmp"))
+        source = control.export_shape_to_library([first], "source", directory=directory)
+        target = control.export_shape_to_library([second], "target", directory=directory)
+        with open(source, "rb") as handle:
+            source_before = handle.read()
+        with open(target, "rb") as handle:
+            target_before = handle.read()
+
+        with self.assertRaises(ValueError):
+            control.rename_library_shape("source", "target", directory=directory)
+
+        with open(source, "rb") as handle:
+            self.assertEqual(source_before, handle.read())
+        with open(target, "rb") as handle:
+            self.assertEqual(target_before, handle.read())
+
     def test_combine_control_shapes_preserves_world_shape_and_undo(self):
         """source形状をworld位置のままtargetへ移し、1回でUndoする。"""
         source = cmds.curve(name="source_ctrl", degree=1, point=[(0, 0, 0), (1, 2, 0), (2, 0, 1)])

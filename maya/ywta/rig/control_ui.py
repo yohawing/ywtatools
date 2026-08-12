@@ -51,6 +51,7 @@ from ywta.rig.control import (
     rotate_components,
     CONTROLS_DIRECTORY,
     export_shape_to_library,
+    rename_library_shape,
     mirror_curve,
     import_curves_on_selected,
     import_new_curves,
@@ -142,6 +143,10 @@ class ControlWindow(SingletonWindowMixin, MayaQWidgetBaseMixin, QMainWindow):
         b = QPushButton("Remove Selected")
         b.released.connect(self.remove_selected)
         hbox.addWidget(b)
+
+        b = QPushButton("Rename Selected")
+        b.released.connect(self.rename_selected)
+        vbox.addWidget(b)
 
         hbox = QHBoxLayout()
         vbox.addLayout(hbox)
@@ -284,3 +289,23 @@ class ControlWindow(SingletonWindowMixin, MayaQWidgetBaseMixin, QMainWindow):
                     control_file = os.path.join(CONTROLS_DIRECTORY, "{0}.json".format(text))
                     os.remove(control_file)
                 self.populate_controls()
+
+    def rename_selected(self):
+        """選択したcontrol library entryを安全に改名する。"""
+        items = self.control_list.selectedItems()
+        if len(items) != 1:
+            raise ValueError("改名するcontrol shapeを1つ選択してください。")
+        old_name = items[0].text()
+        new_name, accepted = QInputDialog.getText(
+            self,
+            "Rename Control Shape",
+            "New Library Name:",
+            text=old_name,
+        )
+        if not accepted:
+            return
+        rename_library_shape(old_name, new_name)
+        self.populate_controls()
+        matches = self.control_list.findItems(new_name.strip(), Qt.MatchExactly)
+        if matches:
+            self.control_list.setCurrentItem(matches[0])
