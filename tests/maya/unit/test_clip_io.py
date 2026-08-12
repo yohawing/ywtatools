@@ -53,6 +53,55 @@ class ClipIoTests(TestCase):
             cmds.keyframe(target, attribute="translateX", query=True, timeChange=True),
         )
 
+    def test_place_preserves_existing_keys_inside_clip_range(self):
+        source, data = self._source_clip()
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.setKeyframe(target, attribute="translateX", time=105, value=-2.0)
+
+        result = clip_io.apply(data, nodes=[target], start_time=100, mode="place")
+
+        self.assertEqual("place", result["mode"])
+        self.assertEqual(
+            [100.0, 105.0, 110.0],
+            cmds.keyframe(target, attribute="translateX", query=True, timeChange=True),
+        )
+
+    def test_insert_shifts_all_keys_on_resolved_control_and_is_undoable(self):
+        source, data = self._source_clip()
+        cmds.delete(source)
+        target = self._control("target")
+        other = self._control("target", "other_ctrl")
+        cmds.setKeyframe(target, attribute="translateX", time=105, value=-2.0)
+        cmds.setKeyframe(target, attribute="translateY", time=120, value=3.0)
+        cmds.setKeyframe(other, attribute="translateY", time=120, value=4.0)
+
+        result = clip_io.apply(data, nodes=[target], start_time=100, mode="insert")
+
+        self.assertEqual("insert", result["mode"])
+        self.assertEqual(2, result["shifted_keys"])
+        self.assertEqual(
+            [100.0, 110.0, 115.0],
+            cmds.keyframe(target, attribute="translateX", query=True, timeChange=True),
+        )
+        self.assertEqual(
+            [130.0],
+            cmds.keyframe(target, attribute="translateY", query=True, timeChange=True),
+        )
+        self.assertEqual(
+            [120.0],
+            cmds.keyframe(other, attribute="translateY", query=True, timeChange=True),
+        )
+        cmds.undo()
+        self.assertEqual(
+            [105.0],
+            cmds.keyframe(target, attribute="translateX", query=True, timeChange=True),
+        )
+        self.assertEqual(
+            [120.0],
+            cmds.keyframe(target, attribute="translateY", query=True, timeChange=True),
+        )
+
     def test_selected_scope_does_not_apply_other_control(self):
         hand = self._control("source", "hand_ctrl")
         foot = self._control("source", "foot_ctrl")
@@ -80,6 +129,22 @@ class ClipIoTests(TestCase):
         self.assertEqual(0, result["applied_channels"])
         self.assertEqual("driven", result["skipped"][0]["reason"])
 
+    def test_insert_does_not_shift_when_all_clip_channels_are_driven(self):
+        source, data = self._source_clip()
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.setKeyframe(target, attribute="translateY", time=20, value=2.0)
+        driver = cmds.createNode("multiplyDivide")
+        cmds.connectAttr(driver + ".outputX", target + ".translateX")
+
+        result = clip_io.apply(data, nodes=[target], start_time=10, mode="insert")
+
+        self.assertEqual(0, result["shifted_keys"])
+        self.assertEqual(
+            [20.0],
+            cmds.keyframe(target, attribute="translateY", query=True, timeChange=True),
+        )
+
     def test_invalid_key_order_fails_before_edit(self):
         source, data = self._source_clip()
         target = self._control("target")
@@ -88,6 +153,15 @@ class ClipIoTests(TestCase):
 
         with self.assertRaises(ValueError):
             clip_io.apply(invalid, nodes=[target], start_time=1)
+
+        self.assertIsNone(cmds.keyframe(target, attribute="translateX", query=True, timeChange=True))
+
+    def test_invalid_mode_fails_before_edit(self):
+        source, data = self._source_clip()
+        target = self._control("target")
+
+        with self.assertRaises(ValueError):
+            clip_io.apply(data, nodes=[target], start_time=1, mode="append")
 
         self.assertIsNone(cmds.keyframe(target, attribute="translateX", query=True, timeChange=True))
 

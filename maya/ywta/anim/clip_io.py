@@ -193,24 +193,56 @@ def read(file_path):
         return _validate(json.load(handle))
 
 
-def apply(data, nodes=None, start_time=None, replace=True):
+def _apply_mode(mode, replace):
+    """新旧引数から clip 適用モードを解決する。"""
+    if mode is None:
+        return "replace" if replace else "place"
+    if mode not in {"place", "replace", "insert"}:
+        raise ValueError("mode は place / replace / insert のいずれかにしてください。")
+    return mode
+
+
+def _shift_keys_for_insert(nodes, start_time, duration):
+    """対象controlの開始時刻以降の全キーを後ろへ移動する。"""
+    if duration == 0.0:
+        return 0
+    shifted = 0
+    for node in nodes:
+        times = cmds.keyframe(node, query=True, timeChange=True) or []
+        source_times = sorted({float(time) for time in times if time >= start_time}, reverse=True)
+        for time in source_times:
+            shifted += cmds.keyframe(
+                node,
+                edit=True,
+                time=(time, time),
+                relative=True,
+                timeChange=duration,
+            )
+    return shifted
+
+
+def apply(data, nodes=None, start_time=None, replace=True, mode=None):
     """Animation clip を namespace 非依存で適用する。
 
     Args:
         data: :func:`capture` または :func:`read` の辞書。
         nodes: 適用対象を限定するコントロール。None は scene 全体。
         start_time: clip の開始フレーム。None は現在フレーム。
-        replace: True の場合、clip 範囲内の既存キーを先に削除する。
+        replace: 後方互換引数。mode 未指定時に True は replace、False は place。
+        mode: place / replace / insert。insert は解決済みcontrolの全キーを
+            clip duration 分だけ後ろへ移動してから適用する。
 
     Returns:
         applied_channels / applied_keys / skipped を持つ結果辞書。
     """
     data = _validate(data)
+    mode = _apply_mode(mode, replace)
     if start_time is None:
         start_time = cmds.currentTime(query=True)
     start_time = _finite_number(start_time, "start_time")
     index, ambiguous = pose_io.target_index(nodes)
     operations = []
+    resolved_nodes = set()
     skipped = []
     for control in data["controls"]:
         address = control["address"]
@@ -234,14 +266,18 @@ def apply(data, nodes=None, start_time=None, replace=True):
                 skipped.append({"address": address, "attribute": attribute, "reason": "driven"})
                 continue
             operations.append((plug, channel))
+            resolved_nodes.add(node)
 
     cmds.undoInfo(openChunk=True, chunkName="YWTA Animation Clip Apply")
     failed = False
     applied_keys = 0
     try:
         end_time = start_time + data["duration"]
+        shifted_keys = 0
+        if mode == "insert":
+            shifted_keys = _shift_keys_for_insert(sorted(resolved_nodes), start_time, data["duration"])
         for plug, channel in operations:
-            if replace:
+            if mode == "replace":
                 cmds.cutKey(plug, time=(start_time, end_time), clear=True)
             for key in channel["keys"]:
                 time = start_time + key["time"]
@@ -266,6 +302,8 @@ def apply(data, nodes=None, start_time=None, replace=True):
     return {
         "applied_channels": len(operations),
         "applied_keys": applied_keys,
+        "shifted_keys": shifted_keys,
+        "mode": mode,
         "skipped": skipped,
     }
 
@@ -279,10 +317,10 @@ def save_selected():
     return save(selected, paths[0])
 
 
-def load_clip(selected_only=False):
+def load_clip(selected_only=False, mode="replace"):
     """ダイアログで選んだ clip を現在フレームから適用する。"""
     selected = pose_io.resolve_controls() if selected_only else None
     paths = cmds.fileDialog2(fileMode=1, dialogStyle=2, caption="Load Animation Clip", fileFilter="JSON (*.json)")
     if not paths:
         return None
-    return apply(read(paths[0]), nodes=selected)
+    return apply(read(paths[0]), nodes=selected, mode=mode)

@@ -54,15 +54,27 @@ def create_animation_menu(parent_menu):
     )
     cmds.menuItem(
         parent=animation_menu,
-        label="Load Animation Clip",
-        command="import ywta.anim.clip_io as clip_io; clip_io.load_clip()",
-        annotation="clipを現在フレームからscene内の一致するコントロールへ適用します",
+        label="Load Animation Clip (Replace)",
+        command="import ywta.anim.clip_io as clip_io; clip_io.load_clip(mode='replace')",
+        annotation="現在フレームからclip範囲のキーを置換します",
     )
     cmds.menuItem(
         parent=animation_menu,
-        label="Load Animation Clip to Selected",
-        command="import ywta.anim.clip_io as clip_io; clip_io.load_clip(selected_only=True)",
-        annotation="clipを現在フレームから選択コントロールだけへ適用します",
+        label="Load Animation Clip (Place)",
+        command="import ywta.anim.clip_io as clip_io; clip_io.load_clip(mode='place')",
+        annotation="既存キー範囲を削除せず現在フレームからclipを配置します",
+    )
+    cmds.menuItem(
+        parent=animation_menu,
+        label="Load Animation Clip (Insert)",
+        command="import ywta.anim.clip_io as clip_io; clip_io.load_clip(mode='insert')",
+        annotation="対象controlの後続キーをずらしてclipを挿入します",
+    )
+    cmds.menuItem(
+        parent=animation_menu,
+        label="Load Animation Clip to Selected (Replace)",
+        command="import ywta.anim.clip_io as clip_io; clip_io.load_clip(selected_only=True, mode='replace')",
+        annotation="clipを現在フレームから選択コントロールだけへ置換適用します",
     )
 
     return animation_menu
