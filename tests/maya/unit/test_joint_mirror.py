@@ -31,6 +31,17 @@ class JointMirrorTests(TestCase):
         self.assertEqual([-2.0, 0.0, 0.0], cmds.xform(created[0], query=True, worldSpace=True, translation=True))
         self.assertEqual([-4.0, 1.0, 0.0], cmds.xform(created[1], query=True, worldSpace=True, translation=True))
 
+    def test_mirror_is_independent_of_current_namespace(self):
+        root, _child = self._chain("char")
+        cmds.namespace(add="working")
+        cmds.namespace(set="working")
+
+        created = joint_mirror.mirror_hierarchy(root)
+        cmds.namespace(set=":")
+
+        self.assertEqual("char:R_arm_jnt", created[0].rsplit("|", 1)[-1])
+        self.assertFalse(cmds.objExists(":working:char:R_arm_jnt"))
+
     def test_mirror_is_one_undoable_action(self):
         root, _child = self._chain()
 

@@ -51,6 +51,18 @@ def _joint_path(joint):
     return matches[0]
 
 
+def _absolute_name(name):
+    """Maya current namespaceに依存しない絶対名を返す。"""
+    return ":" + name.lstrip(":")
+
+
+def _temporary_name(target):
+    """targetと同じnamespaceに一意な一時名を作る。"""
+    namespace, separator, _leaf = target.rpartition(":")
+    prefix = namespace + separator if separator else ""
+    return _absolute_name(prefix + "__ywta_joint_mirror_{}".format(uuid.uuid4().hex))
+
+
 def _hierarchy(root):
     """root以下のjointを親優先順で返す。"""
     result = []
@@ -72,13 +84,13 @@ def plan(root):
     if len(set(targets)) != len(targets):
         raise ValueError("mirror後のjoint名が階層内で重複します。")
     for target in targets:
-        if cmds.ls(target, long=True):
+        if cmds.ls(_absolute_name(target), long=True):
             raise ValueError("mirror先jointが既に存在します: {}".format(target))
     parents = cmds.listRelatives(root, parent=True, fullPath=True, type="joint") or []
     target_parent = None
     if parents:
         parent_name = mirrored_name(parents[0])
-        matches = cmds.ls(parent_name, long=True, type="joint") or []
+        matches = cmds.ls(_absolute_name(parent_name), long=True, type="joint") or []
         if len(matches) != 1:
             raise ValueError("mirror先parent jointを一意に解決できません: {}".format(parent_name))
         target_parent = matches[0]
@@ -121,13 +133,13 @@ def mirror_hierarchy(root):
             if node_uuid is None:
                 raise RuntimeError("作成jointのUUIDを取得できません: {}".format(node))
             records.append((node_uuid, target))
-        for node_uuid, _target in records:
+        for node_uuid, target in records:
             cmds.rename(
                 _resolve_uuid(node_uuid),
-                "__ywta_joint_mirror_{}".format(uuid.uuid4().hex),
+                _temporary_name(target),
             )
         for node_uuid, target in records:
-            renamed = cmds.rename(_resolve_uuid(node_uuid), target)
+            renamed = cmds.rename(_resolve_uuid(node_uuid), _absolute_name(target))
             if renamed.rsplit("|", 1)[-1] != target:
                 raise RuntimeError("mirror joint名が競合しました: {}".format(target))
         if mirror_plan["target_parent"]:
