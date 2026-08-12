@@ -171,6 +171,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - 重複する DAG short name の一覧
 - non-manifold vertex / edge の一覧
 - lamina face の一覧
+- world-space面積が0または非有限のface一覧
 - 問題 node / component の一括選択
 - 壊れた個別 mesh の scan error を記録し、残りの scene 監査を継続
 

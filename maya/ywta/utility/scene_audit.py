@@ -3,7 +3,9 @@
 from __future__ import absolute_import
 
 import json
+import math
 
+import maya.api.OpenMaya as om
 import maya.cmds as cmds
 
 
@@ -11,6 +13,7 @@ ISSUE_CATEGORIES = (
     "non_manifold_vertices",
     "non_manifold_edges",
     "lamina_faces",
+    "zero_area_faces",
 )
 _LAST_REPORT = None
 
@@ -32,6 +35,24 @@ def _poly_components(shape, **query):
     return sorted(set(cmds.ls(values, flatten=True, long=True) or values))
 
 
+def _zero_area_faces(shape, tolerance=1.0e-12):
+    """world-space面積が有限でないか閾値以下のfaceを返す。"""
+    if not isinstance(tolerance, (int, float)) or isinstance(tolerance, bool) or not math.isfinite(tolerance):
+        raise ValueError("zero-area toleranceは有限数にしてください。")
+    if tolerance < 0.0:
+        raise ValueError("zero-area toleranceは0以上にしてください。")
+    selection = om.MSelectionList()
+    selection.add(shape)
+    iterator = om.MItMeshPolygon(selection.getDagPath(0))
+    faces = []
+    while not iterator.isDone():
+        area = float(iterator.getArea(om.MSpace.kWorld))
+        if not math.isfinite(area) or area <= tolerance:
+            faces.append("{}.f[{}]".format(shape, iterator.index()))
+        iterator.next()
+    return faces
+
+
 def audit_mesh(shape):
     """1つの mesh shape を変更せずに診断する。"""
     matches = cmds.ls(shape, type="mesh", long=True) or []
@@ -45,6 +66,7 @@ def audit_mesh(shape):
         "non_manifold_vertices": _poly_components(shape, nonManifoldVertices=True),
         "non_manifold_edges": _poly_components(shape, nonManifoldEdges=True),
         "lamina_faces": _poly_components(shape, laminaFaces=True),
+        "zero_area_faces": _zero_area_faces(shape),
     }
 
 

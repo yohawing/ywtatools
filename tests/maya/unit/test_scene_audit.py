@@ -59,6 +59,26 @@ class SceneAuditTests(TestCase):
 
         self.assertFalse(any(result[category] for category in scene_audit.ISSUE_CATEGORIES))
 
+    def test_zero_area_face_is_reported_read_only(self):
+        """world面積0のfaceをmesh変更なしで報告する。"""
+        mesh = cmds.createNode("transform", name="flatMesh")
+        selection = om.MSelectionList()
+        selection.add(mesh)
+        function = om.MFnMesh()
+        function.create(
+            [om.MPoint(0, 0, 0), om.MPoint(1, 0, 0), om.MPoint(2, 0, 0)],
+            [3],
+            [0, 1, 2],
+            parent=selection.getDependNode(0),
+        )
+        shape = cmds.listRelatives(mesh, shapes=True, fullPath=True)[0]
+        before = cmds.polyEvaluate(mesh, vertex=True), cmds.polyEvaluate(mesh, face=True)
+
+        result = scene_audit.audit_mesh(shape)
+
+        self.assertEqual([shape + ".f[0]"], result["zero_area_faces"])
+        self.assertEqual(before, (cmds.polyEvaluate(mesh, vertex=True), cmds.polyEvaluate(mesh, face=True)))
+
     def test_select_issues_can_limit_categories(self):
         shape = self._create_lamina_mesh()
         report = {
@@ -109,6 +129,7 @@ class SceneAuditTests(TestCase):
         self.assertEqual(4, report["summary"]["non_manifold_vertices"])
         self.assertEqual(4, report["summary"]["non_manifold_edges"])
         self.assertEqual(1, report["summary"]["lamina_faces"])
+        self.assertEqual(0, report["summary"]["zero_area_faces"])
 
     def test_audit_scene_records_mesh_scan_error_and_continues(self):
         mesh = cmds.polyCube(name="brokenMesh")[0]
