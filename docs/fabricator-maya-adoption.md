@@ -260,7 +260,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - 問題 node / component の一括選択
 - 選択transform / shape / componentから所属meshだけを読み取り局所監査
 - UIの選択操作は古いscene reportを再利用せず、その場で再監査してから選択
-- 壊れた個別 mesh の scan error を記録し、残りの scene 監査を継続
+- 壊れた個別 mesh の属性照会・scan errorを記録し、残りのscene監査を継続
 
 この機能は読み取り専用です。自動修復は既存 `TODO.md` にある dry-run、要素 mapping、
 Undo の共通 contract が完成するまで追加しません。

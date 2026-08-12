@@ -183,6 +183,25 @@ class SceneAuditTests(TestCase):
         self.assertEqual(1, report["summary"]["scan_errors"])
         self.assertEqual(shape, report["errors"][0]["shape"])
 
+    def test_intermediate_query_error_is_isolated_per_mesh(self):
+        """shape属性を読めないmeshがあっても後続meshの監査を継続する。"""
+        broken = cmds.polyCube(name="brokenMesh")[0]
+        healthy = self._create_lamina_mesh()
+        broken_shape = cmds.listRelatives(broken, shapes=True, fullPath=True)[0]
+        original_get_attr = scene_audit.cmds.getAttr
+
+        def get_attr(plug, *args, **kwargs):
+            if plug == broken_shape + ".intermediateObject":
+                raise RuntimeError("broken attribute")
+            return original_get_attr(plug, *args, **kwargs)
+
+        with mock.patch.object(scene_audit.cmds, "getAttr", side_effect=get_attr):
+            report = scene_audit._audit_shapes([broken_shape, healthy], [])
+
+        self.assertEqual(1, report["summary"]["scan_errors"])
+        self.assertEqual(broken_shape, report["errors"][0]["shape"])
+        self.assertEqual([healthy], [item["shape"] for item in report["meshes"]])
+
     def test_selected_audit_only_scans_selected_mesh(self):
         """選択外の不正meshを局所監査結果に混ぜない。"""
         bad_shape = self._create_lamina_mesh()

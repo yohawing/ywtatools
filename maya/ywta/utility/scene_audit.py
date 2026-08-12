@@ -76,9 +76,9 @@ def _audit_shapes(shapes, duplicates):
     meshes = []
     errors = []
     for shape in shapes:
-        if cmds.getAttr(shape + ".intermediateObject"):
-            continue
         try:
+            if cmds.getAttr(shape + ".intermediateObject"):
+                continue
             item = audit_mesh(shape)
         except (RuntimeError, ValueError) as error:
             errors.append({"shape": shape, "error": str(error)})
