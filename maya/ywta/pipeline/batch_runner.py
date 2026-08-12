@@ -15,8 +15,9 @@ import time
 import maya.cmds as cmds
 
 try:
-    from PySide6.QtCore import QSettings
-    from PySide6.QtWidgets import (
+    # Maya本体のQt bindingを優先し、外部bindingとのQApplication混在を避ける。
+    from PySide2.QtCore import QSettings
+    from PySide2.QtWidgets import (
         QApplication,
         QCheckBox,
         QFileDialog,
@@ -30,8 +31,8 @@ try:
         QWidget,
     )
 except ImportError:
-    from PySide2.QtCore import QSettings
-    from PySide2.QtWidgets import (
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import (
         QApplication,
         QCheckBox,
         QFileDialog,
