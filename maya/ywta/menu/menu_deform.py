@@ -45,6 +45,26 @@ def create_deform_menu(parent_menu):
         annotation="保存sourceを再構築して異なるトポロジーへスキンウェイトを転送します",
     )
 
+    cmds.menuItem(parent=deform_menu, divider=True, dividerLabel="Vertex Weights")
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Copy Vertex Weights",
+        command="import ywta.deform.skin_weights as skin_weights; skin_weights.copy_selected_vertex_weights()",
+        annotation="選択した1頂点のスキンウェイトをprocess内clipboardへコピーします",
+    )
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Paste Vertex Weights",
+        command="import ywta.deform.skin_weights as skin_weights; skin_weights.paste_vertex_weights()",
+        annotation="コピー済みスキンウェイトを選択頂点へ一括Undoで貼り付けます",
+    )
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Average Vertex Weights",
+        command="import ywta.deform.skin_weights as skin_weights; skin_weights.average_vertex_weights()",
+        annotation="選択頂点のスキンウェイトを平均して全選択頂点へ適用します",
+    )
+
     transfer_shape_menu_item = cmds.menuItem(
         parent=deform_menu,
         label="Transfer Shape",
