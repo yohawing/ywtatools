@@ -221,7 +221,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - maintain offset対応のPython APIと、明示したlocal aim/up軸によるAim
 - `Create Constraint...`から種別、Maintain Offset、local Aim / Upベクトルを指定
 - Aim / Upのゼロ長・平行ベクトルはconstraint作成前に拒否
-- 参照node、重複driver、locked・接続済みdriven channelを編集前拒否
+- 参照node、重複driver、locked・animCurveを含む接続済みdriven channelを編集前拒否
 - 選択transformへ入るconstraintだけを削除するDelete Constraints
 - 作成・削除とも選択を維持し、単一Undo / 失敗rollback
 - 削除APIは単一transform文字列にも対応し、削除対象constraintだけをselection復元から除外
