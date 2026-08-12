@@ -42,7 +42,7 @@ LOAD_MODES = ("place", "replace", "insert")
 def get_load_settings():
     """optionVarから検証済みClip適用設定を取得する。"""
     mode = cmds.optionVar(query=MODE_OPTION) if cmds.optionVar(exists=MODE_OPTION) else "replace"
-    selected_only = bool(cmds.optionVar(query=SELECTED_ONLY_OPTION)) if cmds.optionVar(exists=SELECTED_ONLY_OPTION) else False
+    selected_only = pose_io.option_bool(SELECTED_ONLY_OPTION, False)
     if mode not in LOAD_MODES:
         mode = "replace"
     return mode, selected_only
@@ -61,8 +61,8 @@ def set_load_settings(mode, selected_only):
 
 def get_anchor_settings():
     """optionVarからclip境界anchorの適用設定を取得する。"""
-    start_anchor = bool(cmds.optionVar(query=START_ANCHOR_OPTION)) if cmds.optionVar(exists=START_ANCHOR_OPTION) else True
-    end_anchor = bool(cmds.optionVar(query=END_ANCHOR_OPTION)) if cmds.optionVar(exists=END_ANCHOR_OPTION) else True
+    start_anchor = pose_io.option_bool(START_ANCHOR_OPTION, True)
+    end_anchor = pose_io.option_bool(END_ANCHOR_OPTION, True)
     return start_anchor, end_anchor
 
 

@@ -267,5 +267,9 @@ class PoseIoTests(TestCase):
 
         self.assertEqual((1.0, True), pose_io.get_load_settings())
 
+        cmds.optionVar(stringValue=(pose_io.SELECTED_ONLY_OPTION, "false"))
+
+        self.assertEqual((1.0, False), pose_io.get_load_settings())
+
     def test_load_options_window_builds(self):
         self.assertEqual("ywtaPoseLoadOptionsWindow", pose_io.show_load_options())

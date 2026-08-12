@@ -450,10 +450,19 @@ class ClipIoTests(TestCase):
 
         self.assertEqual(("replace", True), clip_io.get_load_settings())
 
+        cmds.optionVar(stringValue=(clip_io.SELECTED_ONLY_OPTION, "false"))
+
+        self.assertEqual(("replace", False), clip_io.get_load_settings())
+
     def test_anchor_settings_round_trip(self):
         self.assertEqual((True, True), clip_io.get_anchor_settings())
         self.assertEqual((False, True), clip_io.set_anchor_settings(False, True))
         self.assertEqual((False, True), clip_io.get_anchor_settings())
+
+        cmds.optionVar(stringValue=(clip_io.START_ANCHOR_OPTION, "false"))
+        cmds.optionVar(intValue=(clip_io.END_ANCHOR_OPTION, 2))
+
+        self.assertEqual((True, True), clip_io.get_anchor_settings())
 
     def test_load_options_window_builds(self):
         self.assertEqual("ywtaClipLoadOptionsWindow", clip_io.show_load_options())

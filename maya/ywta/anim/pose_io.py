@@ -31,10 +31,18 @@ NUMERIC_TYPES = {
 INTEGER_TYPES = {"long", "short", "byte"}
 
 
+def option_bool(name, default):
+    """optionVarを0/1だけ許可するboolとして読み込む。"""
+    if not isinstance(name, str) or not name or not isinstance(default, bool):
+        raise ValueError("option boolのname/defaultが不正です。")
+    raw = cmds.optionVar(query=name) if cmds.optionVar(exists=name) else default
+    return bool(raw) if isinstance(raw, (bool, int)) and raw in {0, 1} else default
+
+
 def get_load_settings():
     """optionVarから検証済みPose適用設定を取得する。"""
     blend = cmds.optionVar(query=BLEND_OPTION) if cmds.optionVar(exists=BLEND_OPTION) else 1.0
-    selected_only = bool(cmds.optionVar(query=SELECTED_ONLY_OPTION)) if cmds.optionVar(exists=SELECTED_ONLY_OPTION) else False
+    selected_only = option_bool(SELECTED_ONLY_OPTION, False)
     if not isinstance(blend, (int, float)) or isinstance(blend, bool) or not math.isfinite(blend) or not 0.0 <= blend <= 1.0:
         blend = 1.0
     return float(blend), selected_only
