@@ -2,8 +2,11 @@
 
 from __future__ import absolute_import
 
+import json
 import math
+import os
 import re
+import tempfile
 
 import maya.api.OpenMaya as om
 import maya.api.OpenMayaAnim as oma
@@ -14,6 +17,9 @@ from ywta.deform import skin_io
 
 _VERTEX_RE = re.compile(r"^(.*)\.vtx\[(\d+)\]$")
 _CLIPBOARD = None
+CLIPBOARD_FORMAT = "ywta.vertex_weight_clipboard"
+CLIPBOARD_VERSION = 1
+CLIPBOARD_FILENAME = "ywta_vertex_weight_clipboard.json"
 
 
 def _selected_vertex_indices(vertices=None):
@@ -101,10 +107,72 @@ def _validate_weights(data):
     return data
 
 
-def copy_selected_vertex_weights():
-    """選択した1頂点のウェイトを process 内 clipboard へ保存する。"""
+def clipboard_path():
+    """Mayaユーザー間で永続化するclipboard JSONパスを返す。"""
+    return os.path.join(cmds.internalVar(userAppDir=True), CLIPBOARD_FILENAME)
+
+
+def write_clipboard(data, file_path=None):
+    """検証済みclipboardをversion付きJSONへ原子的に保存する。"""
+    data = _validate_weights(data)
+    target = os.path.abspath(file_path or clipboard_path())
+    directory = os.path.dirname(target)
+    if not os.path.isdir(directory):
+        raise ValueError("clipboard保存先ディレクトリがありません: {}".format(directory))
+    handle = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=directory,
+        prefix=".ywta_weight_clipboard_",
+        suffix=".tmp",
+        delete=False,
+    )
+    temporary = handle.name
+    try:
+        with handle:
+            json.dump(
+                {
+                    "format": CLIPBOARD_FORMAT,
+                    "version": CLIPBOARD_VERSION,
+                    "data": data,
+                },
+                handle,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            handle.write("\n")
+        os.replace(temporary, target)
+    except Exception:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+        raise
+    return target
+
+
+def read_clipboard(file_path=None):
+    """version付きclipboard JSONを読み込み、完全検証する。"""
+    source = os.path.abspath(file_path or clipboard_path())
+    if not os.path.isfile(source):
+        raise ValueError("先にコピー元vertexのウェイトをコピーしてください。")
+    try:
+        with open(source, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError) as error:
+        raise ValueError("スキンウェイトclipboard JSONを読み込めません。") from error
+    if not isinstance(payload, dict) or payload.get("format") != CLIPBOARD_FORMAT:
+        raise ValueError("YWTAスキンウェイトclipboardではありません。")
+    if payload.get("version") != CLIPBOARD_VERSION:
+        raise ValueError("未対応のclipboard versionです: {}".format(payload.get("version")))
+    return _validate_weights(payload.get("data"))
+
+
+def copy_selected_vertex_weights(file_path=None):
+    """選択した1頂点のウェイトを永続clipboardへ保存する。"""
     global _CLIPBOARD
-    _CLIPBOARD = capture_vertex_weights()
+    data = capture_vertex_weights()
+    write_clipboard(data, file_path=file_path)
+    _CLIPBOARD = data
     return _CLIPBOARD
 
 
@@ -136,11 +204,10 @@ def _set_uniform_weights(shape, indices, data, chunk_name):
     return cluster
 
 
-def paste_vertex_weights(vertices=None, data=None):
+def paste_vertex_weights(vertices=None, data=None, clipboard_file=None):
     """clipboard ウェイトを選択頂点群へ貼り付ける。"""
-    data = _CLIPBOARD if data is None else data
     if data is None:
-        raise ValueError("先にコピー元 vertex のウェイトをコピーしてください。")
+        data = _CLIPBOARD if _CLIPBOARD is not None else read_clipboard(clipboard_file)
     shape, indices = _selected_vertex_indices(vertices)
     return _set_uniform_weights(shape, indices, data, "YWTA Paste Vertex Weights")
 

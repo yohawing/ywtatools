@@ -1,5 +1,7 @@
 """Vertex Weight Clipboard / Average の Maya 単体テスト。"""
 
+import json
+
 import maya.cmds as cmds
 
 from ywta.deform import skin_weights
@@ -10,6 +12,7 @@ class SkinWeightsTests(TestCase):
     """選択頂点ウェイト編集の contract を検証する。"""
 
     def setUp(self):
+        skin_weights._CLIPBOARD = None
         self.mesh = cmds.polyPlane(name="cloth", subdivisionsX=1, subdivisionsY=1)[0]
         cmds.select(clear=True)
         self.root = cmds.joint(name="root_jnt", position=(-1.0, 0.0, 0.0))
@@ -78,3 +81,30 @@ class SkinWeightsTests(TestCase):
 
         with self.assertRaises(ValueError):
             skin_weights.copy_selected_vertex_weights()
+
+    def test_clipboard_persists_across_process_memory_reset(self):
+        path = self.get_temp_filename("weight_clipboard.json")
+        cmds.select(self.vertices[0], replace=True)
+        expected = skin_weights.copy_selected_vertex_weights(file_path=path)
+        skin_weights._CLIPBOARD = None
+
+        skin_weights.paste_vertex_weights(
+            [self.vertices[3]],
+            clipboard_file=path,
+        )
+
+        self.assertEqual(expected["weights"], self._weights(self.vertices[3]))
+
+    def test_invalid_persistent_clipboard_fails_before_edit(self):
+        path = self.get_temp_filename("invalid_weight_clipboard.json")
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"format": "other", "version": 1, "data": {}}, handle)
+        before = self._weights(self.vertices[3])
+
+        with self.assertRaises(ValueError):
+            skin_weights.paste_vertex_weights(
+                [self.vertices[3]],
+                clipboard_file=path,
+            )
+
+        self.assertEqual(before, self._weights(self.vertices[3]))
