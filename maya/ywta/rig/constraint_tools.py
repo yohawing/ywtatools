@@ -222,6 +222,13 @@ def delete_constraints(nodes=None):
     """指定transformを駆動するconstraintを単一Undoで削除する。"""
     if nodes is None:
         nodes = cmds.ls(selection=True, objectsOnly=True, long=True) or []
+    elif isinstance(nodes, str):
+        nodes = [nodes]
+    else:
+        try:
+            nodes = list(nodes)
+        except TypeError as error:
+            raise ValueError("constraint削除対象はtransform列にしてください。") from error
     transforms = []
     for node in nodes or []:
         resolved = _resolve_transform(node)
@@ -246,8 +253,9 @@ def delete_constraints(nodes=None):
     failed = False
     try:
         cmds.delete(constraints)
-        if selection:
-            cmds.select(selection, replace=True)
+        valid_selection = [node for node in selection if cmds.objExists(node)]
+        if valid_selection:
+            cmds.select(valid_selection, replace=True)
         else:
             cmds.select(clear=True)
     except Exception:

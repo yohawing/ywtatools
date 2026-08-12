@@ -214,6 +214,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - 参照node、重複driver、locked・接続済みdriven channelを編集前拒否
 - 選択transformへ入るconstraintだけを削除するDelete Constraints
 - 作成・削除とも選択を維持し、単一Undo / 失敗rollback
+- 削除APIは単一transform文字列にも対応し、削除対象constraintだけをselection復元から除外
 
 ### Selection Navigation
 

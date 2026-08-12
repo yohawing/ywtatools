@@ -67,6 +67,19 @@ class ConstraintToolsTests(TestCase):
         cmds.undo()
         self.assertTrue(cmds.objExists(constraint))
 
+    def test_delete_accepts_single_transform_and_filters_deleted_selection(self):
+        """単一文字列を1nodeとして扱い、削除constraint以外の選択を保つ。"""
+        driver = cmds.spaceLocator(name="driver")[0]
+        driven = cmds.spaceLocator(name="driven")[0]
+        constraint = constraint_tools.create_constraint("point", [driver], driven)
+        cmds.select(driven, constraint, replace=True)
+
+        removed = constraint_tools.delete_constraints(driven)
+
+        self.assertEqual([constraint.rsplit("|", 1)[-1]], removed)
+        self.assertFalse(cmds.objExists(constraint))
+        self.assertEqual([driven], cmds.ls(selection=True))
+
     def test_selected_entry_forwards_aim_options(self):
         """Options UIが指定するAim/Up軸を共通coreへ渡す。"""
         driver = cmds.spaceLocator(name="driver")[0]
