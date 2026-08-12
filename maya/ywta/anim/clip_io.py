@@ -296,7 +296,9 @@ def _validate(data):
                     raise ValueError("synthetic boundaryが不正です: {}.{}".format(address, name))
                 if boundary == "start" and time != 0.0 or boundary == "end" and time != duration:
                     raise ValueError("synthetic boundary時刻が不正です: {}.{}".format(address, name))
-                _finite_number(key.get("value"), "key value")
+                key_value = _finite_number(key.get("value"), "key value")
+                if attr_type == "enum" and not float(key_value).is_integer():
+                    raise ValueError("enum key値は整数indexにしてください: {}.{}".format(address, name))
                 tangent_values = ("in_angle", "out_angle", "in_weight", "out_weight")
                 present_values = [value_name in key for value_name in tangent_values]
                 if any(present_values) and not all(present_values):
@@ -482,6 +484,8 @@ def apply(
                         continue
                     if "enum_label" in key:
                         pose_io._enum_index(plug, key["enum_label"])
+                    else:
+                        pose_io._enum_label(plug, key["value"])
             operations.append((plug, channel, address))
 
     end_time = start_time + data["duration"]

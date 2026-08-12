@@ -83,6 +83,7 @@ Skinned Mesh Combineは実行時のjoint・mesh評価姿勢を新しいskinClust
 - GUIではtime sliderの複数frame highlightを優先し、未選択・standaloneではplayback rangeへfallback
 - enum animationは表示ラベルで別リグのindexへ再解決（旧数値Clipも読込可能）
 - 適用対象enum labelは全件planning時に解決し、欠落時はkey編集前拒否
+- 旧数値enum keyも整数かつtarget enum定義内のindexだけを許可
 - 保存元と適用先のtime unit不一致を検出し、retimeせず警告
 - Pose/Clipのlinear/angle unit不一致も検出し、値変換せず警告
 - Maya objectSet を正本とする Selection Sets と portable JSON

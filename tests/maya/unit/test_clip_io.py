@@ -321,6 +321,29 @@ class ClipIoTests(TestCase):
             cmds.keyframe(target, attribute="space", query=True, valueChange=True),
         )
 
+    def test_invalid_legacy_enum_index_rejects_before_edit(self):
+        """旧数値enumも整数かつtarget定義内に限定する。"""
+        source = self._control("source")
+        cmds.addAttr(source, longName="space", attributeType="enum", enumName="World:Chest", keyable=True)
+        cmds.setKeyframe(source, attribute="space", time=1, value=1)
+        data = clip_io.capture([source], start=1, end=1)
+        key = data["controls"][0]["channels"][0]["keys"][0]
+        del key["enum_label"]
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.addAttr(target, longName="space", attributeType="enum", enumName="World:Chest", keyable=True)
+
+        fractional = copy.deepcopy(data)
+        fractional["controls"][0]["channels"][0]["keys"][0]["value"] = 1.5
+        with self.assertRaises(ValueError):
+            clip_io.apply(fractional, nodes=[target], start_time=10)
+
+        key["value"] = 99.0
+        with self.assertRaises(ValueError):
+            clip_io.apply(data, nodes=[target], start_time=10)
+
+        self.assertFalse(cmds.keyframe(target, attribute="space", query=True))
+
     def test_fixed_weighted_tangents_round_trip(self):
         source = self._control("source")
         plug = source + ".translateX"
