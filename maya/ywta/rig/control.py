@@ -147,6 +147,7 @@ def export_shape_to_library(controls, name, overwrite=False, directory=CONTROLS_
     if os.path.exists(target) and not overwrite:
         raise ValueError("Control library entryが既に存在します: {}".format(name.strip()))
 
+    controls = [controls] if isinstance(controls, str) else controls
     data = []
     seen = set()
     for control in controls or []:
@@ -263,6 +264,8 @@ def get_curve_data(controls=None):
     """
     if controls is None:
         controls = cmds.ls(sl=True)
+    elif isinstance(controls, str):
+        controls = [controls]
     data = []
     seen = set()
     for control in controls or []:
@@ -867,6 +870,8 @@ def select_control_cvs(transforms=None):
     """
     if transforms is None:
         transforms = cmds.ls(selection=True, long=True, type="transform") or []
+    elif isinstance(transforms, str):
+        transforms = [transforms]
 
     components = []
     seen = set()
@@ -915,6 +920,8 @@ def set_control_color(rgb, transforms=None):
 
     if transforms is None:
         transforms = cmds.ls(selection=True, long=True, type="transform") or []
+    elif isinstance(transforms, str):
+        transforms = [transforms]
     shapes = []
     seen = set()
     for transform in transforms or []:
@@ -975,6 +982,8 @@ def combine_control_shapes(transforms=None):
     """
     if transforms is None:
         transforms = cmds.ls(selection=True, long=True, type="transform") or []
+    elif isinstance(transforms, str):
+        transforms = [transforms]
 
     resolved = []
     seen = set()
@@ -1076,6 +1085,8 @@ def swap_curve_shapes(transforms, curves):
     """
     if not curves or not all(isinstance(curve, CurveShape) and curve.cvs for curve in curves):
         raise ValueError("有効なCurveShapeを1つ以上指定してください。")
+    if isinstance(transforms, str):
+        transforms = [transforms]
     resolved = []
     plans = []
     seen = set()

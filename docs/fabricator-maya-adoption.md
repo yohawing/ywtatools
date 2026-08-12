@@ -221,6 +221,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - 最後の選択へworld形状を維持してcurveを結合（他のsource transformは削除）
 - Control Combineは子transformを持つsource・参照nodeを編集前拒否し、単一Undo / 失敗rollback
 - Control CreatorのRGB色変更を複数shapeへ適用し、単一Undo / 失敗rollback
+- Control shape編集/保存APIは単一control文字列とcontrol列の両方に対応
 - Edit CVs / Combine / Set ColorはControl Creatorウィンドウから直接実行可能
 - 複数shape controlを1つのtransformとして原子的JSON保存・再作成
 - 外部Control JSONの全curve schema / CV / knot / colorを作成前検証

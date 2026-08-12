@@ -152,6 +152,19 @@ class ControlSwapTests(TestCase):
 
         self.assertFalse(cmds.getAttr(shape + ".overrideEnabled"))
 
+    def test_shape_edit_apis_accept_single_control_string(self):
+        """色変更・CV選択・shape swapで単一文字列を1nodeとして扱う。"""
+        target = cmds.circle(name="single_ctrl", sections=4)[0]
+        curve = self._line([(0, 0, 0), (2, 0, 0)])
+
+        shapes = control.set_control_color((0.1, 0.2, 0.3), target)
+        components = control.select_control_cvs(target)
+        result = control.swap_curve_shapes(target, [curve])
+
+        self.assertEqual(1, len(shapes))
+        self.assertTrue(components)
+        self.assertEqual(["|single_ctrl"], result)
+
     def test_multi_shape_control_library_round_trip(self):
         """複数shapeを1つのtransformとしてJSON保存・新規作成する。"""
         target = cmds.circle(name="multi_ctrl", sections=4)[0]
@@ -264,6 +277,16 @@ class ControlSwapTests(TestCase):
             for actual_point, expected_point in zip(actual, expected_points):
                 for actual_value, expected_value in zip(actual_point, expected_point):
                     self.assertAlmostEqual(expected_value, actual_value)
+
+    def test_library_save_accepts_single_control_string(self):
+        """単一control文字列を文字単位に分解せずlibraryへ保存する。"""
+        target = cmds.circle(name="single_ctrl")[0]
+        directory = os.path.dirname(self.get_temp_filename("library_marker.tmp"))
+
+        path = control.export_shape_to_library(target, "single", directory=directory)
+
+        self.assertTrue(os.path.isfile(path))
+        self.assertEqual(1, len(control.get_curve_data(target)))
 
     def test_library_save_requires_explicit_overwrite(self):
         """既存entryを明示許可なしに置換しない。"""
