@@ -109,6 +109,19 @@ class SkinWeightsTests(TestCase):
 
         self.assertEqual(before, self._weights(self.vertices[3]))
 
+    def test_missing_explicit_clipboard_does_not_use_stale_memory(self):
+        """明示した欠落ファイルをprocess内clipboardで代用しない。"""
+        skin_weights._CLIPBOARD = skin_weights.capture_vertex_weights(self.vertices[0])
+        before = self._weights(self.vertices[3])
+
+        with self.assertRaises(ValueError):
+            skin_weights.paste_vertex_weights(
+                [self.vertices[3]],
+                clipboard_file=self.get_temp_filename("missing_clipboard.json"),
+            )
+
+        self.assertEqual(before, self._weights(self.vertices[3]))
+
     def test_disk_clipboard_wins_over_stale_process_cache(self):
         path = self.get_temp_filename("shared_weight_clipboard.json")
         stale = skin_weights.capture_vertex_weights(self.vertices[0])
