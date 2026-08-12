@@ -90,3 +90,26 @@ class ConstraintToolsTests(TestCase):
             aim_vector=(0, 1, 0),
             up_vector=(0, 0, 1),
         )
+
+    def test_invalid_aim_axes_reject_before_constraint_creation(self):
+        """ゼロ長と平行なAim/UpベクトルをMayaへ渡さない。"""
+        driver = cmds.spaceLocator(name="driver")[0]
+        driven = cmds.spaceLocator(name="driven")[0]
+
+        with self.assertRaises(ValueError):
+            constraint_tools.create_constraint(
+                "aim",
+                [driver],
+                driven,
+                aim_vector=(0, 0, 0),
+            )
+        with self.assertRaises(ValueError):
+            constraint_tools.create_constraint(
+                "aim",
+                [driver],
+                driven,
+                aim_vector=(1, 0, 0),
+                up_vector=(-2, 0, 0),
+            )
+
+        self.assertEqual([], cmds.ls(type="aimConstraint"))

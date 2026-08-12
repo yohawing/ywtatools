@@ -46,6 +46,24 @@ def _validate_vector(value, label):
     return tuple(float(component) for component in value)
 
 
+def _validate_aim_axes(aim_vector, up_vector):
+    """Aim/Upが非ゼロかつ非平行であることを検証する。"""
+    aim = _validate_vector(aim_vector, "aim_vector")
+    up = _validate_vector(up_vector, "up_vector")
+    if sum(value * value for value in aim) <= 1.0e-12:
+        raise ValueError("aim_vectorは非ゼロにしてください。")
+    if sum(value * value for value in up) <= 1.0e-12:
+        raise ValueError("up_vectorは非ゼロにしてください。")
+    cross = (
+        aim[1] * up[2] - aim[2] * up[1],
+        aim[2] * up[0] - aim[0] * up[2],
+        aim[0] * up[1] - aim[1] * up[0],
+    )
+    if sum(value * value for value in cross) <= 1.0e-12:
+        raise ValueError("aim_vectorとup_vectorは非平行にしてください。")
+    return aim, up
+
+
 def create_constraint(
     kind,
     drivers,
@@ -101,11 +119,12 @@ def create_constraint(
 
     options = {"maintainOffset": maintain_offset}
     if kind == "aim":
+        aim_vector, up_vector = _validate_aim_axes(aim_vector, up_vector)
         options.update(
-            aimVector=_validate_vector(aim_vector, "aim_vector"),
-            upVector=_validate_vector(up_vector, "up_vector"),
+            aimVector=aim_vector,
+            upVector=up_vector,
             worldUpType="vector",
-            worldUpVector=_validate_vector(up_vector, "up_vector"),
+            worldUpVector=up_vector,
         )
 
     selection = cmds.ls(selection=True, long=True) or []
