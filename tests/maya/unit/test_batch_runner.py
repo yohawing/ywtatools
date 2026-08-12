@@ -1,7 +1,10 @@
 """Batch Runner の Maya subprocess 統合テスト。"""
 
+import io
+import json
 import os
 import sys
+from unittest import mock
 
 import maya.cmds as cmds
 
@@ -83,3 +86,41 @@ cmds.setAttr('asset.completed', True)
             os.path.normcase(os.path.abspath(first)),
             os.path.normcase(results[0]["scene"]),
         )
+
+    def test_malformed_child_report_becomes_error_and_batch_continues(self):
+        first = self._scene("first")
+        second = self._scene("second")
+        launches = {"count": 0}
+
+        class FakeProcess:
+            """reportだけを生成する即時終了process。"""
+
+            def __init__(self, arguments, **_kwargs):
+                self.stdout = io.StringIO("")
+                self.returncode = 0
+                report_path = arguments[3]
+                launches["count"] += 1
+                with open(report_path, "w", encoding="utf-8") as handle:
+                    if launches["count"] == 1:
+                        handle.write("{broken")
+                    else:
+                        json.dump(
+                            {
+                                "scene": arguments[2],
+                                "status": "ok",
+                                "stages": ["opened"],
+                            },
+                            handle,
+                        )
+
+            def poll(self):
+                return self.returncode
+
+        with mock.patch.object(batch_runner.subprocess, "Popen", FakeProcess):
+            results = batch_runner.run_batch(
+                [first, second],
+                mayapy_path=sys.executable,
+            )
+
+        self.assertEqual(["error", "ok"], [item["report"]["status"] for item in results])
+        self.assertIn("読み込めません", results[0]["report"]["error"])

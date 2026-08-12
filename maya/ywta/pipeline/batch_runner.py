@@ -122,6 +122,39 @@ def _write_payload(path, payload):
         handle.write("\n")
 
 
+def _read_report(path, scene):
+    """child reportを検証し、破損時もscene単位のerrorへ変換する。"""
+    if not os.path.isfile(path):
+        return {
+            "scene": scene,
+            "status": "error",
+            "error": "child report がありません。",
+            "stages": [],
+        }
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            report = json.load(handle)
+    except (OSError, TypeError, ValueError) as error:
+        return {
+            "scene": scene,
+            "status": "error",
+            "error": "child report を読み込めません: {}".format(error),
+            "stages": [],
+        }
+    if (
+        not isinstance(report, dict)
+        or report.get("status") not in {"ok", "error"}
+        or not isinstance(report.get("stages"), list)
+    ):
+        return {
+            "scene": scene,
+            "status": "error",
+            "error": "child report の形式が不正です。",
+            "stages": [],
+        }
+    return report
+
+
 def run_batch(
     scenes,
     script="",
@@ -189,17 +222,7 @@ def run_batch(
                 time.sleep(0.05)
             reader.join(timeout=2.0)
             _drain_output(output_queue, logs, on_log)
-            report = None
-            if os.path.isfile(report_path):
-                with open(report_path, "r", encoding="utf-8") as handle:
-                    report = json.load(handle)
-            if report is None:
-                report = {
-                    "scene": scene,
-                    "status": "error",
-                    "error": "child report がありません。",
-                    "stages": [],
-                }
+            report = _read_report(report_path, scene)
             result = {
                 "scene": scene,
                 "returncode": process.returncode,
