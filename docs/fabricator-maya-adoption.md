@@ -230,6 +230,8 @@ Undo の共通 contract が完成するまで追加しません。
 - skinCluster接続を切断するDisconnect/Reconnect All Skins
 - Scene Audit の自動修復
 - thumbnail 付き Pose / Animation library UI
+- Joint Offset / Spread のlive slider（axisのlocal/world契約と分岐hierarchyの評価順が未定義）
+- Paint on Select の常駐selection callback（scene-wide scriptJobとtool context状態の設計が必要）
 
 これらは既存 YWTA の rig、HumanIK、mesh-core、依存制約との設計統合が必要で、
 単純移植の対象にはしません。
