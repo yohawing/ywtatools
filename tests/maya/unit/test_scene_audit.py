@@ -72,6 +72,33 @@ class SceneAuditTests(TestCase):
         self.assertIn(".f[", selected[0])
         self.assertEqual(selected, cmds.ls(selection=True, flatten=True, long=True))
 
+    def test_empty_categories_selects_no_mesh_components(self):
+        """明示した空カテゴリを全カテゴリへ読み替えない。"""
+        shape = self._create_lamina_mesh()
+        report = {
+            "duplicate_short_names": [],
+            "meshes": [scene_audit.audit_mesh(shape)],
+        }
+
+        selected = scene_audit.select_issues(
+            report,
+            categories=[],
+            include_duplicate_names=False,
+        )
+
+        self.assertEqual([], selected)
+        self.assertFalse(cmds.ls(selection=True))
+
+    def test_invalid_report_is_rejected_before_selection_change(self):
+        """壊れたreportで現在selectionをclearしない。"""
+        sentinel = cmds.spaceLocator(name="sentinel")[0]
+        cmds.select(sentinel, replace=True)
+
+        with self.assertRaises(ValueError):
+            scene_audit.select_issues([])
+
+        self.assertEqual([sentinel], cmds.ls(selection=True))
+
     def test_audit_scene_summary_counts_components(self):
         self._create_lamina_mesh()
 

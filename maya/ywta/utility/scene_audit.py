@@ -83,7 +83,9 @@ def audit_scene():
 
 def issue_nodes(report, categories=None, include_duplicate_names=True):
     """report から選択対象の node/component を順序保持して取り出す。"""
-    categories = tuple(categories or ISSUE_CATEGORIES)
+    if not isinstance(report, dict):
+        raise ValueError("Scene Audit reportが不正です。")
+    categories = ISSUE_CATEGORIES if categories is None else tuple(categories)
     unknown = set(categories) - set(ISSUE_CATEGORIES)
     if unknown:
         raise ValueError("未対応の issue category です: {}".format(", ".join(sorted(unknown))))
@@ -105,7 +107,7 @@ def issue_nodes(report, categories=None, include_duplicate_names=True):
 
 def select_issues(report=None, categories=None, include_duplicate_names=True):
     """監査結果に含まれる問題箇所を Maya selection に設定する。"""
-    report = report or _LAST_REPORT
+    report = _LAST_REPORT if report is None else report
     if report is None:
         report = audit_scene()
     nodes = issue_nodes(report, categories, include_duplicate_names)
