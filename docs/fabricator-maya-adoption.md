@@ -46,6 +46,7 @@ Fabricator 本体は Business Source License 1.1、YWTA は MIT License です�
 - 元meshを残し、shellごとの元vertex/face index mappingで分割するSkinned Mesh Separate
 - Separateは同位置頂点を位置照合せず、UV / normal / color set / material / weightをsubset転送
 - Separateはsource input geometryとbindPreMatrixを継承し、animation中も同じskin変形を維持
+- skinCluster後段でtopologyが変わったmeshはinput/output fingerprint不一致として編集前拒否
 
 Skin JSON は geometry と weight を含むため、大きいメッシュではファイルサイズも
 大きくなります。Direct load は fingerprint が一致するメッシュだけに使用し、

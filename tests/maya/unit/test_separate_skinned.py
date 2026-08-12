@@ -136,3 +136,13 @@ class SeparateSkinnedTests(TestCase):
             separate_skinned.separate(mesh)
 
         self.assertFalse(cmds.objExists("single_shell01"))
+
+    def test_post_skin_topology_change_rejects_before_edit(self):
+        """skinCluster後段のtopology変更を元index mappingで推測しない。"""
+        source, _left, _right, _shading_groups = self._source()
+        cmds.polyTriangulate(source, constructionHistory=True)
+
+        with self.assertRaises(ValueError):
+            separate_skinned.separate(source)
+
+        self.assertFalse(cmds.objExists("body_shell01"))

@@ -215,6 +215,8 @@ def separate(mesh, base_name=None):
     output_index = skin_function.indexForOutputShape(skin_io._depend_node(shape))
     input_function = om.MFnMesh(skin_function.inputShapeAtIndex(output_index))
     output_function = om.MFnMesh(skin_io._dag_path(shape))
+    if skin_io._topology(input_function) != skin_io._topology(output_function):
+        raise ValueError("skinCluster inputとoutputのtopologyが一致しないため分割できません。")
     plans, source_face_counts = _shell_plans(input_function)
     if len(plans) < 2:
         raise ValueError("meshは1 shellだけのため分割できません: {}".format(source))
