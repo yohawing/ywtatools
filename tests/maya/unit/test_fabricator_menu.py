@@ -48,6 +48,7 @@ class FabricatorMenuTests(TestCase):
                 "Poly Cylinder",
                 "Poly Plane",
                 "Constraints",
+                "Create Constraint...",
                 "Parent Constraint",
                 "Point Constraint",
                 "Orient Constraint",

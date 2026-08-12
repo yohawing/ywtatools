@@ -146,6 +146,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 
 - driversを先、drivenを最後に選ぶParent / Point / Orient / Scale / Aim constraint
 - maintain offset対応のPython APIと、明示したlocal aim/up軸によるAim
+- `Create Constraint...`から種別、Maintain Offset、local Aim / Upベクトルを指定
 - 参照node、重複driver、locked・接続済みdriven channelを編集前拒否
 - 選択transformへ入るconstraintだけを削除するDelete Constraints
 - 作成・削除とも選択を維持し、単一Undo / 失敗rollback

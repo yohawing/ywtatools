@@ -1,5 +1,7 @@
 """選択順constraintツールのMaya単体テスト。"""
 
+from unittest import mock
+
 import maya.cmds as cmds
 
 from ywta.rig import constraint_tools
@@ -64,3 +66,27 @@ class ConstraintToolsTests(TestCase):
         self.assertEqual([driven, sentinel], cmds.ls(selection=True))
         cmds.undo()
         self.assertTrue(cmds.objExists(constraint))
+
+    def test_selected_entry_forwards_aim_options(self):
+        """Options UIが指定するAim/Up軸を共通coreへ渡す。"""
+        driver = cmds.spaceLocator(name="driver")[0]
+        driven = cmds.spaceLocator(name="driven")[0]
+        cmds.select(driver, driven, replace=True)
+
+        with mock.patch.object(constraint_tools, "create_constraint", return_value="aimConstraint1") as create:
+            result = constraint_tools.create_selected(
+                "aim",
+                maintain_offset=False,
+                aim_vector=(0, 1, 0),
+                up_vector=(0, 0, 1),
+            )
+
+        self.assertEqual("aimConstraint1", result)
+        create.assert_called_once_with(
+            "aim",
+            ["|driver"],
+            "|driven",
+            maintain_offset=False,
+            aim_vector=(0, 1, 0),
+            up_vector=(0, 0, 1),
+        )

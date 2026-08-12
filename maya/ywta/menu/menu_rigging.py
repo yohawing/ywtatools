@@ -88,6 +88,13 @@ def create_rigging_menu(parent_menu):
         label="Constraints",
         annotation="driversを先、drivenを最後に選択してconstraintを作成します",
     )
+    cmds.menuItem(
+        parent=constraint_menu,
+        label="Create Constraint...",
+        command="import ywta.rig.constraint_tools as constraints; constraints.show_options()",
+        annotation="種別、Maintain Offset、Aim/Up軸を指定します",
+    )
+    cmds.menuItem(parent=constraint_menu, divider=True)
     for label, kind in (
         ("Parent Constraint", "parent"),
         ("Point Constraint", "point"),

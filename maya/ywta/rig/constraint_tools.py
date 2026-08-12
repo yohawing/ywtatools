@@ -129,7 +129,12 @@ def create_constraint(
     return constraint
 
 
-def create_selected(kind, maintain_offset=True):
+def create_selected(
+    kind,
+    maintain_offset=True,
+    aim_vector=(1.0, 0.0, 0.0),
+    up_vector=(0.0, 1.0, 0.0),
+):
     """選択順の最後をdriven、それ以前をdriversとして作成する。"""
     selected = []
     seen = set()
@@ -142,7 +147,56 @@ def create_selected(kind, maintain_offset=True):
             selected.append(node)
     if len(selected) < 2:
         raise ValueError("driverを先、drivenを最後に2つ以上選択してください。")
-    return create_constraint(kind, selected[:-1], selected[-1], maintain_offset=maintain_offset)
+    return create_constraint(
+        kind,
+        selected[:-1],
+        selected[-1],
+        maintain_offset=maintain_offset,
+        aim_vector=aim_vector,
+        up_vector=up_vector,
+    )
+
+
+def show_options():
+    """constraint種別、offset、Aim/Up軸を指定するMaya UIを表示する。"""
+    window = "ywtaConstraintOptionsWindow"
+    if cmds.window(window, exists=True):
+        cmds.deleteUI(window)
+    cmds.window(window, title="YWTA Constraint Options", sizeable=False)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=8, width=340)
+    kind_field = cmds.optionMenuGrp(label="Type")
+    for label in ("Parent", "Point", "Orient", "Scale", "Aim"):
+        cmds.menuItem(label=label)
+    offset_field = cmds.checkBox(label="Maintain Offset", value=True)
+    aim_field = cmds.floatFieldGrp(
+        label="Local Aim",
+        numberOfFields=3,
+        value1=1.0,
+        value2=0.0,
+        value3=0.0,
+    )
+    up_field = cmds.floatFieldGrp(
+        label="Local Up",
+        numberOfFields=3,
+        value1=0.0,
+        value2=1.0,
+        value3=0.0,
+    )
+
+    def vector(field):
+        return tuple(cmds.floatFieldGrp(field, query=True, **{"value{}".format(index): True}) for index in range(1, 4))
+
+    def run(*_args):
+        return create_selected(
+            cmds.optionMenuGrp(kind_field, query=True, value=True).lower(),
+            maintain_offset=cmds.checkBox(offset_field, query=True, value=True),
+            aim_vector=vector(aim_field),
+            up_vector=vector(up_field),
+        )
+
+    cmds.button(label="Create from Selection", command=run)
+    cmds.showWindow(window)
+    return window
 
 
 def delete_constraints(nodes=None):
