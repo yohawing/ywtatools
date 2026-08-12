@@ -94,6 +94,7 @@ thumbnail capture、カテゴリ検索、mirrored pose はまだありません�
 
 - `L/R`、`Left/Right`、`lf/rt` side tokenをnamespaceを保って反転
 - hierarchy全体の予定名とscene衝突を編集前に拒否
+- mid-chain mirrorは反対側parentを一意に解決し、欠落時は誤parentを作らず拒否
 - Maya標準mirror behaviorを使ったworld YZ面の静的mirror
 - 親子構造を保持し、作成・rename・選択を単一Undo / Redoに集約
 

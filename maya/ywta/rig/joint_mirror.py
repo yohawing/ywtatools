@@ -72,7 +72,20 @@ def plan(root):
     for target in targets:
         if cmds.ls(target, long=True):
             raise ValueError("mirror先jointが既に存在します: {}".format(target))
-    return {"root": root, "sources": sources, "targets": targets}
+    parents = cmds.listRelatives(root, parent=True, fullPath=True, type="joint") or []
+    target_parent = None
+    if parents:
+        parent_name = mirrored_name(parents[0])
+        matches = cmds.ls(parent_name, long=True, type="joint") or []
+        if len(matches) != 1:
+            raise ValueError("mirror先parent jointを一意に解決できません: {}".format(parent_name))
+        target_parent = matches[0]
+    return {
+        "root": root,
+        "sources": sources,
+        "targets": targets,
+        "target_parent": target_parent,
+    }
 
 
 def _resolve_uuid(node_uuid):
@@ -111,6 +124,11 @@ def mirror_hierarchy(root):
             renamed = cmds.rename(_resolve_uuid(node_uuid), target)
             if renamed.rsplit("|", 1)[-1] != target:
                 raise RuntimeError("mirror joint名が競合しました: {}".format(target))
+        if mirror_plan["target_parent"]:
+            cmds.parent(
+                _resolve_uuid(records[0][0]),
+                mirror_plan["target_parent"],
+            )
         result = [_resolve_uuid(node_uuid) for node_uuid, _target in records]
         cmds.select(result[0], replace=True)
     except Exception:

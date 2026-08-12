@@ -91,6 +91,32 @@ class JointMirrorTests(TestCase):
         self.assertTrue(cmds.objExists("L_arm_jnt"))
         self.assertFalse(cmds.objExists("R_arm_jnt"))
 
+    def test_mid_chain_root_is_parented_under_mirrored_parent(self):
+        cmds.select(clear=True)
+        left_parent = cmds.joint(name="L_shoulder_jnt", position=(1.0, 0.0, 0.0))
+        left_root = cmds.joint(name="L_arm_jnt", position=(2.0, 0.0, 0.0))
+        cmds.select(clear=True)
+        right_parent = cmds.joint(name="R_shoulder_jnt", position=(-1.0, 0.0, 0.0))
+
+        created = joint_mirror.mirror_hierarchy(left_root)
+
+        self.assertEqual(
+            cmds.ls(right_parent, long=True)[0],
+            cmds.listRelatives(created[0], parent=True, fullPath=True)[0],
+        )
+        self.assertTrue(cmds.objExists(left_parent))
+
+    def test_mid_chain_without_mirrored_parent_fails_before_edit(self):
+        cmds.select(clear=True)
+        cmds.joint(name="L_shoulder_jnt", position=(1.0, 0.0, 0.0))
+        left_root = cmds.joint(name="L_arm_jnt", position=(2.0, 0.0, 0.0))
+        before = cmds.ls(type="joint", long=True)
+
+        with self.assertRaises(ValueError):
+            joint_mirror.mirror_hierarchy(left_root)
+
+        self.assertEqual(before, cmds.ls(type="joint", long=True))
+
     def test_side_token_styles_round_trip(self):
         self.assertEqual("Right_hand", joint_mirror.mirrored_name("Left_hand"))
         self.assertEqual("arm_r_jnt", joint_mirror.mirrored_name("arm_l_jnt"))
