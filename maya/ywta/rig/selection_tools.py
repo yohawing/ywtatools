@@ -142,7 +142,7 @@ def snap_to_last(nodes=None):
     cmds.undoInfo(openChunk=True, chunkName="YWTA Snap A to B")
     failed = False
     try:
-        for source in sources:
+        for source in sorted(sources, key=lambda node: node.count("|")):
             source_pivot = cmds.xform(source, query=True, worldSpace=True, rotatePivot=True)
             delta = [target_pivot[index] - source_pivot[index] for index in range(3)]
             cmds.move(*delta, source, relative=True, worldSpace=True)

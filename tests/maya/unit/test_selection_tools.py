@@ -118,6 +118,28 @@ class SelectionToolsTests(TestCase):
 
         self.assertEqual(0.0, cmds.getAttr(first + ".translateX"))
 
+    def test_snap_parent_child_sources_are_order_independent(self):
+        """childが先に指定されてもparent移動でtargetから再び外さない。"""
+        parent = cmds.createNode("transform", name="parent")
+        child = cmds.createNode("transform", name="child", parent=parent)
+        target = cmds.createNode("transform", name="target")
+        cmds.setAttr(child + ".translateX", 2.0)
+        cmds.setAttr(target + ".translateX", 10.0)
+        before = {node: cmds.xform(node, query=True, worldSpace=True, rotatePivot=True) for node in (parent, child)}
+
+        result = selection_tools.snap_to_last([child, parent, target])
+
+        pivot = cmds.xform(target, query=True, worldSpace=True, rotatePivot=True)
+        self.assertEqual(["child", "parent"], [node.rsplit("|", 1)[-1] for node in result])
+        self.assertEqual(pivot, cmds.xform(parent, query=True, worldSpace=True, rotatePivot=True))
+        self.assertEqual(pivot, cmds.xform(child, query=True, worldSpace=True, rotatePivot=True))
+        cmds.undo()
+        for node in (parent, child):
+            self.assertEqual(
+                before[node],
+                cmds.xform(node, query=True, worldSpace=True, rotatePivot=True),
+            )
+
     def test_snap_rejects_referenced_source_and_non_transform(self):
         """参照sourceへのeditとshape入力を移動開始前に拒否する。"""
         referenced = cmds.createNode("transform", name="referenced")
