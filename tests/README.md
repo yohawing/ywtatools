@@ -32,6 +32,19 @@ python tests/run_tests.py
 
 ### Maya用テストの実行
 
+#### mayapy依存の準備（Windows PowerShell）
+
+Maya 2024同梱のPythonへ、リポジトリで許可している依存をインストールします。
+通常のPython環境ではなく、テストを実行する同じ`mayapy.exe`へ入れてください。
+
+```powershell
+& "C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe" -m pip install -r requirements.txt
+& "C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe" -c "import numpy, scipy, pyparsing; print(numpy.__version__)"
+```
+
+`numpy`がない場合、`test_blendshape.py`はテスト実行前のimportで失敗します。
+依存をインストールせずにその失敗をskip扱いにはしません。
+
 Maya環境でテストを実行するには、以下のいずれかの方法を使用します：
 
 1. Mayaの内部から実行：

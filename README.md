@@ -68,8 +68,8 @@ uvx nox -s blender_tests
 ## Dependency
 
 Pythonの依存モジュールはRequirements.txtに記載しています。Mayapyへのインストールは自己責任でおねがいします。
-```
-C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe -m pip install -r requirements.txt
+```powershell
+& "C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe" -m pip install -r requirements.txt
 ```
 # Blender用ツール
 Blender用のツールは、Blenderのアドオンとして実装されています。
