@@ -239,6 +239,8 @@ def _validate(data):
             elif attr_type in NUMERIC_TYPES:
                 if attr_type == "bool":
                     valid = isinstance(value, bool)
+                elif attr_type in INTEGER_TYPES:
+                    valid = isinstance(value, int) and not isinstance(value, bool)
                 else:
                     valid = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
                 if not valid:

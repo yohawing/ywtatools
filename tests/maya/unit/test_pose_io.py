@@ -179,6 +179,17 @@ class PoseIoTests(TestCase):
         with self.assertRaises(ValueError):
             pose_io.apply(data)
 
+    def test_fractional_integer_pose_value_fails_before_edit(self):
+        """外部Poseで整数attributeを暗黙丸めしない。"""
+        source = self._control("source")
+        cmds.addAttr(source, longName="modeIndex", attributeType="long", keyable=True)
+        data = pose_io.capture([source])
+        record = next(item for item in data["controls"][0]["attributes"] if item["name"] == "modeIndex")
+        record["value"] = 1.5
+
+        with self.assertRaises(ValueError):
+            pose_io.apply(data)
+
     def test_empty_portable_address_is_rejected(self):
         """prefixだけのPose addressをtarget missingとして扱わない。"""
         source = self._control("source")

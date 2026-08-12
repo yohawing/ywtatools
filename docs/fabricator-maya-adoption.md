@@ -79,6 +79,7 @@ Skinned Mesh Combineは実行時のjoint・mesh評価姿勢を新しいskinClust
 メニュー: `YWTA > Animation`
 
 - 選択 control の keyable scalar 属性を保存する Pose JSON
+- Pose/Clipのinteger・bool channelは小数や0/1外を暗黙丸めせず外部入力で拒否
 - playback range のanimation keys、tangent type、fixed angle/weightを保存するClip JSON
 - GUIではtime sliderの複数frame highlightを優先し、未選択・standaloneではplayback rangeへfallback
 - enum animationは表示ラベルで別リグのindexへ再解決（旧数値Clipも読込可能）

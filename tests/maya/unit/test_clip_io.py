@@ -344,6 +344,27 @@ class ClipIoTests(TestCase):
 
         self.assertFalse(cmds.keyframe(target, attribute="space", query=True))
 
+    def test_invalid_discrete_channel_values_reject_before_edit(self):
+        """integer/bool keyをMayaの暗黙丸めへ渡さない。"""
+        source = self._control("source")
+        cmds.addAttr(source, longName="modeIndex", attributeType="long", keyable=True)
+        cmds.addAttr(source, longName="enabled", attributeType="bool", keyable=True)
+        cmds.setKeyframe(source, attribute="modeIndex", time=1, value=1)
+        cmds.setKeyframe(source, attribute="enabled", time=1, value=1)
+        data = clip_io.capture([source], start=1, end=1)
+
+        fractional = copy.deepcopy(data)
+        integer_channel = next(item for item in fractional["controls"][0]["channels"] if item["name"] == "modeIndex")
+        integer_channel["keys"][0]["value"] = 1.5
+        with self.assertRaises(ValueError):
+            clip_io.apply(fractional, start_time=10)
+
+        invalid_bool = copy.deepcopy(data)
+        bool_channel = next(item for item in invalid_bool["controls"][0]["channels"] if item["name"] == "enabled")
+        bool_channel["keys"][0]["value"] = 2.0
+        with self.assertRaises(ValueError):
+            clip_io.apply(invalid_bool, start_time=10)
+
     def test_fixed_weighted_tangents_round_trip(self):
         source = self._control("source")
         plug = source + ".translateX"

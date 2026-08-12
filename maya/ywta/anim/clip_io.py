@@ -299,6 +299,10 @@ def _validate(data):
                 key_value = _finite_number(key.get("value"), "key value")
                 if attr_type == "enum" and not float(key_value).is_integer():
                     raise ValueError("enum key値は整数indexにしてください: {}.{}".format(address, name))
+                if attr_type in pose_io.INTEGER_TYPES and not float(key_value).is_integer():
+                    raise ValueError("整数channelのkey値は整数にしてください: {}.{}".format(address, name))
+                if attr_type == "bool" and key_value not in {0, 1}:
+                    raise ValueError("bool key値は0または1にしてください: {}.{}".format(address, name))
                 tangent_values = ("in_angle", "out_angle", "in_weight", "out_weight")
                 present_values = [value_name in key for value_name in tangent_values]
                 if any(present_values) and not all(present_values):
