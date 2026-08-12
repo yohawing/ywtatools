@@ -40,6 +40,8 @@ cmds.setAttr('asset.batchValue', 42)
         for scene in (first, second):
             cmds.file(scene, open=True, force=True)
             self.assertEqual(42, cmds.getAttr("asset.batchValue"))
+            leftovers = [name for name in os.listdir(os.path.dirname(scene)) if name.startswith(".ywta_batch_scene_")]
+            self.assertFalse(leftovers)
 
     def test_batch_continues_after_scene_failure(self):
         bad = self._scene("bad")

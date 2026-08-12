@@ -158,6 +158,18 @@ def _write_payload(path, payload):
         handle.write("\n")
 
 
+def _temporary_scene_path(scene):
+    """入力sceneと同じdirectory/typeの原子的保存用pathを確保する。"""
+    descriptor, path = tempfile.mkstemp(
+        prefix=".ywta_batch_scene_",
+        suffix=Path(scene).suffix,
+        dir=os.path.dirname(scene),
+    )
+    os.close(descriptor)
+    os.remove(path)
+    return path
+
+
 def _read_report(path, scene):
     """child reportを検証し、破損時もscene単位のerrorへ変換する。"""
     if not os.path.isfile(path):
@@ -233,9 +245,10 @@ def run_batch(
                 break
             payload_path = os.path.join(temporary, "payload_{}.json".format(index))
             report_path = os.path.join(temporary, "report_{}.json".format(index))
+            temporary_scene = _temporary_scene_path(scene) if save else None
             _write_payload(
                 payload_path,
-                {"scene": scene, "script": script, "save": save},
+                {"scene": scene, "script": script, "save": save, "temporary_scene": temporary_scene},
             )
             if on_log:
                 on_log("[batch] START {}".format(scene))
@@ -255,6 +268,8 @@ def run_batch(
                     env=environment,
                 )
             except OSError as error:
+                if temporary_scene and os.path.exists(temporary_scene):
+                    os.remove(temporary_scene)
                 report = {
                     "scene": scene,
                     "status": "error",
@@ -319,6 +334,8 @@ def run_batch(
                 "report": report,
                 "logs": logs,
             }
+            if temporary_scene and os.path.exists(temporary_scene):
+                os.remove(temporary_scene)
             results.append(result)
             if on_log:
                 on_log("[batch] RESULT {} {}".format(report.get("status", "error").upper(), scene))

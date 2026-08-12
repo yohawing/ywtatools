@@ -39,6 +39,7 @@ def run(payload_path, report_path):
     scene = payload["scene"]
     script = payload.get("script", "")
     save = payload.get("save", False)
+    temporary_scene = payload.get("temporary_scene")
     report = {"scene": scene, "status": "error", "stages": []}
     initialized = False
     try:
@@ -60,8 +61,19 @@ def run(payload_path, report_path):
             current_scene = cmds.file(query=True, sceneName=True)
             if os.path.normcase(os.path.abspath(current_scene)) != os.path.normcase(os.path.abspath(scene)):
                 raise RuntimeError("script実行後のscene pathが入力sceneと一致しません: {}".format(current_scene))
+            if (
+                not isinstance(temporary_scene, str)
+                or os.path.dirname(os.path.abspath(temporary_scene)) != os.path.dirname(os.path.abspath(scene))
+                or os.path.splitext(temporary_scene)[1].lower() != os.path.splitext(scene)[1].lower()
+            ):
+                raise RuntimeError("原子的保存用scene pathが不正です。")
             print("[batch] SAVE {}".format(scene), flush=True)
-            cmds.file(save=True, force=True)
+            cmds.file(rename=temporary_scene)
+            file_type = "mayaAscii" if os.path.splitext(scene)[1].lower() == ".ma" else "mayaBinary"
+            cmds.file(save=True, force=True, type=file_type)
+            if not os.path.isfile(temporary_scene) or os.path.getsize(temporary_scene) <= 0:
+                raise RuntimeError("一時sceneを保存できませんでした。")
+            os.replace(temporary_scene, scene)
             report["stages"].append("saved")
         report["status"] = "ok"
         print("[batch] OK {}".format(scene), flush=True)

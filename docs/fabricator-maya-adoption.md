@@ -264,6 +264,7 @@ Undo の共通 contract が完成するまで追加しません。
 - scene ごとに新しい `mayapy` subprocess を起動
 - headless Maya で任意 Python script を実行
 - 明示 checkbox を有効にした場合だけ scene を上書き保存
+- saveは同directory・同形式の一時sceneへ完了後に原子的置換し、元fileの部分書込みを防止
 - scriptがcurrent sceneをrename/openした場合は入力scene不一致としてrunner自身の保存を拒否
 - child stdout のライブ表示、scene 単位の結果、失敗後の継続
 - 全scene起動前のPython script構文検証
