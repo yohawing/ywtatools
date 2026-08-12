@@ -246,8 +246,34 @@ def delete_library_shapes(names, directory=CONTROLS_DIRECTORY):
     targets = [_validated_library_path(name, directory) for name in names]
     if len(set(os.path.normcase(target) for target in targets)) != len(targets):
         raise ValueError("同じControl library entryを複数回削除できません。")
+    originals = {}
     for target in targets:
-        os.remove(target)
+        with open(target, "rb") as handle:
+            originals[target] = handle.read()
+    removed = []
+    try:
+        for target in targets:
+            os.remove(target)
+            removed.append(target)
+    except Exception:
+        for target in removed:
+            handle = tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=directory,
+                prefix=".ywta_control_restore_",
+                suffix=".tmp",
+                delete=False,
+            )
+            temporary = handle.name
+            try:
+                with handle:
+                    handle.write(originals[target])
+                os.replace(temporary, target)
+            except Exception:
+                if os.path.exists(temporary):
+                    os.remove(temporary)
+                raise
+        raise
     return targets
 
 

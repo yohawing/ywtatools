@@ -242,6 +242,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - Library Saveは複数controlのworld形状を1 entryへbakeし、既存名の上書きを明示確認
 - Library RenameはJSON schemaを再検証して内部名も更新し、既存entryへの上書きを拒否
 - Library Deleteは確認後も名前・保存先・JSON schemaを再検証し、library外のfileを削除しない
+- 複数Library Deleteは後続OS削除失敗時に先行entryの元bytesを原子的復元
 - Build at Originはviewport選択を無視して選択library shapeをworld原点へ新規作成
 - Build at Selectionは選択object / component全体のworld bounds中心へlibrary shapeを新規作成
 - 事前検証と単一Undo / Redo

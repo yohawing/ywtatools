@@ -397,6 +397,30 @@ class ControlSwapTests(TestCase):
         self.assertTrue(os.path.exists(valid))
         self.assertTrue(os.path.exists(malformed))
 
+    def test_library_multi_delete_rolls_back_os_failure(self):
+        """後続remove失敗時に先行entryの元bytesを復元する。"""
+        first = cmds.circle(name="first")[0]
+        second = cmds.circle(name="second")[0]
+        directory = os.path.dirname(self.get_temp_filename("library_marker.tmp"))
+        first_path = control.export_shape_to_library([first], "first", directory=directory)
+        second_path = control.export_shape_to_library([second], "second", directory=directory)
+        with open(first_path, "rb") as handle:
+            first_bytes = handle.read()
+        original_remove = control.os.remove
+
+        def remove(path):
+            if path == second_path:
+                raise PermissionError("expected delete failure")
+            return original_remove(path)
+
+        with mock.patch.object(control.os, "remove", side_effect=remove):
+            with self.assertRaises(PermissionError):
+                control.delete_library_shapes(["first", "second"], directory=directory)
+
+        with open(first_path, "rb") as handle:
+            self.assertEqual(first_bytes, handle.read())
+        self.assertTrue(os.path.isfile(second_path))
+
     def test_multiple_library_files_build_as_distinct_controls(self):
         """同じ内部名を持つ複数entryも別transformとして1回で作成する。"""
         first = self._line([(0, 0, 0), (1, 0, 0)])
