@@ -120,6 +120,20 @@ class FbxExporterTests(TestCase):
 
         self.assertFalse(os.path.exists(path))
 
+    def test_mid_chain_animation_root_fails_before_file_write(self):
+        """joint chainの途中だけを完全なanimationとして出力しない。"""
+        cmds.select(clear=True)
+        root = cmds.joint(name="root_jnt")
+        child = cmds.joint(name="child_jnt", position=(1.0, 0.0, 0.0))
+        path = self.get_temp_filename("partial_animation.fbx")
+        cmds.select(root, replace=True)
+
+        with self.assertRaises(ValueError):
+            fbx_exporter.export_animation(child, path, start=1, end=10)
+
+        self.assertFalse(os.path.exists(path))
+        self.assertEqual([root], cmds.ls(selection=True))
+
     def test_missing_explicit_node_rejects_partial_export(self):
         """明示nodeの一部欠落を黙って無視しない。"""
         cube = cmds.polyCube(name="asset")[0]

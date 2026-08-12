@@ -199,6 +199,9 @@ def export_animation(root=None, file_path=None, start=None, end=None):
     roots = cmds.ls(root, type="joint", long=True) or []
     if len(roots) != 1:
         raise ValueError("root joint を一意に解決できません: {}".format(root))
+    joint_parents = cmds.listRelatives(roots[0], parent=True, fullPath=True, type="joint") or []
+    if joint_parents:
+        raise ValueError("animation export には最上位jointを指定してください: {}".format(roots[0]))
     if start is None:
         start = cmds.playbackOptions(query=True, minTime=True)
     if end is None:

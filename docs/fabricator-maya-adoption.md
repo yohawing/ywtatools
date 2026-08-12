@@ -247,6 +247,7 @@ Undo の共通 contract が完成するまで追加しません。
 - Autodesk FBX settings の push / pop と Maya selection の復元
 - 同じディレクトリの一時 FBX に出力し、成功時だけ出力先を置換
 - animation range の bake export
+- Animation FBXはjoint chain途中の選択を拒否し、最上位jointだけをrootとして許可
 - source skeleton の rename、duplicate、namespace 移動を行わない
 
 ## 意図的に未採用の範囲
