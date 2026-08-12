@@ -97,7 +97,7 @@ def is_control_address(address):
     if not isinstance(address, str):
         return False
     prefix, separator, value = address.partition(":")
-    return bool(separator and prefix in {"id", "name"} and value.strip())
+    return bool(separator and prefix in {"id", "name"} and value and value == value.strip())
 
 
 def set_pose_id(node, pose_id):

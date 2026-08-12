@@ -144,6 +144,8 @@ class PoseIoTests(TestCase):
         with self.assertRaises(ValueError):
             pose_io.apply(data)
 
+        self.assertFalse(pose_io.is_control_address("name: hand_ctrl "))
+
     def test_save_and_read_round_trip(self):
         source = self._control("source")
         cmds.setAttr(source + ".translateY", 6.0)
