@@ -78,7 +78,16 @@ def capture(root):
             visit(child, index)
 
     visit(root, None)
-    return {"format": FORMAT, "version": VERSION, "joints": joints}
+    return {
+        "format": FORMAT,
+        "version": VERSION,
+        "scene": {
+            "linear_unit": cmds.currentUnit(query=True, linear=True),
+            "angle_unit": cmds.currentUnit(query=True, angle=True),
+            "up_axis": cmds.upAxis(query=True, axis=True),
+        },
+        "joints": joints,
+    }
 
 
 def _finite_values(value, count, label):
@@ -96,6 +105,17 @@ def _validate(data):
         raise ValueError("YWTA Skeleton ファイルではありません。")
     if data.get("version") != VERSION:
         raise ValueError("未対応の Skeleton version です: {}".format(data.get("version")))
+    scene = data.get("scene")
+    if scene is not None and (
+        not isinstance(scene, dict)
+        or set(scene) != {"linear_unit", "angle_unit", "up_axis"}
+        or not isinstance(scene.get("linear_unit"), str)
+        or not scene["linear_unit"]
+        or not isinstance(scene.get("angle_unit"), str)
+        or not scene["angle_unit"]
+        or scene.get("up_axis") not in {"y", "z"}
+    ):
+        raise ValueError("scene conventionが不正です。")
     joints = data.get("joints")
     if not isinstance(joints, list) or not joints:
         raise ValueError("joints がありません。")
@@ -211,9 +231,27 @@ def _set_attributes(joint, attributes):
             cmds.setAttr("{}.{}".format(joint, attribute), attributes[attribute])
 
 
-def create(data, namespace=""):
+def _scene_convention_mismatches(data):
+    """保存元と現在sceneで異なるunit/up axis名を返す。"""
+    saved = data.get("scene")
+    if saved is None:
+        return []
+    current = {
+        "linear_unit": cmds.currentUnit(query=True, linear=True),
+        "angle_unit": cmds.currentUnit(query=True, angle=True),
+        "up_axis": cmds.upAxis(query=True, axis=True),
+    }
+    return [key for key in current if saved[key] != current[key]]
+
+
+def create(data, namespace="", allow_scene_mismatch=False):
     """検証済み hierarchy を衝突拒否・一括 Undo で作成する。"""
     data = _validate(data)
+    if not isinstance(allow_scene_mismatch, bool):
+        raise ValueError("allow_scene_mismatchはboolにしてください。")
+    mismatches = _scene_convention_mismatches(data)
+    if mismatches and not allow_scene_mismatch:
+        raise ValueError("Skeleton scene conventionが一致しません: {}".format(", ".join(mismatches)))
     prefix = _namespace_prefix(namespace)
     root_name = prefix + data["joints"][0]["name"]
     if cmds.objExists(":" + root_name):
@@ -247,9 +285,13 @@ def create(data, namespace=""):
     return created
 
 
-def load(file_path, namespace=""):
+def load(file_path, namespace="", allow_scene_mismatch=False):
     """Skeleton JSON を読み込み scene に作成する。"""
-    return create(read(file_path), namespace=namespace)
+    return create(
+        read(file_path),
+        namespace=namespace,
+        allow_scene_mismatch=allow_scene_mismatch,
+    )
 
 
 def save_selected():

@@ -93,3 +93,27 @@ class SkeletonIoTests(TestCase):
 
         self.assertEqual(skeleton_io.FORMAT, data["format"])
         self.assertEqual(["root_jnt", "spine_jnt"], [joint["name"] for joint in data["joints"]])
+        self.assertEqual(cmds.currentUnit(query=True, linear=True), data["scene"]["linear_unit"])
+        self.assertEqual(cmds.currentUnit(query=True, angle=True), data["scene"]["angle_unit"])
+        self.assertEqual(cmds.upAxis(query=True, axis=True), data["scene"]["up_axis"])
+
+    def test_scene_convention_mismatch_is_rejected_before_edit(self):
+        root, _child = self._skeleton()
+        data = skeleton_io.capture(root)
+        cmds.delete(root)
+        data["scene"]["linear_unit"] = "m" if cmds.currentUnit(query=True, linear=True) != "m" else "cm"
+
+        with self.assertRaises(ValueError):
+            skeleton_io.create(data)
+
+        self.assertFalse(cmds.ls(type="joint"))
+
+    def test_scene_convention_mismatch_can_be_explicitly_allowed(self):
+        root, _child = self._skeleton()
+        data = skeleton_io.capture(root)
+        cmds.delete(root)
+        data["scene"]["linear_unit"] = "m" if cmds.currentUnit(query=True, linear=True) != "m" else "cm"
+
+        created = skeleton_io.create(data, allow_scene_mismatch=True)
+
+        self.assertEqual(2, len(created))
