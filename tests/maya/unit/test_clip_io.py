@@ -273,6 +273,25 @@ class ClipIoTests(TestCase):
             cmds.keyframe(target, attribute="space", query=True, valueChange=True),
         )
 
+    def test_missing_enum_label_rejects_before_undo_or_key_edit(self):
+        """外部enum labelをmutation loopより前に解決する。"""
+        source = self._control("source")
+        cmds.addAttr(source, longName="space", attributeType="enum", enumName="World:Chest", keyable=True)
+        cmds.setKeyframe(source, attribute="space", time=1, value=1)
+        data = clip_io.capture([source], start=1, end=1)
+        data["controls"][0]["channels"][0]["keys"][0]["enum_label"] = "Missing"
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.addAttr(target, longName="space", attributeType="enum", enumName="World:Chest", keyable=True)
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            with self.assertRaises(ValueError):
+                clip_io.apply(data, nodes=[target], start_time=10)
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+        self.assertFalse(cmds.keyframe(target, attribute="space", query=True))
+
     def test_legacy_enum_keys_without_labels_use_numeric_values(self):
         source = self._control("source")
         cmds.addAttr(

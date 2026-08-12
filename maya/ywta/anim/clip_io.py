@@ -474,6 +474,14 @@ def apply(
             if incoming and not all(cmds.nodeType(source.split(".", 1)[0]).startswith("animCurve") for source in incoming):
                 skipped.append({"address": address, "attribute": attribute, "reason": "driven"})
                 continue
+            if channel["type"] == "enum":
+                for key in channel["keys"]:
+                    if key.get("synthetic_boundary") == "start" and not apply_start_anchor:
+                        continue
+                    if key.get("synthetic_boundary") == "end" and not apply_end_anchor:
+                        continue
+                    if "enum_label" in key:
+                        pose_io._enum_index(plug, key["enum_label"])
             operations.append((plug, channel, address))
 
     end_time = start_time + data["duration"]
