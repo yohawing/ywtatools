@@ -298,21 +298,28 @@ def _resolve_influences(saved):
     """保存済み influence を scene joint へ曖昧性なしで対応付ける。"""
     scene_joints = cmds.ls(type="joint", long=True) or []
     result = []
+    resolved_ids = set()
     missing = []
     for influence in saved:
         path = influence.get("path")
         if isinstance(path, str) and cmds.objExists(path) and cmds.nodeType(path) == "joint":
-            result.append(cmds.ls(path, long=True)[0])
-            continue
-        name = influence["name"]
-        exact = [joint for joint in scene_joints if joint.rsplit("|", 1)[-1] == name]
-        candidates = exact or [joint for joint in scene_joints if _base_name(joint) == _base_name(name)]
-        if len(candidates) == 1:
-            result.append(candidates[0])
-        elif len(candidates) > 1:
-            raise ValueError("influence 名が曖昧です: {}".format(name))
+            resolved = cmds.ls(path, long=True)[0]
         else:
-            missing.append(name)
+            name = influence["name"]
+            exact = [joint for joint in scene_joints if joint.rsplit("|", 1)[-1] == name]
+            candidates = exact or [joint for joint in scene_joints if _base_name(joint) == _base_name(name)]
+            if len(candidates) == 1:
+                resolved = candidates[0]
+            elif len(candidates) > 1:
+                raise ValueError("influence 名が曖昧です: {}".format(name))
+            else:
+                missing.append(name)
+                continue
+        node_uuid = (cmds.ls(resolved, uuid=True) or [None])[0]
+        if node_uuid in resolved_ids:
+            raise ValueError("複数の保存influenceが同じjointへ解決されました: {}".format(resolved))
+        resolved_ids.add(node_uuid)
+        result.append(resolved)
     if missing:
         raise ValueError("scene に influence がありません: {}".format(", ".join(missing)))
     return result

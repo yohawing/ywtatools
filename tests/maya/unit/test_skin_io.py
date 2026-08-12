@@ -216,6 +216,21 @@ class SkinIoTests(TestCase):
         with self.assertRaises(ValueError):
             skin_io.apply(self.mesh, data)
 
+    def test_duplicate_resolved_influence_is_rejected_before_edit(self):
+        """別レコードが同じscene jointへ解決されるJSONを拒否する。"""
+        data = copy.deepcopy(skin_io.capture(self.mesh))
+        first = data["influences"][0]
+        data["influences"][1] = {
+            "name": first["name"],
+            "path": "|missing_alias_joint",
+        }
+        before = skin_io.capture(self.mesh)["weights"]
+
+        with self.assertRaises(ValueError):
+            skin_io.apply(self.mesh, data)
+
+        self.assertEqual(before, skin_io.capture(self.mesh)["weights"])
+
     def test_transfer_to_different_topology_and_undo(self):
         data = skin_io.capture(self.mesh)
         target = cmds.polyPlane(name="retopo", subdivisionsX=2, subdivisionsY=1)[0]
