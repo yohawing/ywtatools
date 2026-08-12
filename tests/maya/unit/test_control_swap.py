@@ -65,6 +65,18 @@ class ControlSwapTests(TestCase):
         cmds.redo()
         self.assertEqual(2, len(cmds.listRelatives(target, shapes=True, type="nurbsCurve")))
 
+    def test_swap_preserves_unconnected_hidden_visibility(self):
+        """静的に非表示のshapeを差し替えても表示状態を変えない。"""
+        target = cmds.circle(name="hidden_ctrl", degree=1, sections=4)[0]
+        old_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
+        cmds.setAttr(old_shape + ".visibility", False)
+        curve = self._line([(0, 0, 0), (1, 0, 0)])
+
+        control.swap_curve_shapes([target], [curve])
+
+        new_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
+        self.assertFalse(cmds.getAttr(new_shape + ".visibility"))
+
     def test_invalid_target_fails_before_other_control_is_changed(self):
         target, old_shape, _driver = self._target()
         curve = self._line([(0, 0, 0), (1, 0, 0)])

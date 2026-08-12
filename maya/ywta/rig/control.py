@@ -508,6 +508,7 @@ def _shape_display_state(shape):
     if len(visibility_sources) > 1:
         raise RuntimeError("visibility入力を一意に解決できません: {}".format(shape))
     return {
+        "visibility": cmds.getAttr(shape + ".visibility"),
         "override_enabled": cmds.getAttr(shape + ".overrideEnabled"),
         "override_rgb": cmds.getAttr(shape + ".overrideRGBColors"),
         "override_color": cmds.getAttr(shape + ".overrideColor"),
@@ -519,6 +520,7 @@ def _shape_display_state(shape):
 
 def _apply_shape_display_state(shape, state):
     """保存済み表示状態を新しいcurve shapeへ適用する。"""
+    cmds.setAttr(shape + ".visibility", state["visibility"])
     cmds.setAttr(shape + ".overrideEnabled", state["override_enabled"])
     cmds.setAttr(shape + ".overrideRGBColors", state["override_rgb"])
     cmds.setAttr(shape + ".overrideColor", state["override_color"])
