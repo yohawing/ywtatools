@@ -1,6 +1,7 @@
 """Portable Selection Sets の Maya 単体テスト。"""
 
 import copy
+from unittest import mock
 
 import maya.cmds as cmds
 
@@ -93,6 +94,23 @@ class SelectionSetsTests(TestCase):
         self.assertTrue(cmds.objExists(node))
         cmds.redo()
         self.assertFalse(cmds.objExists(node))
+
+    def test_referenced_set_delete_rejects_before_edit(self):
+        """参照objectSetを削除してreference editを作らない。"""
+        hand = self._control("character", "hand_ctrl")
+        node = selection_sets.create_selection_set("Hands", [hand])
+        original_reference_query = selection_sets.cmds.referenceQuery
+
+        def reference_query(target, **kwargs):
+            if kwargs.get("isNodeReferenced") and target == node:
+                return True
+            return original_reference_query(target, **kwargs)
+
+        with mock.patch.object(selection_sets.cmds, "referenceQuery", side_effect=reference_query):
+            with self.assertRaises(ValueError):
+                selection_sets.delete_selection_set(node)
+
+        self.assertTrue(cmds.objExists(node))
 
     def test_sets_apply_across_namespace(self):
         source_hand = self._control("source", "hand_ctrl")
