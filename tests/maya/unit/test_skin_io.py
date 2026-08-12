@@ -1,6 +1,7 @@
 """Skin IO の Maya 単体テスト。"""
 
 import copy
+from unittest import mock
 
 import maya.cmds as cmds
 
@@ -12,6 +13,8 @@ class SkinIoTests(TestCase):
     """同一トポロジーの保存・復元 contract を検証する。"""
 
     def setUp(self):
+        if cmds.optionVar(exists=skin_io.SURFACE_ASSOCIATION_OPTION):
+            cmds.optionVar(remove=skin_io.SURFACE_ASSOCIATION_OPTION)
         self.mesh = cmds.polyPlane(name="cloth", subdivisionsX=1, subdivisionsY=1)[0]
         cmds.select(clear=True)
         self.joint_a = cmds.joint(name="root_jnt", position=(-1.0, 0.0, 0.0))
@@ -256,6 +259,40 @@ class SkinIoTests(TestCase):
         cmds.undo()
         target_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
         self.assertIsNone(skin_io._skin_cluster(target_shape))
+
+    def test_transfer_supports_closest_component(self):
+        """Maya標準closestComponent方式を公開APIから利用できる。"""
+        data = skin_io.capture(self.mesh)
+        target = cmds.polyPlane(name="retopo", subdivisionsX=2, subdivisionsY=1)[0]
+
+        cluster = skin_io.transfer(target, data, surface_association="closestComponent")
+
+        self.assertTrue(cmds.objExists(cluster))
+        self.assertEqual(6, len(skin_io.capture(target)["weights"]))
+
+    def test_transfer_settings_and_options_window(self):
+        """surface association設定を保存し、Options UIを構築できる。"""
+        self.assertEqual("closestPoint", skin_io.get_transfer_settings())
+        self.assertEqual("rayCast", skin_io.set_transfer_settings("rayCast"))
+        self.assertEqual("rayCast", skin_io.get_transfer_settings())
+        cmds.optionVar(stringValue=(skin_io.SURFACE_ASSOCIATION_OPTION, "invalid"))
+        self.assertEqual("closestPoint", skin_io.get_transfer_settings())
+        self.assertEqual("ywtaSkinTransferOptionsWindow", skin_io.show_transfer_options())
+
+    def test_selected_transfer_uses_saved_surface_association(self):
+        """メニュー入口が保存済み方式をload engineへ渡す。"""
+        path = self.get_temp_filename("configured_transfer.json")
+        skin_io.set_transfer_settings("rayCast")
+        cmds.select(self.mesh, replace=True)
+
+        with (
+            mock.patch.object(skin_io.cmds, "fileDialog2", return_value=[path]),
+            mock.patch.object(skin_io, "load_transfer", return_value="skinCluster") as load_transfer,
+        ):
+            result = skin_io.load_selected_transfer()
+
+        self.assertEqual("skinCluster", result)
+        load_transfer.assert_called_once_with("|" + self.mesh, path, surface_association="rayCast")
 
     def test_transfer_requires_saved_geometry_before_edit(self):
         data = skin_io.capture(self.mesh)

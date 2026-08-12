@@ -47,10 +47,16 @@ def create_deform_menu(parent_menu):
 
     cmds.menuItem(
         parent=deform_menu,
-        label="Transfer Skin Weights (Closest Point)",
+        label="Transfer Skin Weights (Configured)",
         command="import ywta.deform.skin_io as skin_io; skin_io.load_selected_transfer()",
         image="copySkinWeight.png",
-        annotation="保存sourceを再構築して異なるトポロジーへスキンウェイトを転送します",
+        annotation="保存sourceを再構築して設定済みsurface associationで転送します",
+    )
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Skin Transfer Options...",
+        command="import ywta.deform.skin_io as skin_io; skin_io.show_transfer_options()",
+        annotation="closestPoint / rayCast / closestComponentを設定します",
     )
 
     cmds.menuItem(parent=deform_menu, divider=True, dividerLabel="Temporary Skin Clipboard")
@@ -68,9 +74,9 @@ def create_deform_menu(parent_menu):
     )
     cmds.menuItem(
         parent=deform_menu,
-        label="Transfer Temporary Skin Weights",
+        label="Transfer Temporary Skin Weights (Configured)",
         command="import ywta.deform.skin_io as skin_io; skin_io.load_temp_selected(transfer_mode=True)",
-        annotation="一時JSONを異なるトポロジーの選択meshへclosest-point転送します",
+        annotation="一時JSONを異なるトポロジーの選択meshへ設定済み方式で転送します",
     )
 
     cmds.menuItem(parent=deform_menu, divider=True, dividerLabel="Vertex Weights")

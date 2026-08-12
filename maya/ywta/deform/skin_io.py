@@ -22,6 +22,26 @@ FORMAT = "ywta.skin_weights"
 VERSION = 1
 WEIGHT_EPSILON = 1.0e-8
 TEMP_SKIN_FILENAME = "ywta_temp_skin_weights.json"
+SURFACE_ASSOCIATION_OPTION = "ywtaSkinTransferSurfaceAssociation"
+SURFACE_ASSOCIATIONS = ("closestPoint", "rayCast", "closestComponent")
+
+
+def get_transfer_settings():
+    """optionVarから検証済みsurface associationを取得する。"""
+    value = (
+        cmds.optionVar(query=SURFACE_ASSOCIATION_OPTION)
+        if cmds.optionVar(exists=SURFACE_ASSOCIATION_OPTION)
+        else SURFACE_ASSOCIATIONS[0]
+    )
+    return value if value in SURFACE_ASSOCIATIONS else SURFACE_ASSOCIATIONS[0]
+
+
+def set_transfer_settings(surface_association):
+    """検証済みsurface associationをoptionVarへ保存する。"""
+    if surface_association not in SURFACE_ASSOCIATIONS:
+        raise ValueError("未対応の surface association です: {}".format(surface_association))
+    cmds.optionVar(stringValue=(SURFACE_ASSOCIATION_OPTION, surface_association))
+    return surface_association
 
 
 def _mesh_shape(mesh):
@@ -592,13 +612,13 @@ def save_temp(mesh, file_path=None):
     return save(mesh, file_path or temp_skin_path())
 
 
-def load_temp(mesh, file_path=None, transfer_mode=False):
-    """一時JSONをDirectまたはclosest-point Transferで適用する。"""
+def load_temp(mesh, file_path=None, transfer_mode=False, surface_association="closestPoint"):
+    """一時JSONをDirectまたは指定surface associationで適用する。"""
     if not isinstance(transfer_mode, bool):
         raise ValueError("transfer_modeはboolにしてください。")
     data = read(file_path or temp_skin_path())
     if transfer_mode:
-        return transfer(mesh, data)
+        return transfer(mesh, data, surface_association=surface_association)
     return apply(mesh, data)
 
 
@@ -634,7 +654,7 @@ def _ensure_transfer_convention(data):
 def transfer(mesh, data, surface_association="closestPoint"):
     """保存 source を再構築し、異なる topology の target へ weights を転送する。"""
     data = _validate_data(data)
-    if surface_association not in {"closestPoint", "rayCast", "closestComponent"}:
+    if surface_association not in SURFACE_ASSOCIATIONS:
         raise ValueError("未対応の surface association です: {}".format(surface_association))
     geometry = data["mesh"].get("geometry")
     if geometry is None:
@@ -764,16 +784,22 @@ def load_selected_subset():
     return load_subset(mesh, paths[0], indices)
 
 
-def load_temp_selected(transfer_mode=False):
+def load_temp_selected(transfer_mode=False, surface_association=None):
     """選択meshへMayaユーザー用の一時Skin IO JSONを適用する。"""
     selected = cmds.ls(selection=True, long=True) or []
     if len(selected) != 1:
         raise ValueError("一時ウェイトの適用先メッシュを1つ選択してください。")
-    return load_temp(selected[0], transfer_mode=transfer_mode)
+    if transfer_mode and surface_association is None:
+        surface_association = get_transfer_settings()
+    return load_temp(
+        selected[0],
+        transfer_mode=transfer_mode,
+        surface_association=surface_association or SURFACE_ASSOCIATIONS[0],
+    )
 
 
-def load_selected_transfer():
-    """選択メッシュへ closest-point でスキンウェイトを転送する。"""
+def load_selected_transfer(surface_association=None):
+    """選択メッシュへ設定済みsurface associationでウェイトを転送する。"""
     selected = cmds.ls(selection=True, long=True) or []
     if len(selected) != 1:
         raise ValueError("転送先メッシュを1つ選択してください。")
@@ -785,4 +811,35 @@ def load_selected_transfer():
     )
     if not paths:
         return None
-    return load_transfer(selected[0], paths[0])
+    return load_transfer(
+        selected[0],
+        paths[0],
+        surface_association=surface_association or get_transfer_settings(),
+    )
+
+
+def show_transfer_options():
+    """Skin Transferのsurface association設定UIを表示する。"""
+    window = "ywtaSkinTransferOptionsWindow"
+    if cmds.window(window, exists=True):
+        cmds.deleteUI(window)
+    cmds.window(window, title="YWTA Skin Transfer", sizeable=False)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=8, width=360)
+    association = cmds.optionMenuGrp(label="Surface Association")
+    for value in SURFACE_ASSOCIATIONS:
+        cmds.menuItem(label=value)
+    cmds.optionMenuGrp(association, edit=True, value=get_transfer_settings())
+
+    def configured_value():
+        return set_transfer_settings(cmds.optionMenuGrp(association, query=True, value=True))
+
+    def transfer_file(*_args):
+        return load_selected_transfer(surface_association=configured_value())
+
+    def transfer_temp(*_args):
+        return load_temp_selected(transfer_mode=True, surface_association=configured_value())
+
+    cmds.button(label="Transfer Skin Weights...", command=transfer_file)
+    cmds.button(label="Transfer Temporary Skin Weights", command=transfer_temp)
+    cmds.showWindow(window)
+    return window

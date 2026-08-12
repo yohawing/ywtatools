@@ -32,6 +32,7 @@ Fabricator 本体は Business Source License 1.1、YWTA は MIT License です�
 - 同一トポロジーJSONから選択頂点だけを1回Undoで部分復元
 - file dialogなしで再利用できるユーザー単位のTemporary Skin Clipboard
 - 保存した world-space source mesh を再構築する closest-point 転送
+- Transfer OptionsでclosestPoint / rayCast / closestComponentを選択し、厳密なname / oneToOne influence対応を維持
 - 複数skinned meshは頂点・face・influence indexをメモリ上でvirtual結合し、scene非編集で1 JSONへ保存
 - Transfer時は保存元と適用先のlinear unit / up axis不一致を編集前拒否
 - 頂点数だけでなく face connectivity の SHA-256 fingerprint を Direct load 時に検証
