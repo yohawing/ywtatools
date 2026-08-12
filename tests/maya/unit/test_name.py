@@ -73,6 +73,17 @@ class NameToolsTests(TestCase):
         self.assertTrue(cmds.objExists(first))
         self.assertTrue(cmds.objExists(second))
 
+    def test_duplicate_source_node_is_rejected_before_edit(self):
+        """同一nodeを複数回指定した曖昧なrenameを拒否する。"""
+        node = cmds.createNode("transform", name="original")
+
+        with self.assertRaises(ValueError):
+            name_tools.rename_nodes([node, node], ["first", "second"])
+
+        self.assertTrue(cmds.objExists("original"))
+        self.assertFalse(cmds.objExists("first"))
+        self.assertFalse(cmds.objExists("second"))
+
     def test_external_name_collision_rolls_back_batch(self):
         first = cmds.createNode("transform", name="first")
         second = cmds.createNode("transform", name="second")

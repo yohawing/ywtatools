@@ -81,8 +81,13 @@ def rename_nodes(nodes, names):
 
     records = []
     targets = set()
+    source_ids = set()
     for node, name in zip(long_nodes, names):
         _validate_leaf(name)
+        node_id = _node_uuid(node)
+        if node_id in source_ids:
+            raise ValueError("同じノードを重複して変更できません: {}".format(node))
+        source_ids.add(node_id)
         parent_id = _parent_identity(node)
         target = (parent_id, name)
         if target in targets:
@@ -90,7 +95,7 @@ def rename_nodes(nodes, names):
         targets.add(target)
         records.append(
             {
-                "uuid": _node_uuid(node),
+                "uuid": node_id,
                 "name": name,
                 "namespace": _split_leaf(node)[0],
             }
