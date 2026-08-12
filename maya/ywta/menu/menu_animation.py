@@ -18,7 +18,24 @@ def create_animation_menu(parent_menu):
     """
     animation_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=parent_menu, label="Animation")
 
-    # アニメーション関連のメニュー項目を追加
-    # 現在は空のメニューですが、将来的にはここにアニメーション関連の機能を追加します
+    cmds.menuItem(parent=animation_menu, divider=True, dividerLabel="Pose")
+    cmds.menuItem(
+        parent=animation_menu,
+        label="Save Selected Pose",
+        command="import ywta.anim.pose_io as pose_io; pose_io.save_selected()",
+        annotation="選択コントロールのポーズをnamespace可搬JSONへ保存します",
+    )
+    cmds.menuItem(
+        parent=animation_menu,
+        label="Load Pose",
+        command="import ywta.anim.pose_io as pose_io; pose_io.load_pose()",
+        annotation="ポーズをscene内の一意に一致するコントロールへ適用します",
+    )
+    cmds.menuItem(
+        parent=animation_menu,
+        label="Load Pose to Selected",
+        command="import ywta.anim.pose_io as pose_io; pose_io.load_pose(selected_only=True)",
+        annotation="ポーズを現在選択中のコントロールだけへ適用します",
+    )
 
     return animation_menu
