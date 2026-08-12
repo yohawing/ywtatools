@@ -46,6 +46,19 @@ class SelectionSetsTests(TestCase):
 
         self.assertEqual([node], selection_sets.list_selection_sets())
 
+    def test_validation_does_not_mutate_input_payload(self):
+        """label正規化は呼び出し元の辞書を書き換えない。"""
+        hand = self._control("character", "hand_ctrl")
+        node = selection_sets.create_selection_set("Hands", [hand])
+        data = selection_sets.capture([node])
+        data["sets"][0]["label"] = "  Hands  "
+        original = copy.deepcopy(data)
+
+        validated = selection_sets._validate(data)
+
+        self.assertEqual(original, data)
+        self.assertEqual("Hands", validated["sets"][0]["label"])
+
     def test_empty_portable_address_is_rejected_before_creation(self):
         """prefixだけのmember addressから空setを作成しない。"""
         hand = self._control("source", "hand_ctrl")

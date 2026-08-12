@@ -2,6 +2,7 @@
 
 from __future__ import absolute_import
 
+import copy
 import json
 import os
 import tempfile
@@ -142,6 +143,7 @@ def _validate(data):
     """外部 selection set JSON を scene 編集前に完全検証する。"""
     if not isinstance(data, dict) or data.get("format") != FORMAT:
         raise ValueError("YWTA Selection Sets ファイルではありません。")
+    data = copy.deepcopy(data)
     if data.get("version") != VERSION:
         raise ValueError("未対応の Selection Sets version です: {}".format(data.get("version")))
     entries = data.get("sets")
