@@ -39,6 +39,13 @@ def create_rigging_menu(parent_menu):
 
     cmds.menuItem(
         parent=rig_menu,
+        label="Mirror Joint Hierarchy (Static YZ)",
+        command="import ywta.rig.joint_mirror as joint_mirror; joint_mirror.mirror_selected_hierarchy()",
+        annotation="side tokenと衝突を事前検証して選択joint階層を静的mirrorします",
+    )
+
+    cmds.menuItem(
+        parent=rig_menu,
         label="Create Joint",
         command="import ywta.rig.create_joint as cj; cj.create_joint_from_selected_component()",
         image="joint.png",

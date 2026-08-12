@@ -87,6 +87,18 @@ thumbnail capture、カテゴリ検索、mirrored pose はまだありません�
 従来の `ywta.rig.skeleton.dump/load` API は互換性のため残していますが、メニューは
 安全な versioned 経路を使用します。
 
+### Static Joint Hierarchy Mirror
+
+メニュー: `YWTA > Rigging > Mirror Joint Hierarchy (Static YZ)`
+
+- `L/R`、`Left/Right`、`lf/rt` side tokenをnamespaceを保って反転
+- hierarchy全体の予定名とscene衝突を編集前に拒否
+- Maya標準mirror behaviorを使ったworld YZ面の静的mirror
+- 親子構造を保持し、作成・rename・選択を単一Undo / Redoに集約
+
+deprecatedなlive mirror networkは採用していません。既存rigのDG接続と競合せず、
+明示的に独立したjoint hierarchyを作る操作に限定しています。
+
 ### Control Shape Swap
 
 メニュー: `YWTA > Rigging > Swap Selected Control Shapes`
@@ -142,6 +154,7 @@ Undo の共通 contract が完成するまで追加しません。
 - AI bridge / assistant
 - Project Setup の engine template
 - Joint Aimer の viewport preview と mirror workflow
+- deprecated Smart Joint Mirror のlive DG network
 - skinned mesh の separate
 - Scene Audit の自動修復
 - thumbnail 付き Pose / Animation library UI
