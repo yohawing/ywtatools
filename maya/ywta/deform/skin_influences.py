@@ -84,6 +84,7 @@ def add_influences(meshes, influences, lock_weights=False):
 
     if not plans:
         return {"added": []}
+    original_selection = cmds.ls(selection=True, long=True, flatten=True) or []
     undo_utils.require_enabled("Add Skin Influences")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Add Skin Influences")
     failed = False
@@ -102,9 +103,15 @@ def add_influences(meshes, influences, lock_weights=False):
         failed = True
         raise
     finally:
-        cmds.undoInfo(closeChunk=True)
-        if failed:
-            cmds.undo()
+        try:
+            skin_io._restore_selection(original_selection)
+        except Exception:
+            failed = True
+            raise
+        finally:
+            cmds.undoInfo(closeChunk=True)
+            if failed:
+                cmds.undo()
     return {"added": added}
 
 
@@ -135,6 +142,7 @@ def remove_influences(meshes, influences, threshold=influence_cleanup.DEFAULT_TH
 
     if not plans:
         return {"removed": []}
+    original_selection = cmds.ls(selection=True, long=True, flatten=True) or []
     undo_utils.require_enabled("Remove Skin Influences")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Remove Skin Influences")
     failed = False
@@ -147,9 +155,15 @@ def remove_influences(meshes, influences, threshold=influence_cleanup.DEFAULT_TH
         failed = True
         raise
     finally:
-        cmds.undoInfo(closeChunk=True)
-        if failed:
-            cmds.undo()
+        try:
+            skin_io._restore_selection(original_selection)
+        except Exception:
+            failed = True
+            raise
+        finally:
+            cmds.undoInfo(closeChunk=True)
+            if failed:
+                cmds.undo()
     return {"removed": removed}
 
 

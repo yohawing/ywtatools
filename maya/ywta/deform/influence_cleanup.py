@@ -155,6 +155,7 @@ def remove_unused_influences(
 
     if not plans:
         return {"removed": [], "protected": protected}
+    original_selection = cmds.ls(selection=True, long=True, flatten=True) or []
     undo_utils.require_enabled("Remove Unused Influences")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Remove Unused Influences")
     failed = False
@@ -167,9 +168,15 @@ def remove_unused_influences(
         failed = True
         raise
     finally:
-        cmds.undoInfo(closeChunk=True)
-        if failed:
-            cmds.undo()
+        try:
+            skin_io._restore_selection(original_selection)
+        except Exception:
+            failed = True
+            raise
+        finally:
+            cmds.undoInfo(closeChunk=True)
+            if failed:
+                cmds.undo()
     return {"removed": removed, "protected": protected}
 
 

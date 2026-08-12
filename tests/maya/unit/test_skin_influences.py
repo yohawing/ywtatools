@@ -91,7 +91,14 @@ class SkinInfluenceTests(TestCase):
 
     def test_mixed_selection_drives_menu_actions(self):
         cmds.select(self.mesh, self.extra, replace=True)
+        before = cmds.ls(selection=True, long=True)
 
         skin_influences.add_selected_influences()
 
         self.assertIn(self.extra, self._influences())
+        self.assertEqual(before, cmds.ls(selection=True, long=True))
+
+        skin_influences.remove_selected_influences()
+
+        self.assertNotIn(self.extra, self._influences())
+        self.assertEqual(before, cmds.ls(selection=True, long=True))

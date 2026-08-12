@@ -58,10 +58,13 @@ class InfluenceCleanupTests(TestCase):
 
     def test_remove_unused_is_single_undoable_action(self):
         before = cmds.skinCluster(self.cluster, query=True, influence=True)
+        sentinel = cmds.spaceLocator(name="selection_sentinel")[0]
+        cmds.select(sentinel, replace=True)
 
         result = influence_cleanup.remove_unused_influences([self.mesh])
 
         self.assertEqual(1, len(result["removed"]))
+        self.assertEqual([sentinel], cmds.ls(selection=True))
         self.assertNotIn(self.unused, cmds.skinCluster(self.cluster, query=True, influence=True))
         cmds.undo()
         self.assertEqual(before, cmds.skinCluster(self.cluster, query=True, influence=True))
