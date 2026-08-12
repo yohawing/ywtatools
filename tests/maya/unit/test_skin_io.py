@@ -19,8 +19,11 @@ class SkinIoTests(TestCase):
         self.joint_b = cmds.joint(name="tip_jnt", position=(1.0, 0.0, 0.0))
         self.cluster = cmds.skinCluster(self.joint_a, self.joint_b, self.mesh, toSelectedBones=True, normalizeWeights=1)[0]
         vertices = cmds.ls(self.mesh + ".vtx[*]", flatten=True)
-        for index, vertex in enumerate(vertices):
-            weight = index / float(len(vertices) - 1)
+        positions = [cmds.xform(vertex, query=True, worldSpace=True, translation=True)[0] for vertex in vertices]
+        minimum = min(positions)
+        extent = max(positions) - minimum
+        for position, vertex in zip(positions, vertices):
+            weight = (position - minimum) / extent
             cmds.skinPercent(
                 self.cluster,
                 vertex,
@@ -54,6 +57,7 @@ class SkinIoTests(TestCase):
         self.assertEqual(skin_io.FORMAT, data["format"])
         self.assertEqual(4, data["mesh"]["topology"]["vertex_count"])
         self.assertEqual(2, len(data["influences"]))
+        self.assertEqual(4, len(data["mesh"]["geometry"]["points"]))
 
     def test_apply_creates_skin_cluster_on_unskinned_mesh(self):
         data = skin_io.capture(self.mesh)
@@ -102,3 +106,47 @@ class SkinIoTests(TestCase):
 
         with self.assertRaises(ValueError):
             skin_io.apply(self.mesh, data)
+
+    def test_transfer_to_different_topology_and_undo(self):
+        data = skin_io.capture(self.mesh)
+        target = cmds.polyPlane(name="retopo", subdivisionsX=2, subdivisionsY=1)[0]
+
+        cluster = skin_io.transfer(target, data)
+
+        vertices = cmds.ls(target + ".vtx[*]", flatten=True)
+        positions = [cmds.xform(vertex, query=True, worldSpace=True, translation=True)[0] for vertex in vertices]
+        left = vertices[positions.index(min(positions))]
+        right = vertices[positions.index(max(positions))]
+        left_root = cmds.skinPercent(cluster, left, query=True, transform=self.joint_a)
+        right_tip = cmds.skinPercent(cluster, right, query=True, transform=self.joint_b)
+        self.assertGreater(left_root, 0.99)
+        self.assertGreater(right_tip, 0.99)
+        self.assertFalse(cmds.ls("__ywtaSkinTransferSource*", type="transform"))
+
+        cmds.undo()
+        target_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
+        self.assertIsNone(skin_io._skin_cluster(target_shape))
+
+    def test_transfer_requires_saved_geometry_before_edit(self):
+        data = skin_io.capture(self.mesh)
+        del data["mesh"]["geometry"]
+        target = cmds.polyPlane(name="retopo", subdivisionsX=2)[0]
+
+        with self.assertRaises(ValueError):
+            skin_io.transfer(target, data)
+
+        target_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
+        self.assertIsNone(skin_io._skin_cluster(target_shape))
+
+    def test_transfer_zeros_existing_extra_influence(self):
+        data = skin_io.capture(self.mesh)
+        target = cmds.polyPlane(name="retopo", subdivisionsX=2)[0]
+        cmds.select(clear=True)
+        extra = cmds.joint(name="extra_jnt", position=(0.0, 1.0, 0.0))
+        cluster = cmds.skinCluster(extra, target, toSelectedBones=True, normalizeWeights=1)[0]
+
+        skin_io.transfer(target, data)
+
+        vertices = cmds.ls(target + ".vtx[*]", flatten=True)
+        extra_weights = [cmds.skinPercent(cluster, vertex, query=True, transform=extra) for vertex in vertices]
+        self.assertTrue(all(abs(value) < 1.0e-8 for value in extra_weights))

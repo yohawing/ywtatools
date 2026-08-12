@@ -37,6 +37,14 @@ def create_deform_menu(parent_menu):
         annotation="同一トポロジーの選択メッシュへスキンウェイトを復元します",
     )
 
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Transfer Skin Weights (Closest Point)",
+        command="import ywta.deform.skin_io as skin_io; skin_io.load_selected_transfer()",
+        image="copySkinWeight.png",
+        annotation="保存sourceを再構築して異なるトポロジーへスキンウェイトを転送します",
+    )
+
     transfer_shape_menu_item = cmds.menuItem(
         parent=deform_menu,
         label="Transfer Shape",

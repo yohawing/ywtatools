@@ -70,13 +70,29 @@ def _vertex_component(vertex_count):
 def _topology(fn_mesh):
     """頂点順とポリゴン接続を検証する fingerprint を作る。"""
     face_counts, face_connects = fn_mesh.getVertices()
+    return _topology_from_data(fn_mesh.numVertices, fn_mesh.numPolygons, face_counts, face_connects)
+
+
+def _topology_from_data(vertex_count, polygon_count, face_counts, face_connects):
+    """flat topology data から fingerprint を作る。"""
     digest = hashlib.sha256()
-    for value in [fn_mesh.numVertices, fn_mesh.numPolygons] + list(face_counts) + list(face_connects):
+    for value in [vertex_count, polygon_count] + list(face_counts) + list(face_connects):
         digest.update(struct.pack("<q", int(value)))
     return {
-        "vertex_count": fn_mesh.numVertices,
-        "polygon_count": fn_mesh.numPolygons,
+        "vertex_count": int(vertex_count),
+        "polygon_count": int(polygon_count),
         "sha256": digest.hexdigest(),
+    }
+
+
+def _geometry(fn_mesh):
+    """transfer source 再構築用の world-space geometry を取得する。"""
+    face_counts, face_connects = fn_mesh.getVertices()
+    points = fn_mesh.getPoints(om.MSpace.kWorld)
+    return {
+        "points": [[float(point.x), float(point.y), float(point.z)] for point in points],
+        "face_counts": list(face_counts),
+        "face_connects": list(face_connects),
     }
 
 
@@ -122,6 +138,7 @@ def capture(mesh):
         "mesh": {
             "name": shape.rsplit("|", 1)[-1],
             "topology": _topology(fn_mesh),
+            "geometry": _geometry(fn_mesh),
         },
         "influences": influences,
         "weights": rows,
@@ -167,6 +184,47 @@ def _validate_data(data):
     digest = topology.get("sha256")
     if not isinstance(digest, str) or len(digest) != 64:
         raise ValueError("topology sha256 が不正です。")
+    polygon_count = topology.get("polygon_count")
+    if not isinstance(polygon_count, int) or isinstance(polygon_count, bool) or polygon_count < 1:
+        raise ValueError("polygon_count が不正です。")
+
+    geometry = mesh.get("geometry")
+    if geometry is not None:
+        if not isinstance(geometry, dict):
+            raise ValueError("mesh.geometry が不正です。")
+        points = geometry.get("points")
+        face_counts = geometry.get("face_counts")
+        face_connects = geometry.get("face_connects")
+        if not isinstance(points, list) or len(points) != vertex_count:
+            raise ValueError("geometry points の頂点数が一致しません。")
+        for point in points:
+            if (
+                not isinstance(point, list)
+                or len(point) != 3
+                or any(
+                    not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value)
+                    for value in point
+                )
+            ):
+                raise ValueError("geometry point が不正です。")
+        if (
+            not isinstance(face_counts, list)
+            or len(face_counts) != polygon_count
+            or any(not isinstance(value, int) or isinstance(value, bool) or value < 3 for value in face_counts)
+        ):
+            raise ValueError("geometry face_counts が不正です。")
+        if (
+            not isinstance(face_connects, list)
+            or sum(face_counts) != len(face_connects)
+            or any(
+                not isinstance(value, int) or isinstance(value, bool) or value < 0 or value >= vertex_count
+                for value in face_connects
+            )
+        ):
+            raise ValueError("geometry face_connects が不正です。")
+        geometry_topology = _topology_from_data(vertex_count, polygon_count, face_counts, face_connects)
+        if geometry_topology != topology:
+            raise ValueError("geometry と topology fingerprint が一致しません。")
 
     influences = data.get("influences")
     if not isinstance(influences, list) or not influences:
@@ -252,6 +310,69 @@ def _ensure_topology(shape, saved_topology):
         )
 
 
+def _ensure_skin_cluster(shape, influences):
+    """必要な influence を持つ skinCluster を取得または作成する。"""
+    cluster = _skin_cluster(shape)
+    if cluster is None:
+        transform = cmds.listRelatives(shape, parent=True, fullPath=True)[0]
+        return cmds.skinCluster(influences, transform, toSelectedBones=True, normalizeWeights=1)[0]
+    existing = cmds.skinCluster(cluster, query=True, influence=True) or []
+    existing_paths = set(cmds.ls(existing, long=True) or [])
+    for influence in influences:
+        if influence not in existing_paths:
+            cmds.skinCluster(cluster, edit=True, addInfluence=influence, weight=0.0)
+    return cluster
+
+
+def _write_weights(shape, cluster, influences, data):
+    """検証済み sparse weights を skinCluster へ一括設定する。"""
+    fn_skin = oma.MFnSkinCluster(_depend_node(cluster))
+    physical_paths = [path.fullPathName() for path in fn_skin.influenceObjects()]
+    physical_by_path = {path: index for index, path in enumerate(physical_paths)}
+    physical_indices = [physical_by_path[influence] for influence in influences]
+
+    vertex_count = data["mesh"]["topology"]["vertex_count"]
+    dense = om.MDoubleArray([0.0] * (vertex_count * len(physical_paths)))
+    for vertex_index, row in enumerate(data["weights"]):
+        total = sum(float(entry[1]) for entry in row)
+        for saved_index, value in row:
+            physical_index = physical_indices[saved_index]
+            dense[vertex_index * len(physical_paths) + physical_index] = float(value) / total
+
+    fn_skin.setWeights(
+        _dag_path(shape),
+        _vertex_component(vertex_count),
+        om.MIntArray(range(len(physical_paths))),
+        dense,
+        normalize=True,
+    )
+
+
+def _normalize_influence_subset(shape, cluster, influences):
+    """保存外 influence を0にし、転送結果を保存 influence 内で正規化する。"""
+    fn_skin = oma.MFnSkinCluster(_depend_node(cluster))
+    physical_paths = [path.fullPathName() for path in fn_skin.influenceObjects()]
+    included = {physical_paths.index(influence) for influence in influences}
+    vertex_count = om.MFnMesh(_dag_path(shape)).numVertices
+    component = _vertex_component(vertex_count)
+    weights, influence_count = fn_skin.getWeights(_dag_path(shape), component)
+    dense = om.MDoubleArray([0.0] * len(weights))
+    for vertex_index in range(vertex_count):
+        offset = vertex_index * influence_count
+        total = sum(float(weights[offset + index]) for index in included)
+        if total <= WEIGHT_EPSILON:
+            raise RuntimeError("転送後の頂点 {} に有効な influence weight がありません。".format(vertex_index))
+        for index in included:
+            dense[offset + index] = float(weights[offset + index]) / total
+    fn_skin.setWeights(
+        _dag_path(shape),
+        component,
+        om.MIntArray(range(influence_count)),
+        dense,
+        normalize=True,
+    )
+
+
 def apply(mesh, data):
     """検証済みデータを同一トポロジーのメッシュへ適用する。"""
     data = _validate_data(data)
@@ -262,37 +383,8 @@ def apply(mesh, data):
     cmds.undoInfo(openChunk=True, chunkName="YWTA Skin IO Load")
     failed = False
     try:
-        cluster = _skin_cluster(shape)
-        if cluster is None:
-            transform = cmds.listRelatives(shape, parent=True, fullPath=True)[0]
-            cluster = cmds.skinCluster(influences, transform, toSelectedBones=True, normalizeWeights=1)[0]
-        else:
-            existing = cmds.skinCluster(cluster, query=True, influence=True) or []
-            existing_paths = set(cmds.ls(existing, long=True) or [])
-            for influence in influences:
-                if influence not in existing_paths:
-                    cmds.skinCluster(cluster, edit=True, addInfluence=influence, weight=0.0)
-
-        fn_skin = oma.MFnSkinCluster(_depend_node(cluster))
-        physical_paths = [path.fullPathName() for path in fn_skin.influenceObjects()]
-        physical_by_path = {path: index for index, path in enumerate(physical_paths)}
-        physical_indices = [physical_by_path[influence] for influence in influences]
-
-        vertex_count = data["mesh"]["topology"]["vertex_count"]
-        dense = om.MDoubleArray([0.0] * (vertex_count * len(physical_paths)))
-        for vertex_index, row in enumerate(data["weights"]):
-            total = sum(float(entry[1]) for entry in row)
-            for saved_index, value in row:
-                physical_index = physical_indices[saved_index]
-                dense[vertex_index * len(physical_paths) + physical_index] = float(value) / total
-
-        fn_skin.setWeights(
-            _dag_path(shape),
-            _vertex_component(vertex_count),
-            om.MIntArray(range(len(physical_paths))),
-            dense,
-            normalize=True,
-        )
+        cluster = _ensure_skin_cluster(shape, influences)
+        _write_weights(shape, cluster, influences, data)
     except Exception:
         failed = True
         raise
@@ -306,6 +398,72 @@ def apply(mesh, data):
 def load(mesh, file_path):
     """JSON を読み込み、同一トポロジーのメッシュへ適用する。"""
     return apply(mesh, read(file_path))
+
+
+def _create_transfer_source(geometry):
+    """保存 geometry から一時 source mesh を再構築する。"""
+    transform = cmds.createNode("transform", name="__ywtaSkinTransferSource#")
+    parent = _depend_node(transform)
+    points = [om.MPoint(*point) for point in geometry["points"]]
+    om.MFnMesh().create(
+        points,
+        geometry["face_counts"],
+        geometry["face_connects"],
+        parent=parent,
+    )
+    shape = cmds.listRelatives(transform, shapes=True, noIntermediate=True, fullPath=True, type="mesh")[0]
+    return transform, shape
+
+
+def transfer(mesh, data, surface_association="closestPoint"):
+    """保存 source を再構築し、異なる topology の target へ weights を転送する。"""
+    data = _validate_data(data)
+    if surface_association not in {"closestPoint", "rayCast", "closestComponent"}:
+        raise ValueError("未対応の surface association です: {}".format(surface_association))
+    geometry = data["mesh"].get("geometry")
+    if geometry is None:
+        raise ValueError("この Skin IO ファイルには transfer geometry がありません。")
+    target_shape = _mesh_shape(mesh)
+    influences = _resolve_influences(data["influences"])
+
+    cmds.undoInfo(openChunk=True, chunkName="YWTA Skin IO Transfer")
+    failed = False
+    temporary = None
+    try:
+        temporary, source_shape = _create_transfer_source(geometry)
+        source_cluster = _ensure_skin_cluster(source_shape, influences)
+        _write_weights(source_shape, source_cluster, influences, data)
+        target_cluster = _ensure_skin_cluster(target_shape, influences)
+        cmds.copySkinWeights(
+            sourceSkin=source_cluster,
+            destinationSkin=target_cluster,
+            noMirror=True,
+            surfaceAssociation=surface_association,
+            influenceAssociation=["name", "oneToOne"],
+            normalize=True,
+        )
+        _normalize_influence_subset(target_shape, target_cluster, influences)
+    except Exception:
+        failed = True
+        raise
+    finally:
+        try:
+            if temporary and cmds.objExists(temporary):
+                try:
+                    cmds.delete(temporary)
+                except Exception:
+                    failed = True
+                    raise
+        finally:
+            cmds.undoInfo(closeChunk=True)
+            if failed:
+                cmds.undo()
+    return target_cluster
+
+
+def load_transfer(mesh, file_path, surface_association="closestPoint"):
+    """JSON を読み込み、異なる topology の target へ weights を転送する。"""
+    return transfer(mesh, read(file_path), surface_association=surface_association)
 
 
 def save_selected():
@@ -328,3 +486,19 @@ def load_selected():
     if not paths:
         return None
     return load(selected[0], paths[0])
+
+
+def load_selected_transfer():
+    """選択メッシュへ closest-point でスキンウェイトを転送する。"""
+    selected = cmds.ls(selection=True, long=True) or []
+    if len(selected) != 1:
+        raise ValueError("転送先メッシュを1つ選択してください。")
+    paths = cmds.fileDialog2(
+        fileMode=1,
+        dialogStyle=2,
+        caption="Transfer Skin Weights",
+        fileFilter="JSON (*.json)",
+    )
+    if not paths:
+        return None
+    return load_transfer(selected[0], paths[0])
