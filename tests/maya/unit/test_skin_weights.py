@@ -57,6 +57,20 @@ class SkinWeightsTests(TestCase):
         cmds.undo()
         self.assertEqual(before, [self._weights(vertex) for vertex in selected])
 
+    def test_copy_average_can_paste_without_changing_sources(self):
+        """複数頂点平均をclipboard化し、元頂点を変えず別頂点へ貼る。"""
+        path = self.get_temp_filename("average_clipboard.json")
+        sources = [self.vertices[0], self.vertices[3]]
+        before = [self._weights(vertex) for vertex in sources]
+
+        data = skin_weights.copy_average_vertex_weights(sources, file_path=path)
+        skin_weights.paste_vertex_weights([self.vertices[1]], clipboard_file=path)
+
+        self.assertEqual(before, [self._weights(vertex) for vertex in sources])
+        self.assertAlmostEqual(0.5, data["weights"][0])
+        self.assertAlmostEqual(0.5, data["weights"][1])
+        self.assertEqual(data["weights"], self._weights(self.vertices[1]))
+
     def test_paste_zeros_existing_extra_influence(self):
         data = skin_weights.capture_vertex_weights(self.vertices[0])
         cmds.select(clear=True)

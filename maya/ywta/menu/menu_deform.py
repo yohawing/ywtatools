@@ -78,7 +78,13 @@ def create_deform_menu(parent_menu):
         parent=deform_menu,
         label="Copy Vertex Weights",
         command="import ywta.deform.skin_weights as skin_weights; skin_weights.copy_selected_vertex_weights()",
-        annotation="選択した1頂点のスキンウェイトをprocess内clipboardへコピーします",
+        annotation="選択した1頂点のスキンウェイトを永続clipboardへコピーします",
+    )
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Copy Average Vertex Weights",
+        command="import ywta.deform.skin_weights as skin_weights; skin_weights.copy_average_vertex_weights()",
+        annotation="選択した複数頂点の平均ウェイトを永続clipboardへコピーします",
     )
     cmds.menuItem(
         parent=deform_menu,

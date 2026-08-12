@@ -64,6 +64,7 @@ class FabricatorMenuTests(TestCase):
                 "Transfer Skin Weights (Closest Point)",
                 "Save Temporary Skin Weights",
                 "Copy Vertex Weights",
+                "Copy Average Vertex Weights",
                 "Add Selected Skin Influences",
                 "Smooth Selected Skin Weights",
                 "Remove Unused Skin Influences",

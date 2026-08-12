@@ -177,6 +177,32 @@ def copy_selected_vertex_weights(file_path=None):
     return _CLIPBOARD
 
 
+def capture_average_vertex_weights(vertices=None):
+    """選択した複数頂点の平均ウェイトをclipboard形式で取得する。"""
+    shape, indices = _selected_vertex_indices(vertices)
+    if len(indices) < 2:
+        raise ValueError("平均をコピーするvertexを2つ以上選択してください。")
+    cluster = skin_io._skin_cluster(shape)
+    if cluster is None:
+        raise ValueError("skinCluster が見つかりません: {}".format(shape))
+    fn_skin = oma.MFnSkinCluster(skin_io._depend_node(cluster))
+    weights, influence_count = fn_skin.getWeights(skin_io._dag_path(shape), _component(indices))
+    averages = []
+    for influence_index in range(influence_count):
+        total = sum(float(weights[row * influence_count + influence_index]) for row in range(len(indices)))
+        averages.append(total / len(indices))
+    return {"influences": _influence_records(fn_skin), "weights": averages}
+
+
+def copy_average_vertex_weights(vertices=None, file_path=None):
+    """選択頂点の平均ウェイトを永続clipboardへ保存する。"""
+    global _CLIPBOARD
+    data = capture_average_vertex_weights(vertices)
+    write_clipboard(data, file_path=file_path)
+    _CLIPBOARD = data
+    return _CLIPBOARD
+
+
 def _set_uniform_weights(shape, indices, data, chunk_name):
     """検証済み1頂点ウェイトを複数頂点へ一括設定する。"""
     data = _validate_weights(data)
@@ -225,14 +251,5 @@ def average_vertex_weights(vertices=None):
     shape, indices = _selected_vertex_indices(vertices)
     if len(indices) < 2:
         raise ValueError("平均化する vertex を2つ以上選択してください。")
-    cluster = skin_io._skin_cluster(shape)
-    if cluster is None:
-        raise ValueError("skinCluster が見つかりません: {}".format(shape))
-    fn_skin = oma.MFnSkinCluster(skin_io._depend_node(cluster))
-    weights, influence_count = fn_skin.getWeights(skin_io._dag_path(shape), _component(indices))
-    averages = []
-    for influence_index in range(influence_count):
-        total = sum(float(weights[row * influence_count + influence_index]) for row in range(len(indices)))
-        averages.append(total / len(indices))
-    data = {"influences": _influence_records(fn_skin), "weights": averages}
+    data = capture_average_vertex_weights(vertices)
     return _set_uniform_weights(shape, indices, data, "YWTA Average Vertex Weights")
