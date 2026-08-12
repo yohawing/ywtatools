@@ -1,6 +1,7 @@
 """Versioned Skeleton IO の Maya 単体テスト。"""
 
 import copy
+from unittest import mock
 
 import maya.cmds as cmds
 
@@ -247,6 +248,27 @@ class SkeletonIoTests(TestCase):
         cmds.undo()
 
         self.assertFalse(cmds.ls(root_uuid, uuid=True))
+
+    def test_failed_import_rolls_back_created_namespace(self):
+        """途中失敗時にjointと新設namespaceを残さない。"""
+        root, _child = self._skeleton()
+        data = skeleton_io.capture(root)
+        cmds.delete(root)
+        original_create = cmds.createNode
+        calls = {"count": 0}
+
+        def fail_second_joint(*args, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 2:
+                raise RuntimeError("expected create failure")
+            return original_create(*args, **kwargs)
+
+        with mock.patch.object(cmds, "createNode", side_effect=fail_second_joint):
+            with self.assertRaises(RuntimeError):
+                skeleton_io.create(data, namespace="rollback")
+
+        self.assertFalse(cmds.ls(type="joint"))
+        self.assertFalse(cmds.namespace(exists="rollback"))
 
     def test_zero_joint_scales_preserves_world_translation_and_rotation(self):
         root, child = self._skeleton()
