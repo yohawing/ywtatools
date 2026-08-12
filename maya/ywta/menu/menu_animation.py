@@ -18,6 +18,13 @@ def create_animation_menu(parent_menu):
     """
     animation_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=parent_menu, label="Animation")
 
+    cmds.menuItem(
+        parent=animation_menu,
+        label="Selection Sets",
+        command="import ywta.anim.selection_sets as selection_sets; selection_sets.show()",
+        annotation="control selection setsを作成・選択・portable JSON移送します",
+    )
+
     cmds.menuItem(parent=animation_menu, divider=True, dividerLabel="Pose")
     cmds.menuItem(
         parent=animation_menu,
