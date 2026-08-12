@@ -26,7 +26,7 @@ def create_deform_menu(parent_menu):
         label="Save Skin Weights",
         command="import ywta.deform.skin_io as skin_io; skin_io.save_selected()",
         image="exportSmoothSkin.png",
-        annotation="選択メッシュのスキンウェイトを検証可能なJSONへ保存します",
+        annotation="複数選択はvirtual結合し、1つの検証可能なSkin JSONへ保存します",
     )
 
     cmds.menuItem(
@@ -58,7 +58,7 @@ def create_deform_menu(parent_menu):
         parent=deform_menu,
         label="Save Temporary Skin Weights",
         command="import ywta.deform.skin_io as skin_io; skin_io.save_temp_selected()",
-        annotation="選択meshのウェイトをMayaユーザー用の一時JSONへ保存します",
+        annotation="複数選択はvirtual結合し、Mayaユーザー用の一時JSONへ保存します",
     )
     cmds.menuItem(
         parent=deform_menu,

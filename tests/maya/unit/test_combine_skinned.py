@@ -1,5 +1,8 @@
 """Skinned mesh結合のMaya単体テスト。"""
 
+import os
+from unittest import mock
+
 import maya.api.OpenMaya as om
 import maya.api.OpenMayaAnim as oma
 import maya.cmds as cmds
@@ -87,6 +90,89 @@ class CombineSkinnedTests(TestCase):
         self.assertFalse(cmds.ls(combined_uuid, uuid=True))
         self.assertTrue(cmds.objExists(self.left))
         self.assertTrue(cmds.objExists(self.right))
+        self.assertEqual({self.left, self.right}, set(cmds.ls(selection=True)))
+
+    def test_skin_io_saves_multiple_meshes_without_scene_changes(self):
+        """複数meshを1 JSONへ保存し、一時結合meshとscene差分を残さない。"""
+        left_uuid = cmds.ls(self.left, uuid=True)[0]
+        right_uuid = cmds.ls(self.right, uuid=True)[0]
+        path = self.get_temp_filename("combined_skin.json")
+        cmds.select(self.left, self.right, replace=True)
+        cmds.setAttr(self.left_joint + ".radius", 2.0)
+
+        result = skin_io.save_combined([self.left, self.right], path)
+
+        self.assertEqual(os.path.abspath(path), result)
+        data = skin_io.read(path)
+        self.assertEqual(8, data["mesh"]["topology"]["vertex_count"])
+        self.assertEqual(8, len(data["weights"]))
+        self.assertEqual(left_uuid, cmds.ls(self.left, uuid=True)[0])
+        self.assertEqual(right_uuid, cmds.ls(self.right, uuid=True)[0])
+        self.assertEqual({self.left, self.right}, set(cmds.ls(selection=True)))
+        cmds.undo()
+        self.assertAlmostEqual(1.0, cmds.getAttr(self.left_joint + ".radius"))
+        cmds.redo()
+        self.assertAlmostEqual(2.0, cmds.getAttr(self.left_joint + ".radius"))
+
+    def test_virtual_skin_combine_matches_exact_mesh_combine(self):
+        """virtual geometry fingerprintが実polyUniteの検証済み頂点順と一致する。"""
+        path = self.get_temp_filename("virtual_skin.json")
+        skin_io.save_combined([self.left, self.right], path)
+        expected = skin_io.read(path)
+
+        result = combine_skinned.combine([self.left, self.right], name="actual_combined")
+        actual = skin_io.capture(result["mesh"])
+
+        self.assertEqual(expected["mesh"]["topology"], actual["mesh"]["topology"])
+        self.assertEqual(expected["mesh"]["geometry"], actual["mesh"]["geometry"])
+        expected_paths = [item["path"] for item in expected["influences"]]
+        actual_paths = [item["path"] for item in actual["influences"]]
+        for expected_row, actual_row in zip(expected["weights"], actual["weights"]):
+            expected_weights = {expected_paths[index]: value for index, value in expected_row}
+            actual_weights = {actual_paths[index]: value for index, value in actual_row}
+            self.assertEqual(set(expected_weights), set(actual_weights))
+            for path, value in expected_weights.items():
+                self.assertAlmostEqual(value, actual_weights[path], places=6)
+
+    def test_multi_mesh_skin_capture_failure_leaves_scene_unchanged(self):
+        """virtual capture失敗でもファイルとscene差分を残さない。"""
+        path = self.get_temp_filename("failed_combined_skin.json")
+        cmds.select(self.left, self.right, replace=True)
+        original_capture = skin_io.capture
+        call_count = [0]
+
+        def fail_combined_capture(mesh):
+            call_count[0] += 1
+            if call_count[0] == 2:
+                raise RuntimeError("forced capture failure")
+            return original_capture(mesh)
+
+        with mock.patch.object(skin_io, "capture", side_effect=fail_combined_capture):
+            with self.assertRaises(RuntimeError):
+                skin_io.save_combined([self.left, self.right], path)
+
+        self.assertFalse(os.path.exists(path))
+        self.assertEqual({self.left, self.right}, set(cmds.ls(selection=True)))
+
+    def test_multi_mesh_skin_save_rejects_duplicate_source(self):
+        """同じmeshの二重連結をファイル作成前に拒否する。"""
+        path = self.get_temp_filename("duplicate_combined_skin.json")
+
+        with self.assertRaises(ValueError):
+            skin_io.save_combined([self.left, self.left], path)
+
+        self.assertFalse(os.path.exists(path))
+
+    def test_skin_io_menu_save_accepts_multiple_selected_meshes(self):
+        """Save Skin Weights入口が複数選択をcombined保存へ振り分ける。"""
+        path = self.get_temp_filename("selected_combined_skin.json")
+        cmds.select(self.left, self.right, replace=True)
+
+        with mock.patch.object(skin_io.cmds, "fileDialog2", return_value=[path]):
+            result = skin_io.save_selected()
+
+        self.assertEqual(os.path.abspath(path), result)
+        self.assertEqual(8, skin_io.read(path)["mesh"]["topology"]["vertex_count"])
         self.assertEqual({self.left, self.right}, set(cmds.ls(selection=True)))
 
     def test_unskinned_source_fails_before_edit(self):

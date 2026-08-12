@@ -154,9 +154,9 @@ def capture(mesh):
     }
 
 
-def save(mesh, file_path):
-    """スキンウェイトを JSON へ原子的に保存する。"""
-    data = capture(mesh)
+def _write_data(data, file_path):
+    """検証済みSkin IO辞書をJSONへ原子的に書き込む。"""
+    _validate_data(data)
     target = os.path.abspath(file_path)
     directory = os.path.dirname(target)
     if not os.path.isdir(directory):
@@ -175,6 +175,77 @@ def save(mesh, file_path):
             os.remove(temporary)
         raise
     return target
+
+
+def save(mesh, file_path):
+    """スキンウェイトを JSON へ原子的に保存する。"""
+    return _write_data(capture(mesh), file_path)
+
+
+def _combine_captures(captures):
+    """単一mesh capture列をscene非編集の連結Skin IO辞書へ変換する。"""
+    influences = []
+    influence_indices = {}
+    points = []
+    face_counts = []
+    face_connects = []
+    weights = []
+    vertex_offset = 0
+    polygon_count = 0
+    for data in captures:
+        _validate_data(data)
+        local_to_combined = {}
+        for local_index, influence in enumerate(data["influences"]):
+            path = influence["path"]
+            combined_index = influence_indices.get(path)
+            if combined_index is None:
+                combined_index = len(influences)
+                influence_indices[path] = combined_index
+                influences.append(dict(influence))
+            local_to_combined[local_index] = combined_index
+        for row in data["weights"]:
+            weights.append([[local_to_combined[index], value] for index, value in row])
+        geometry = data["mesh"]["geometry"]
+        points.extend(geometry["points"])
+        face_counts.extend(geometry["face_counts"])
+        face_connects.extend(index + vertex_offset for index in geometry["face_connects"])
+        topology = data["mesh"]["topology"]
+        vertex_offset += topology["vertex_count"]
+        polygon_count += topology["polygon_count"]
+    scene = dict(captures[0]["scene"])
+    return {
+        "format": FORMAT,
+        "version": VERSION,
+        "scene": scene,
+        "mesh": {
+            "name": "combined_skin",
+            "topology": _topology_from_data(vertex_offset, polygon_count, face_counts, face_connects),
+            "geometry": {
+                "points": points,
+                "face_counts": face_counts,
+                "face_connects": face_connects,
+            },
+        },
+        "influences": influences,
+        "weights": weights,
+    }
+
+
+def save_combined(meshes, file_path):
+    """複数skinned meshをscene非編集のvirtual結合として1 JSONへ保存する。"""
+    if isinstance(meshes, (str, bytes)) or not isinstance(meshes, (list, tuple)) or len(meshes) < 2:
+        raise ValueError("複数保存するskinned meshを2つ以上指定してください。")
+    resolved = []
+    seen = set()
+    for mesh in meshes:
+        shape = _mesh_shape(mesh)
+        node_uuid = (cmds.ls(shape, uuid=True) or [None])[0]
+        if node_uuid is None or node_uuid in seen:
+            raise ValueError("複数Skin保存のmeshが重複しています: {}".format(mesh))
+        seen.add(node_uuid)
+        resolved.append(shape)
+    captures = [capture(mesh) for mesh in resolved]
+    return _write_data(_combine_captures(captures), file_path)
 
 
 def _validate_data(data):
@@ -617,20 +688,22 @@ def load_transfer(mesh, file_path, surface_association="closestPoint"):
 def save_selected():
     """選択メッシュをファイルダイアログ経由で保存する。"""
     selected = cmds.ls(selection=True, long=True) or []
-    if len(selected) != 1:
-        raise ValueError("保存するメッシュを1つ選択してください。")
+    if not selected:
+        raise ValueError("保存するメッシュを1つ以上選択してください。")
     paths = cmds.fileDialog2(fileMode=0, dialogStyle=2, caption="Save Skin Weights", fileFilter="JSON (*.json)")
     if not paths:
         return None
-    return save(selected[0], paths[0])
+    if len(selected) == 1:
+        return save(selected[0], paths[0])
+    return save_combined(selected, paths[0])
 
 
 def save_temp_selected():
     """選択meshをMayaユーザー用の一時Skin IO JSONへ保存する。"""
     selected = cmds.ls(selection=True, long=True) or []
-    if len(selected) != 1:
-        raise ValueError("一時保存するメッシュを1つ選択してください。")
-    path = save_temp(selected[0])
+    if not selected:
+        raise ValueError("一時保存するメッシュを1つ以上選択してください。")
+    path = save_temp(selected[0]) if len(selected) == 1 else save_combined(selected, temp_skin_path())
     cmds.inViewMessage(
         statusMessage="Saved temporary skin weights.",
         position="topCenter",

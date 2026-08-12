@@ -32,6 +32,7 @@ Fabricator 本体は Business Source License 1.1、YWTA は MIT License です�
 - 同一トポロジーJSONから選択頂点だけを1回Undoで部分復元
 - file dialogなしで再利用できるユーザー単位のTemporary Skin Clipboard
 - 保存した world-space source mesh を再構築する closest-point 転送
+- 複数skinned meshは頂点・face・influence indexをメモリ上でvirtual結合し、scene非編集で1 JSONへ保存
 - Transfer時は保存元と適用先のlinear unit / up axis不一致を編集前拒否
 - 頂点数だけでなく face connectivity の SHA-256 fingerprint を Direct load 時に検証
 - influence の完全検証、曖昧な短名の拒否、保存外 influence のゼロ化
@@ -54,6 +55,10 @@ Fabricator 本体は Business Source License 1.1、YWTA は MIT License です�
 Skin JSON は geometry と weight を含むため、大きいメッシュではファイルサイズも
 大きくなります。Direct load は fingerprint が一致するメッシュだけに使用し、
 リトポロジー後は Transfer を使用してください。
+
+複数メッシュから保存したJSONは、選択順に連結した1つのvirtual mesh archiveです。
+適用先も1つの結合済みmeshとし、Directでは同じ連結順が必要です。元の複数meshへ
+個別に復元する用途では、それぞれを別JSONとして保存してください。
 
 Skinned Mesh Combineは実行時のjoint・mesh評価姿勢を新しいskinClusterのbind stateに
 します。animation rigでは、そのrigで正本とするrest / bind frameへ移動してから実行して
