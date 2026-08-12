@@ -94,3 +94,13 @@ class CombineSkinnedTests(TestCase):
         self.assertTrue(cmds.objExists(self.left))
         self.assertTrue(cmds.objExists(plain))
         self.assertFalse(cmds.objExists("combined_skinned_mesh"))
+
+    def test_output_name_collision_fails_before_edit(self):
+        occupied = cmds.createNode("transform", name="body_mesh")
+        before = set(cmds.ls(long=True))
+
+        with self.assertRaises(ValueError):
+            combine_skinned.combine([self.left, self.right], name="body_mesh")
+
+        self.assertEqual(before, set(cmds.ls(long=True)))
+        self.assertTrue(cmds.objExists(occupied))

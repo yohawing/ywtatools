@@ -82,6 +82,9 @@ def combine(meshes=None, name="combined_skinned_mesh"):
     """
     if not isinstance(name, str) or not name.strip() or "|" in name:
         raise ValueError("nameは空でないDAG short nameにしてください。")
+    name = name.strip()
+    if cmds.objExists(name):
+        raise ValueError("結合先名が既に存在します: {}".format(name))
     sources = _selected_meshes(meshes)
     captures = [skin_io.capture(source) for source in sources]
     expected_points = []
@@ -106,9 +109,11 @@ def combine(meshes=None, name="combined_skinned_mesh"):
             duplicates,
             constructionHistory=False,
             mergeUVSets=True,
-            name=name.strip(),
+            name=name,
         )[0]
         combined = (cmds.ls(combined, long=True) or [combined])[0]
+        if combined.rsplit("|", 1)[-1] != name:
+            raise RuntimeError("結合先名が競合しています: {} -> {}".format(name, combined))
         combined_shape = skin_io._mesh_shape(combined)
         actual_points = _world_points(combined_shape)
         if not _same_points(actual_points, expected_points):
