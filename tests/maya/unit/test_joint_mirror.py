@@ -4,7 +4,7 @@ from unittest import mock
 
 import maya.cmds as cmds
 
-from ywta.rig import joint_mirror
+from ywta.rig import joint_edit_tools, joint_mirror
 from ywta.test import TestCase
 
 
@@ -135,3 +135,16 @@ class JointMirrorTests(TestCase):
         self.assertEqual("Right_hand", joint_mirror.mirrored_name("Left_hand"))
         self.assertEqual("arm_r_jnt", joint_mirror.mirrored_name("arm_l_jnt"))
         self.assertEqual("char:rt_leg", joint_mirror.mirrored_name("char:lf_leg"))
+
+    def test_joint_edit_tools_routes_mirror_through_safe_entry(self):
+        """旧windowのMirror Jointも原子的な階層mirrorを使う。"""
+        window = joint_edit_tools.JointEditToolsWindow.__new__(joint_edit_tools.JointEditToolsWindow)
+
+        with mock.patch.object(
+            joint_edit_tools.joint_mirror,
+            "mirror_selected_hierarchy",
+            return_value=["R_root", "R_child"],
+        ) as mirror_selected:
+            window._mirror_joint()
+
+        mirror_selected.assert_called_once_with()

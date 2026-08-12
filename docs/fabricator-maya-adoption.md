@@ -113,6 +113,7 @@ thumbnail capture、カテゴリ検索、mirrored pose はまだありません�
 - mid-chain mirrorは反対側parentを一意に解決し、欠落時は誤parentを作らず拒否
 - Maya標準mirror behaviorを使ったworld YZ面の静的mirror
 - 親子構造を保持し、作成・rename・選択を単一Undo / Redoに集約
+- `Joint Edit Tools`内の`Mirror Joint`も同じ階層・衝突検証経路を使用
 
 deprecatedなlive mirror networkは採用していません。既存rigのDG接続と競合せず、
 明示的に独立したjoint hierarchyを作る操作に限定しています。

@@ -24,7 +24,7 @@ import maya.cmds as cmds
 
 # Import from core modules instead of deprecated shortcuts
 from ywta.core.ui_utils import SingletonWindowMixin
-from ywta.rig import joint_insert
+from ywta.rig import joint_insert, joint_mirror
 
 logger = logging.getLogger(__name__)
 
@@ -451,12 +451,10 @@ class JointEditToolsWindow(SingletonWindowMixin):
             cmds.warning(f"Failed to reset bind pose: {e}")
 
     def _mirror_joint(self, *args):
-        """Mirror selected joints."""
+        """選択root joint以下を安全な静的階層としてmirrorする。"""
         try:
-            selected_joints = self._get_selected_joints()
-            for joint in selected_joints:
-                mirror_joint(joint)
-            logger.info(f"Mirrored {len(selected_joints)} joints")
+            created = joint_mirror.mirror_selected_hierarchy()
+            logger.info(f"Mirrored {len(created)} joints")
         except Exception as e:
             logger.error(f"Failed to mirror joints: {e}")
             cmds.warning(f"Failed to mirror joints: {e}")
