@@ -83,8 +83,10 @@ Skinned Mesh Combineは実行時のjoint・mesh評価姿勢を新しいskinClust
 - 保存元と適用先のtime unit不一致を検出し、retimeせず警告
 - Pose/Clipのlinear/angle unit不一致も検出し、値変換せず警告
 - Maya objectSet を正本とする Selection Sets と portable JSON
+- Selection Sets capture APIは単一objectSet文字列とset列の両方に対応
 - namespace を除いた control 名による別キャラクターへの適用
 - `ywtaPoseId` string 属性による改名に強い明示アドレス
+- Pose ID設定は参照controlとlock/接続済み既存属性を編集前拒否
 - blend、選択 control 限定適用、開始フレーム offset、範囲内キー置換
 - PoseのBlend / Selected-onlyを保存・実行できるMaya Option UI
 - Poseの0% Blendは現在値と同じanimation keyも作らない完全なno-op

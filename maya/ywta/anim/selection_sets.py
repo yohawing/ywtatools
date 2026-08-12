@@ -112,7 +112,13 @@ def delete_selection_set(selection_set):
 
 def capture(selection_sets=None):
     """selection sets を portable address JSON 辞書へ変換する。"""
-    sets = list_selection_sets() if selection_sets is None else list(selection_sets)
+    sets = (
+        list_selection_sets()
+        if selection_sets is None
+        else [selection_sets]
+        if isinstance(selection_sets, str)
+        else list(selection_sets)
+    )
     if not sets:
         raise ValueError("保存する selection set がありません。")
     entries = []

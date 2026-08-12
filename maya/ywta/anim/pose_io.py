@@ -122,9 +122,13 @@ def set_pose_id(node, pose_id):
     matches = cmds.ls(node, long=True) or []
     if len(matches) != 1:
         raise ValueError("ノードを一意に解決できません: {}".format(node))
+    if cmds.referenceQuery(matches[0], isNodeReferenced=True):
+        raise ValueError("参照controlへPose IDは設定できません: {}".format(matches[0]))
     plug = "{}.{}".format(matches[0], POSE_ID_ATTRIBUTE)
     if cmds.objExists(plug) and cmds.getAttr(plug, type=True) != "string":
         raise ValueError("既存Pose ID属性がstringではありません: {}".format(plug))
+    if cmds.objExists(plug) and not cmds.getAttr(plug, settable=True):
+        raise ValueError("既存Pose ID属性を編集できません: {}".format(plug))
     undo_utils.require_enabled("Set Pose ID")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Set Pose ID")
     failed = False

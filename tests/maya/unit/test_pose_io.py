@@ -1,6 +1,7 @@
 """Pose IO の Maya 単体テスト。"""
 
 import copy
+from unittest import mock
 
 import maya.cmds as cmds
 
@@ -84,6 +85,27 @@ class PoseIoTests(TestCase):
             pose_io.set_pose_id(control, 42)
 
         self.assertFalse(cmds.objExists(control + "." + pose_io.POSE_ID_ATTRIBUTE))
+
+    def test_pose_id_rejects_referenced_or_locked_control_before_edit(self):
+        """参照editやlocked Pose IDへの書込みを作らない。"""
+        control = self._control("character")
+        original_reference_query = pose_io.cmds.referenceQuery
+
+        def reference_query(node, **kwargs):
+            if kwargs.get("isNodeReferenced") and node == "|character:hand_ctrl":
+                return True
+            return original_reference_query(node, **kwargs)
+
+        with mock.patch.object(pose_io.cmds, "referenceQuery", side_effect=reference_query):
+            with self.assertRaises(ValueError):
+                pose_io.set_pose_id(control, "arm.left.ik")
+        self.assertFalse(cmds.objExists(control + "." + pose_io.POSE_ID_ATTRIBUTE))
+
+        cmds.addAttr(control, longName=pose_io.POSE_ID_ATTRIBUTE, dataType="string")
+        cmds.setAttr(control + "." + pose_io.POSE_ID_ATTRIBUTE, "original", type="string", lock=True)
+        with self.assertRaises(ValueError):
+            pose_io.set_pose_id(control, "replacement")
+        self.assertEqual("original", cmds.getAttr(control + "." + pose_io.POSE_ID_ATTRIBUTE))
 
     def test_blend_and_enum_label(self):
         source = self._control("source")

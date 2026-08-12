@@ -136,3 +136,12 @@ class SelectionSetsTests(TestCase):
 
         self.assertEqual(selection_sets.FORMAT, data["format"])
         self.assertEqual("Hands", data["sets"][0]["label"])
+
+    def test_capture_accepts_single_set_string(self):
+        """単一objectSet名を文字単位に分解しない。"""
+        control = self._control("source", "hand_ctrl")
+        selection_set = selection_sets.create_selection_set("Hands", [control])
+
+        data = selection_sets.capture(selection_set)
+
+        self.assertEqual(["Hands"], [entry["label"] for entry in data["sets"]])
