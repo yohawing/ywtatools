@@ -55,6 +55,21 @@ class SceneAuditTests(TestCase):
 
         self.assertNotIn("displayShape", {entry["name"] for entry in duplicates})
 
+    def test_duplicate_joint_names_are_transform_collisions(self):
+        """transform派生のjointも同名階層衝突として報告する。"""
+        first_group = cmds.createNode("transform", name="first_group")
+        second_group = cmds.createNode("transform", name="second_group")
+        cmds.createNode("joint", name="elbow_jnt", parent=first_group)
+        cmds.createNode("joint", name="elbow_jnt", parent=second_group)
+
+        duplicates = scene_audit.find_duplicate_short_names()
+
+        item = next(entry for entry in duplicates if entry["name"] == "elbow_jnt")
+        self.assertEqual(
+            ["|first_group|elbow_jnt", "|second_group|elbow_jnt"],
+            item["nodes"],
+        )
+
     def test_lamina_and_non_manifold_components_are_reported(self):
         shape = self._create_lamina_mesh()
 
