@@ -100,10 +100,7 @@ def select_influenced_meshes(joints=None):
     seen = set()
     for cluster in cmds.ls(type="skinCluster") or []:
         fn_skin = oma.MFnSkinCluster(skin_io._depend_node(cluster))
-        influence_ids = {
-            (cmds.ls(path.fullPathName(), uuid=True) or [None])[0]
-            for path in fn_skin.influenceObjects()
-        }
+        influence_ids = {(cmds.ls(path.fullPathName(), uuid=True) or [None])[0] for path in fn_skin.influenceObjects()}
         if requested.isdisjoint(influence_ids):
             continue
         for geometry in cmds.skinCluster(cluster, query=True, geometry=True) or []:
@@ -128,11 +125,7 @@ def snap_to_last(nodes=None):
     if any(target in (cmds.listRelatives(source, allDescendents=True, fullPath=True) or []) for source in sources):
         raise ValueError("targetのancestorは移動元にできません。")
     for source in sources:
-        blocked = [
-            axis
-            for axis in "XYZ"
-            if not cmds.getAttr("{}.translate{}".format(source, axis), settable=True)
-        ]
+        blocked = [axis for axis in "XYZ" if not cmds.getAttr("{}.translate{}".format(source, axis), settable=True)]
         if blocked:
             raise ValueError("translateが編集できません: {} ({})".format(source, ", ".join(blocked)))
     target_pivot = cmds.xform(target, query=True, worldSpace=True, rotatePivot=True)

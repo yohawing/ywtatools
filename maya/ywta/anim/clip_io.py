@@ -557,9 +557,7 @@ def load_temp_with_settings():
     )
     if result["unit_mismatches"]:
         cmds.warning(
-            "Animation Clip unit mismatch {}; raw値・rawフレームで適用しました。".format(
-                ", ".join(result["unit_mismatches"])
-            )
+            "Animation Clip unit mismatch {}; raw値・rawフレームで適用しました。".format(", ".join(result["unit_mismatches"]))
         )
     return result
 

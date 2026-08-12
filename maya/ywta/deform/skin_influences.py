@@ -80,7 +80,9 @@ def add_influences(meshes, influences, lock_weights=False):
     plans = []
     for cluster in clusters:
         current = {node_uuid for _name, node_uuid in _cluster_influences(cluster)}
-        plans.extend((cluster, influence) for influence in influences if (cmds.ls(influence, uuid=True) or [None])[0] not in current)
+        plans.extend(
+            (cluster, influence) for influence in influences if (cmds.ls(influence, uuid=True) or [None])[0] not in current
+        )
 
     if not plans:
         return {"added": []}

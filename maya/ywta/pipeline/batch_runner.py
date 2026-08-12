@@ -180,8 +180,7 @@ def _read_report(path, scene):
         or report.get("status") not in {"ok", "error"}
         or not isinstance(report.get("stages"), list)
         or not isinstance(report.get("scene"), str)
-        or os.path.normcase(os.path.abspath(report.get("scene", "")))
-        != os.path.normcase(os.path.abspath(scene))
+        or os.path.normcase(os.path.abspath(report.get("scene", ""))) != os.path.normcase(os.path.abspath(scene))
     ):
         return {
             "scene": scene,

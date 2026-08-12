@@ -85,10 +85,7 @@ def execute(cluster, shape, component_indices, influence_indices, weights, norma
     if len(values) != expected:
         raise ValueError("weight件数が不正です: expected={} actual={}".format(expected, len(values)))
     if any(
-        not isinstance(value, (int, float))
-        or isinstance(value, bool)
-        or not math.isfinite(float(value))
-        or value < 0.0
+        not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(float(value)) or value < 0.0
         for value in values
     ):
         raise ValueError("weightに不正な値があります。")

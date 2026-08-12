@@ -105,11 +105,14 @@ def mirror_hierarchy(root):
     cmds.undoInfo(openChunk=True, chunkName="YWTA Mirror Joint Hierarchy")
     failed = False
     try:
-        created = cmds.mirrorJoint(
-            mirror_plan["root"],
-            mirrorYZ=True,
-            mirrorBehavior=True,
-        ) or []
+        created = (
+            cmds.mirrorJoint(
+                mirror_plan["root"],
+                mirrorYZ=True,
+                mirrorBehavior=True,
+            )
+            or []
+        )
         if len(created) != len(mirror_plan["sources"]):
             raise RuntimeError("mirror後のjoint数が一致しません。")
         records = []

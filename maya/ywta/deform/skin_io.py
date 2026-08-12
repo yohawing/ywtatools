@@ -652,11 +652,14 @@ def load_selected():
 
 def _selected_vertex_target():
     """現在選択から単一meshとflatten済み頂点indexを返す。"""
-    components = cmds.filterExpand(
-        cmds.ls(selection=True, long=True) or [],
-        selectionMask=31,
-        expand=True,
-    ) or []
+    components = (
+        cmds.filterExpand(
+            cmds.ls(selection=True, long=True) or [],
+            selectionMask=31,
+            expand=True,
+        )
+        or []
+    )
     if not components:
         raise ValueError("復元先のmesh頂点を1つ以上選択してください。")
     shapes = []
