@@ -382,7 +382,7 @@ def apply(data, nodes=None, blend=1.0):
             continue
         for attribute in control["attributes"]:
             plug = "{}.{}".format(node, attribute["name"])
-            if not cmds.objExists(plug) or cmds.getAttr(plug, lock=True):
+            if not cmds.objExists(plug) or cmds.getAttr(plug, lock=True) or not cmds.getAttr(plug, keyable=True):
                 skipped.append({"address": address, "attribute": attribute["name"], "reason": "unavailable"})
                 continue
             current_type = cmds.getAttr(plug, type=True)

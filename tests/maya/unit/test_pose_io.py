@@ -233,6 +233,24 @@ class PoseIoTests(TestCase):
         attributes = data["controls"][0]["attributes"]
         self.assertNotIn("translateX", [attribute["name"] for attribute in attributes])
 
+    def test_hand_edited_pose_cannot_write_non_keyable_attribute(self):
+        """外部JSONでもcapture対象外のhidden属性へ値を書かない。"""
+        source = self._control("source")
+        data = pose_io.capture([source])
+        translate = next(item for item in data["controls"][0]["attributes"] if item["name"] == "translateX")
+        translate["name"] = "hiddenValue"
+        translate["value"] = 99.0
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.addAttr(target, longName="hiddenValue", attributeType="double")
+        cmds.setAttr(target + ".hiddenValue", 7.0)
+
+        result = pose_io.apply(data, [target])
+
+        skipped = [item for item in result["skipped"] if item.get("attribute") == "hiddenValue"]
+        self.assertEqual("unavailable", skipped[0]["reason"])
+        self.assertAlmostEqual(7.0, cmds.getAttr(target + ".hiddenValue"))
+
     def test_enum_explicit_indices_are_resolved_by_label(self):
         source = self._control("source")
         cmds.addAttr(

@@ -392,6 +392,22 @@ class ClipIoTests(TestCase):
         self.assertEqual(0, result["applied_channels"])
         self.assertEqual("driven", result["skipped"][0]["reason"])
 
+    def test_hand_edited_clip_cannot_key_non_keyable_attribute(self):
+        """外部JSONでもcapture対象外のhidden属性へkeyを作らない。"""
+        source, data = self._source_clip()
+        data["controls"][0]["channels"][0]["name"] = "hiddenValue"
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.addAttr(target, longName="hiddenValue", attributeType="double")
+        cmds.setAttr(target + ".hiddenValue", 7.0)
+
+        result = clip_io.apply(data, [target], start_time=1)
+
+        self.assertEqual(0, result["applied_channels"])
+        self.assertEqual("unavailable", result["skipped"][0]["reason"])
+        self.assertFalse(cmds.keyframe(target + ".hiddenValue", query=True))
+        self.assertAlmostEqual(7.0, cmds.getAttr(target + ".hiddenValue"))
+
     def test_insert_does_not_shift_when_all_clip_channels_are_driven(self):
         source, data = self._source_clip()
         cmds.delete(source)

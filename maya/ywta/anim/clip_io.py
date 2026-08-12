@@ -464,7 +464,7 @@ def apply(
         for channel in control["channels"]:
             attribute = channel["name"]
             plug = "{}.{}".format(node, attribute)
-            if not cmds.objExists(plug) or cmds.getAttr(plug, lock=True):
+            if not cmds.objExists(plug) or cmds.getAttr(plug, lock=True) or not cmds.getAttr(plug, keyable=True):
                 skipped.append({"address": address, "attribute": attribute, "reason": "unavailable"})
                 continue
             if cmds.getAttr(plug, type=True) != channel["type"]:
