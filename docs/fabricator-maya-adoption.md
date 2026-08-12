@@ -30,7 +30,10 @@ Fabricator 本体は Business Source License 1.1、YWTA は MIT License です�
 - 頂点数だけでなく face connectivity の SHA-256 fingerprint を Direct load 時に検証
 - influence の完全検証、曖昧な短名の拒否、保存外 influence のゼロ化
 - 1頂点の Weight Clipboard、複数頂点への Paste、選択頂点の Average
+- 選択componentの隣接頂点平均による局所Smooth（複数mesh、locked influence対応）
+- 全output meshを走査する未使用influence削除（locked influenceは既定で保護）
 - bulk write 用の同梱 Python plugin による単一 Undo / Redo
+- 元meshを残し、結合後の頂点順を全頂点検証するSkinned Mesh Combine
 
 Skin JSON は geometry と weight を含むため、大きいメッシュではファイルサイズも
 大きくなります。Direct load は fingerprint が一致するメッシュだけに使用し、
@@ -46,6 +49,8 @@ Skin JSON は geometry と weight を含むため、大きいメッシュでは�
 - namespace を除いた control 名による別キャラクターへの適用
 - `ywtaPoseId` string 属性による改名に強い明示アドレス
 - blend、選択 control 限定適用、開始フレーム offset、範囲内キー置換
+- Animation ClipのPlace / Replace / Insert適用モード
+- Insert時は解決・適用可能なcontrolだけの後続キーをclip長ぶん移動
 - animCurve は現在フレームへ key を設定し、constraint や計算node駆動属性は上書きしない
 - 同一アドレス候補が複数ある場合は推測せず拒否
 
@@ -65,6 +70,15 @@ thumbnail capture、カテゴリ検索、mirrored pose はまだありません�
 
 従来の `ywta.rig.skeleton.dump/load` API は互換性のため残していますが、メニューは
 安全な versioned 経路を使用します。
+
+### Control Shape Swap
+
+メニュー: `YWTA > Rigging > Swap Selected Control Shapes`
+
+- 選択controlのtransform、key、constraintなどを維持してNURBS shapeだけを差し替え
+- shapeのoverride color、display type、visibility入力接続を新shapeへ継承
+- 複数shape controlに対応
+- 事前検証と単一Undo / Redo
 
 ### Scene Audit
 
@@ -110,7 +124,7 @@ Undo の共通 contract が完成するまで追加しません。
 - AI bridge / assistant
 - Project Setup の engine template
 - Joint Aimer の viewport preview と mirror workflow
-- skinned mesh の combine / separate
+- skinned mesh の separate
 - Scene Audit の自動修復
 - thumbnail 付き Pose / Animation library UI
 
