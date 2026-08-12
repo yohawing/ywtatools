@@ -88,6 +88,7 @@ class FabricatorMenuTests(TestCase):
                 "Smooth Selected Skin Weights",
                 "Remove Unused Skin Influences",
                 "Combine Skinned Meshes",
+                "Separate Skinned Mesh Shells",
             }.issubset(labels)
         )
 

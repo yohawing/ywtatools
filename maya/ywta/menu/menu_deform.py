@@ -154,6 +154,12 @@ def create_deform_menu(parent_menu):
         command="import ywta.deform.combine_skinned as combine_skinned; combine_skinned.combine_selected()",
         annotation="元meshを残し、頂点順を検証して正確なウェイト付きで結合します",
     )
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Separate Skinned Mesh Shells",
+        command="import ywta.deform.separate_skinned as separate_skinned; separate_skinned.separate_selected()",
+        annotation="元meshを残し、vertex mappingで各shellを正確なウェイト付きmeshへ分割します",
+    )
 
     transfer_shape_menu_item = cmds.menuItem(
         parent=deform_menu,
