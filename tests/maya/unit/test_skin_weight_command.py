@@ -104,6 +104,53 @@ class SkinWeightCommandTests(TestCase):
         for expected, actual in zip(before, self._weights()):
             self.assertAlmostEqual(expected, actual)
 
+    def test_normalized_subset_write_restores_all_influences(self):
+        """normalizeが他influenceを変えてもUndoで行全体を戻す。"""
+        cmds.skinPercent(
+            self.cluster,
+            self.mesh + ".vtx[0]",
+            transformValue=((self.joint, 0.25), (self.tip, 0.75)),
+        )
+        before = self._weights()
+
+        skin_weight_command.execute(
+            self.cluster,
+            self.shape,
+            [0],
+            [0],
+            [0.5],
+            normalize=True,
+        )
+        self.assertNotEqual(before, self._weights())
+
+        cmds.undo()
+        for expected, actual in zip(before, self._weights()):
+            self.assertAlmostEqual(expected, actual)
+
+    def test_physical_influence_index_maps_across_logical_hole(self):
+        """削除済みlogical slotがあっても物理順の対象へ書き込む。"""
+        cmds.select(clear=True)
+        extra = cmds.joint(name="extra_jnt", position=(2.0, 0.0, 0.0))
+        cmds.skinCluster(self.cluster, edit=True, addInfluence=extra, weight=0.0)
+        cmds.skinCluster(self.cluster, edit=True, removeInfluence=self.tip)
+
+        skin_weight_command.execute(
+            self.cluster,
+            self.shape,
+            [0],
+            [1],
+            [0.4],
+            normalize=False,
+        )
+
+        values = cmds.skinPercent(
+            self.cluster,
+            self.mesh + ".vtx[0]",
+            query=True,
+            value=True,
+        )
+        self.assertAlmostEqual(0.4, values[1])
+
     def test_wrong_cluster_shape_and_out_of_range_indices_are_rejected(self):
         """MFnSkinClusterへ不整合node/indexを渡さない。"""
         other = cmds.polyPlane(name="other")[0]

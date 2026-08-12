@@ -42,6 +42,7 @@ class YwtaSetSkinWeightsCommand(om.MPxCommand):
         self._shape = None
         self._component_indices = None
         self._influence_indices = None
+        self._all_influence_indices = None
         self._new_weights = None
         self._old_weights = None
         self._normalize = True
@@ -59,9 +60,12 @@ class YwtaSetSkinWeightsCommand(om.MPxCommand):
         self._cluster = om.MObjectHandle(_depend_node(operation["cluster"]))
         self._shape = om.MObjectHandle(_dag_node(operation["shape"]))
         self._component_indices = operation["component_indices"]
-        self._influence_indices = om.MIntArray(operation["influence_indices"])
         self._new_weights = om.MDoubleArray(operation["weights"])
         self._normalize = operation["normalize"]
+        fn_skin, _shape_path = self._objects()
+        influence_count = len(fn_skin.influenceObjects())
+        self._influence_indices = om.MIntArray(operation["influence_indices"])
+        self._all_influence_indices = om.MIntArray(range(influence_count))
         self._set_new_weights(capture_old=True)
 
     def _objects(self):
@@ -75,16 +79,18 @@ class YwtaSetSkinWeightsCommand(om.MPxCommand):
     def _set_new_weights(self, capture_old=False):
         """new weights を設定し、初回だけ old weights を保存する。"""
         fn_skin, shape_path = self._objects()
-        old_weights = fn_skin.setWeights(
+        component = _component(self._component_indices)
+        if capture_old:
+            old_weights, _influence_count = fn_skin.getWeights(shape_path, component)
+            self._old_weights = om.MDoubleArray(old_weights)
+        fn_skin.setWeights(
             shape_path,
-            _component(self._component_indices),
+            component,
             self._influence_indices,
             self._new_weights,
             normalize=self._normalize,
-            returnOldWeights=capture_old,
+            returnOldWeights=False,
         )
-        if capture_old:
-            self._old_weights = om.MDoubleArray(old_weights)
 
     def redoIt(self):
         """保存済み new weights を再適用する。"""
@@ -96,7 +102,7 @@ class YwtaSetSkinWeightsCommand(om.MPxCommand):
         fn_skin.setWeights(
             shape_path,
             _component(self._component_indices),
-            self._influence_indices,
+            self._all_influence_indices,
             self._old_weights,
             normalize=False,
         )
