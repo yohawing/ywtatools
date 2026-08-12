@@ -1,6 +1,7 @@
 """Animation Clip IO の Maya 単体テスト。"""
 
 import copy
+from unittest import mock
 
 import maya.cmds as cmds
 
@@ -32,6 +33,32 @@ class ClipIoTests(TestCase):
         cmds.setKeyframe(source, attribute="translateX", time=10, value=1.0, inTangentType="linear", outTangentType="linear")
         cmds.setKeyframe(source, attribute="translateX", time=20, value=5.0, inTangentType="flat", outTangentType="flat")
         return source, clip_io.capture([source], start=10, end=20)
+
+    def test_capture_time_range_prefers_highlighted_frames(self):
+        """Time sliderが返すハイライト開始・終了frameを使用する。"""
+
+        def time_control(_slider, query=False, rangeVisible=False, rangeArray=False):
+            self.assertTrue(query)
+            if rangeVisible:
+                return True
+            if rangeArray:
+                return [5.0, 13.0]
+            return None
+
+        with (
+            mock.patch.object(clip_io.cmds, "playbackOptions", side_effect=[1.0, 24.0]),
+            mock.patch.object(clip_io.mel, "eval", return_value="timeControl1"),
+            mock.patch.object(clip_io.cmds, "timeControl", side_effect=time_control),
+        ):
+            self.assertEqual((5.0, 13.0), clip_io.capture_time_range())
+
+    def test_capture_time_range_falls_back_without_time_slider(self):
+        """Standaloneでtime sliderがない場合はplayback rangeを返す。"""
+        with (
+            mock.patch.object(clip_io.cmds, "playbackOptions", side_effect=[1.0, 24.0]),
+            mock.patch.object(clip_io.mel, "eval", side_effect=RuntimeError("no UI")),
+        ):
+            self.assertEqual((1.0, 24.0), clip_io.capture_time_range())
 
     def test_clip_applies_across_namespace_with_offset(self):
         source, data = self._source_clip()

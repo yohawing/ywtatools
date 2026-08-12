@@ -8,6 +8,7 @@ import os
 import tempfile
 
 import maya.cmds as cmds
+import maya.mel as mel
 
 from ywta.anim import pose_io
 from ywta.core import undo_utils
@@ -215,6 +216,32 @@ def capture(nodes=None, start=None, end=None):
         "angle_unit": cmds.currentUnit(query=True, angle=True),
         "controls": controls,
     }
+
+
+def capture_time_range():
+    """ハイライト範囲を優先し、なければplayback rangeを返す。
+
+    Maya timeControlが返す現在time unitの開始・終了値を使用する。standaloneなど
+    time sliderがない環境ではplayback rangeへ安全に戻る。
+    """
+    playback = (
+        float(cmds.playbackOptions(query=True, minTime=True)),
+        float(cmds.playbackOptions(query=True, maxTime=True)),
+    )
+    try:
+        slider = mel.eval("$tmp = $gPlayBackSlider;")
+        if not slider or not cmds.timeControl(slider, query=True, rangeVisible=True):
+            return playback
+        values = cmds.timeControl(slider, query=True, rangeArray=True) or []
+    except RuntimeError:
+        return playback
+    if len(values) != 2:
+        return playback
+    start = float(values[0])
+    end = float(values[1])
+    if not math.isfinite(start) or not math.isfinite(end) or end <= start:
+        return playback
+    return start, end
 
 
 def _validate(data):
@@ -524,18 +551,20 @@ def apply(
 
 
 def save_selected():
-    """選択コントロールの playback range をダイアログで保存する。"""
+    """選択コントロールのhighlight/playback rangeを保存する。"""
     selected = pose_io.resolve_controls()
     paths = cmds.fileDialog2(fileMode=0, dialogStyle=2, caption="Save Animation Clip", fileFilter="JSON (*.json)")
     if not paths:
         return None
-    return save(selected, paths[0])
+    start, end = capture_time_range()
+    return save(selected, paths[0], start=start, end=end)
 
 
 def save_temp_selected():
-    """選択controlのplayback rangeを一時Clip JSONへ保存する。"""
+    """選択controlのhighlight/playback rangeを一時Clip JSONへ保存する。"""
     selected = pose_io.resolve_controls()
-    path = save_temp(selected)
+    start, end = capture_time_range()
+    path = save_temp(selected, start=start, end=end)
     cmds.inViewMessage(
         statusMessage="Saved temporary animation clip.",
         position="topCenter",
