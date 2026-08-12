@@ -110,7 +110,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 メニュー: `YWTA > Rigging > Swap Selected Control Shapes`
 
 - 選択controlのtransform、key、constraintなどを維持してNURBS shapeだけを差し替え
-- shapeのoverride color、display type、visibility入力接続を新shapeへ継承
+- shapeのoverride color、display type、静的visibility値、visibility入力接続を新shapeへ継承
 - 複数shape controlに対応
 - side tokenとnamespaceから反対側controlを解決するworld YZ Shape Mirror
 - 事前検証と単一Undo / Redo
