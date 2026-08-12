@@ -50,6 +50,43 @@ class SkeletonIoTests(TestCase):
         self.assertEqual("target:rig:root_jnt", created[0].rsplit("|", 1)[-1])
         self.assertEqual("target:rig:spine_jnt", created[1].rsplit("|", 1)[-1])
 
+    def test_joint_labels_limits_and_channel_states_round_trip(self):
+        root, child = self._skeleton()
+        cmds.setAttr(child + ".side", 1)
+        cmds.setAttr(child + ".type", 18)
+        cmds.setAttr(child + ".otherType", "elbow", type="string")
+        cmds.setAttr(child + ".drawLabel", True)
+        cmds.setAttr(child + ".minRotLimit", -10.0, -20.0, -30.0)
+        cmds.setAttr(child + ".maxRotLimit", 10.0, 20.0, 30.0)
+        cmds.setAttr(child + ".minRotLimitEnable", True, False, True)
+        cmds.setAttr(child + ".maxRotLimitEnable", False, True, True)
+        cmds.setAttr(child + ".rotateX", keyable=False, channelBox=False)
+        cmds.setAttr(child + ".rotateX", lock=True)
+        data = skeleton_io.capture(root)
+        cmds.delete(root)
+
+        created = skeleton_io.create(data)
+        rebuilt = created[1]
+
+        self.assertEqual(1, cmds.getAttr(rebuilt + ".side"))
+        self.assertEqual(18, cmds.getAttr(rebuilt + ".type"))
+        self.assertEqual("elbow", cmds.getAttr(rebuilt + ".otherType"))
+        self.assertTrue(cmds.getAttr(rebuilt + ".drawLabel"))
+        for expected, actual in zip(
+            (-10.0, -20.0, -30.0),
+            cmds.getAttr(rebuilt + ".minRotLimit")[0],
+        ):
+            self.assertAlmostEqual(expected, actual)
+        for expected, actual in zip(
+            (10.0, 20.0, 30.0),
+            cmds.getAttr(rebuilt + ".maxRotLimit")[0],
+        ):
+            self.assertAlmostEqual(expected, actual)
+        self.assertEqual((True, False, True), cmds.getAttr(rebuilt + ".minRotLimitEnable")[0])
+        self.assertEqual((False, True, True), cmds.getAttr(rebuilt + ".maxRotLimitEnable")[0])
+        self.assertTrue(cmds.getAttr(rebuilt + ".rotateX", lock=True))
+        self.assertFalse(cmds.getAttr(rebuilt + ".rotateX", keyable=True))
+
     def test_create_namespace_is_absolute_from_current_namespace(self):
         root, _child = self._skeleton("source")
         data = skeleton_io.capture(root)
@@ -78,6 +115,28 @@ class SkeletonIoTests(TestCase):
         data = copy.deepcopy(skeleton_io.capture(root))
         cmds.delete(root)
         data["joints"][1]["parent"] = 2
+
+        with self.assertRaises(ValueError):
+            skeleton_io.create(data)
+
+        self.assertFalse(cmds.ls(type="joint"))
+
+    def test_version_one_without_channel_states_remains_readable(self):
+        root, _child = self._skeleton()
+        data = skeleton_io.capture(root)
+        for joint in data["joints"]:
+            del joint["channels"]
+        cmds.delete(root)
+
+        created = skeleton_io.create(data)
+
+        self.assertEqual(2, len(created))
+
+    def test_invalid_channel_state_is_rejected_before_edit(self):
+        root, _child = self._skeleton()
+        data = skeleton_io.capture(root)
+        data["joints"][0]["channels"]["rotateX"]["locked"] = "yes"
+        cmds.delete(root)
 
         with self.assertRaises(ValueError):
             skeleton_io.create(data)

@@ -19,6 +19,12 @@ VECTOR_ATTRIBUTES = (
     "jointOrient",
     "rotateAxis",
     "preferredAngle",
+    "minRotLimit",
+    "maxRotLimit",
+)
+BOOLEAN_VECTOR_ATTRIBUTES = (
+    "minRotLimitEnable",
+    "maxRotLimitEnable",
 )
 SCALAR_ATTRIBUTES = (
     "rotateOrder",
@@ -26,9 +32,31 @@ SCALAR_ATTRIBUTES = (
     "segmentScaleCompensate",
     "drawStyle",
     "visibility",
+    "side",
+    "type",
+    "drawLabel",
 )
+STRING_ATTRIBUTES = ("otherType",)
 MATRIX_ATTRIBUTES = ("offsetParentMatrix",)
-ALL_ATTRIBUTES = VECTOR_ATTRIBUTES + SCALAR_ATTRIBUTES + MATRIX_ATTRIBUTES
+ALL_ATTRIBUTES = (
+    VECTOR_ATTRIBUTES
+    + BOOLEAN_VECTOR_ATTRIBUTES
+    + SCALAR_ATTRIBUTES
+    + STRING_ATTRIBUTES
+    + MATRIX_ATTRIBUTES
+)
+CHANNEL_ATTRIBUTES = (
+    "translateX",
+    "translateY",
+    "translateZ",
+    "rotateX",
+    "rotateY",
+    "rotateZ",
+    "scaleX",
+    "scaleY",
+    "scaleZ",
+    "visibility",
+)
 
 
 def _joint_path(joint):
@@ -66,11 +94,20 @@ def capture(root):
             for attribute in ALL_ATTRIBUTES
             if cmds.objExists("{}.{}".format(joint, attribute))
         }
+        channels = {
+            attribute: {
+                "locked": bool(cmds.getAttr("{}.{}".format(joint, attribute), lock=True)),
+                "keyable": bool(cmds.getAttr("{}.{}".format(joint, attribute), keyable=True)),
+                "channel_box": bool(cmds.getAttr("{}.{}".format(joint, attribute), channelBox=True)),
+            }
+            for attribute in CHANNEL_ATTRIBUTES
+        }
         joints.append(
             {
                 "name": _portable_name(joint),
                 "parent": parent_index,
                 "attributes": attributes,
+                "channels": channels,
             }
         )
         children = cmds.listRelatives(joint, children=True, type="joint", fullPath=True) or []
@@ -146,6 +183,11 @@ def _validate(data):
         for attribute in VECTOR_ATTRIBUTES:
             if attribute in attributes:
                 _finite_values(attributes[attribute], 3, "{}.{}".format(name, attribute))
+        for attribute in BOOLEAN_VECTOR_ATTRIBUTES:
+            if attribute in attributes:
+                value = attributes[attribute]
+                if not isinstance(value, list) or len(value) != 3 or any(not isinstance(item, bool) for item in value):
+                    raise ValueError("{}.{}が不正です。".format(name, attribute))
         for attribute in MATRIX_ATTRIBUTES:
             if attribute in attributes:
                 _finite_values(attributes[attribute], 16, "{}.{}".format(name, attribute))
@@ -153,14 +195,27 @@ def _validate(data):
             if attribute not in attributes:
                 continue
             value = attributes[attribute]
-            if attribute in {"segmentScaleCompensate", "visibility"}:
+            if attribute in {"segmentScaleCompensate", "visibility", "drawLabel"}:
                 valid = isinstance(value, bool)
-            elif attribute in {"rotateOrder", "drawStyle"}:
+            elif attribute in {"rotateOrder", "drawStyle", "side", "type"}:
                 valid = isinstance(value, int) and not isinstance(value, bool)
             else:
                 valid = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
             if not valid:
                 raise ValueError("{}.{} が不正です。".format(name, attribute))
+        for attribute in STRING_ATTRIBUTES:
+            if attribute in attributes and not isinstance(attributes[attribute], str):
+                raise ValueError("{}.{}が不正です。".format(name, attribute))
+
+        channels = joint.get("channels")
+        if channels is not None:
+            if not isinstance(channels, dict) or set(channels) - set(CHANNEL_ATTRIBUTES):
+                raise ValueError("{}.channelsが不正です。".format(name))
+            for attribute, state in channels.items():
+                if not isinstance(state, dict) or set(state) != {"locked", "keyable", "channel_box"}:
+                    raise ValueError("{}.channels.{}が不正です。".format(name, attribute))
+                if any(not isinstance(state[key], bool) for key in state):
+                    raise ValueError("{}.channels.{}が不正です。".format(name, attribute))
     return data
 
 
@@ -226,9 +281,32 @@ def _set_attributes(joint, attributes):
     for attribute in VECTOR_ATTRIBUTES:
         if attribute in attributes:
             cmds.setAttr("{}.{}".format(joint, attribute), *attributes[attribute])
+    for attribute in BOOLEAN_VECTOR_ATTRIBUTES:
+        if attribute in attributes:
+            cmds.setAttr("{}.{}".format(joint, attribute), *attributes[attribute])
     for attribute in SCALAR_ATTRIBUTES:
         if attribute in attributes:
             cmds.setAttr("{}.{}".format(joint, attribute), attributes[attribute])
+    for attribute in STRING_ATTRIBUTES:
+        if attribute in attributes:
+            cmds.setAttr(
+                "{}.{}".format(joint, attribute),
+                attributes[attribute],
+                type="string",
+            )
+
+
+def _set_channel_states(joint, states):
+    """bake後に検証済みchannel表示・lock状態を復元する。"""
+    for attribute, state in (states or {}).items():
+        plug = "{}.{}".format(joint, attribute)
+        cmds.setAttr(plug, lock=False)
+        cmds.setAttr(
+            plug,
+            keyable=state["keyable"],
+            channelBox=state["channel_box"],
+        )
+        cmds.setAttr(plug, lock=state["locked"])
 
 
 def _scene_convention_mismatches(data):
@@ -302,6 +380,8 @@ def create(
                     rotate=True,
                     scale=False,
                 )
+        for joint, item in zip(created, data["joints"]):
+            _set_channel_states(joint, item.get("channels"))
         cmds.select(created[0], replace=True)
     except Exception:
         failed = True
