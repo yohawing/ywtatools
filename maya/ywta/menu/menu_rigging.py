@@ -170,7 +170,7 @@ def create_rigging_menu(parent_menu):
         parent=rig_menu,
         label="Save Temporary Skeleton",
         command="import ywta.rig.skeleton_io as skeleton_io; skeleton_io.save_temp_selected()",
-        annotation="選択root hierarchyをMayaユーザー用の一時JSONへ保存します",
+        annotation="選択jointのtop jointからMayaユーザー用の一時JSONへ保存します",
     )
     cmds.menuItem(
         parent=rig_menu,

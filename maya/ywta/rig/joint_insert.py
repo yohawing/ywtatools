@@ -157,7 +157,7 @@ def show_options():
         cmds.deleteUI(window)
     cmds.window(window, title="YWTA Insert Joints", sizeable=False)
     cmds.columnLayout(adjustableColumn=True, rowSpacing=8, width=320)
-    count_field = cmds.intSliderGrp(label="Count", field=True, minValue=1, maxValue=20, value=1)
+    count_field = cmds.intSliderGrp(label="Count", field=True, minValue=1, maxValue=99, value=1)
     name_field = cmds.textFieldGrp(label="Name", text="insert_##_jnt")
 
     def run(*_args):
