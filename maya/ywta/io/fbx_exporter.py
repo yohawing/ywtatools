@@ -34,16 +34,23 @@ def _export_path(file_path):
 
 def _nodes(nodes):
     """export node を順序保持したロング名へ解決する。"""
-    values = cmds.ls(nodes, long=True) if nodes is not None else cmds.ls(selection=True, long=True)
-    if not values:
+    source = nodes if nodes is not None else cmds.ls(selection=True, long=True)
+    if isinstance(source, str):
+        source = [source]
+    if not source:
         raise ValueError("FBX export 対象を選択してください。")
     result = []
     seen = set()
-    for node in values:
-        node_uuid = (cmds.ls(node, uuid=True) or [None])[0]
-        if node_uuid and node_uuid not in seen:
+    for node in source:
+        matches = cmds.ls(node, long=True) or []
+        if len(matches) != 1:
+            raise ValueError("FBX export nodeを一意に解決できません: {}".format(node))
+        node_uuid = (cmds.ls(matches[0], uuid=True) or [None])[0]
+        if node_uuid is None:
+            raise ValueError("FBX export nodeのUUIDを取得できません: {}".format(node))
+        if node_uuid not in seen:
             seen.add(node_uuid)
-            result.append(node)
+            result.append(matches[0])
     return result
 
 

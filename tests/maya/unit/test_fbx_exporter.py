@@ -101,3 +101,16 @@ class FbxExporterTests(TestCase):
             fbx_exporter.export_animation(root, path, start=10, end=1)
 
         self.assertFalse(os.path.exists(path))
+
+    def test_missing_explicit_node_rejects_partial_export(self):
+        """明示nodeの一部欠落を黙って無視しない。"""
+        cube = cmds.polyCube(name="asset")[0]
+        sentinel = cmds.spaceLocator(name="selection_sentinel")[0]
+        cmds.select(sentinel, replace=True)
+        path = self.get_temp_filename("partial.fbx")
+
+        with self.assertRaises(ValueError):
+            fbx_exporter.export_selected([cube, "missing_asset"], path)
+
+        self.assertFalse(os.path.exists(path))
+        self.assertEqual([sentinel], cmds.ls(selection=True))
