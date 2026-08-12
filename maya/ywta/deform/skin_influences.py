@@ -7,6 +7,7 @@ import maya.cmds as cmds
 
 from ywta.deform import influence_cleanup
 from ywta.deform import skin_io
+from ywta.core import undo_utils
 
 
 def _unique_nodes(nodes, node_type):
@@ -83,6 +84,7 @@ def add_influences(meshes, influences, lock_weights=False):
 
     if not plans:
         return {"added": []}
+    undo_utils.require_enabled("Add Skin Influences")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Add Skin Influences")
     failed = False
     added = []
@@ -133,6 +135,7 @@ def remove_influences(meshes, influences, threshold=influence_cleanup.DEFAULT_TH
 
     if not plans:
         return {"removed": []}
+    undo_utils.require_enabled("Remove Skin Influences")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Remove Skin Influences")
     failed = False
     removed = []

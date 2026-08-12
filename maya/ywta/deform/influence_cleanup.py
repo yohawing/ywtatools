@@ -9,6 +9,7 @@ import maya.api.OpenMayaAnim as oma
 import maya.cmds as cmds
 
 from ywta.deform import skin_io
+from ywta.core import undo_utils
 
 
 DEFAULT_THRESHOLD = 1.0e-8
@@ -154,6 +155,7 @@ def remove_unused_influences(
 
     if not plans:
         return {"removed": [], "protected": protected}
+    undo_utils.require_enabled("Remove Unused Influences")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Remove Unused Influences")
     failed = False
     removed = []

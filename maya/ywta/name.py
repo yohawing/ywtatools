@@ -7,6 +7,8 @@ import uuid
 
 import maya.cmds as cmds
 
+from ywta.core import undo_utils
+
 
 _TRAILING_NUMBER_PATTERN = r"^(.*?)(?:{separator})(\d+)$"
 
@@ -94,6 +96,7 @@ def rename_nodes(nodes, names):
             }
         )
 
+    undo_utils.require_enabled("Name Tools")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Name Tools")
     failed = False
     try:

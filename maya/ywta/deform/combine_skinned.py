@@ -10,6 +10,7 @@ import maya.cmds as cmds
 
 from ywta.deform import skin_io
 from ywta.deform import skin_weight_command
+from ywta.core import undo_utils
 
 
 POSITION_TOLERANCE = 1.0e-6
@@ -99,6 +100,7 @@ def combine(meshes=None, name="combined_skinned_mesh"):
                 influence_paths.append(influence)
 
     original_selection = cmds.ls(selection=True, long=True) or []
+    undo_utils.require_enabled("Combine Skinned Meshes")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Combine Skinned Meshes")
     failed = False
     duplicates = []

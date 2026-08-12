@@ -15,6 +15,7 @@ import maya.api.OpenMayaAnim as oma
 import maya.cmds as cmds
 
 from ywta.deform import skin_weight_command
+from ywta.core import undo_utils
 
 
 FORMAT = "ywta.skin_weights"
@@ -419,6 +420,7 @@ def apply(mesh, data):
     _ensure_topology(shape, data["mesh"]["topology"])
     influences = _resolve_influences(data["influences"])
 
+    undo_utils.require_enabled("Skin IO Load")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Skin IO Load")
     failed = False
     try:
@@ -452,6 +454,7 @@ def apply_subset(mesh, data, vertex_indices):
     if _skin_cluster(shape) is None:
         raise ValueError("部分適用には既存skinClusterが必要です: {}".format(shape))
 
+    undo_utils.require_enabled("Skin IO Load Subset")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Skin IO Load Subset")
     failed = False
     try:
@@ -539,6 +542,7 @@ def transfer(mesh, data, surface_association="closestPoint"):
     target_shape = _mesh_shape(mesh)
     influences = _resolve_influences(data["influences"])
 
+    undo_utils.require_enabled("Skin IO Transfer")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Skin IO Transfer")
     failed = False
     temporary = None

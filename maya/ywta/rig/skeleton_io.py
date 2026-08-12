@@ -9,6 +9,8 @@ import tempfile
 
 import maya.cmds as cmds
 
+from ywta.core import undo_utils
+
 
 FORMAT = "ywta.skeleton"
 VERSION = 2
@@ -347,6 +349,7 @@ def create(
     if cmds.objExists(":" + root_name):
         raise ValueError("import 先 root が既に存在します: {}".format(root_name))
 
+    undo_utils.require_enabled("Skeleton Import")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Skeleton Import")
     failed = False
     created = []

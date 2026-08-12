@@ -8,6 +8,9 @@ Fabricator 本体は Business Source License 1.1、YWTA は MIT License です�
 固有リグ実装はコピーしていません。このリポジトリの実装とテストは YWTA 側で
 新規作成したものです。
 
+単一Undoと失敗時rollbackを契約にする変更操作は、Maya Undoが無効な場合はsceneを
+編集せずに拒否します。
+
 ## 利用できる機能
 
 ### Name Tools

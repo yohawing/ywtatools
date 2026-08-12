@@ -13,6 +13,7 @@ import maya.api.OpenMayaAnim as oma
 import maya.cmds as cmds
 
 from ywta.deform import skin_io
+from ywta.core import undo_utils
 
 
 _VERTEX_RE = re.compile(r"^(.*)\.vtx\[(\d+)\]$")
@@ -180,6 +181,7 @@ def _set_uniform_weights(shape, indices, data, chunk_name):
     """検証済み1頂点ウェイトを複数頂点へ一括設定する。"""
     data = _validate_weights(data)
     influences = skin_io._resolve_influences(data["influences"])
+    undo_utils.require_enabled(chunk_name)
     cmds.undoInfo(openChunk=True, chunkName=chunk_name)
     failed = False
     try:

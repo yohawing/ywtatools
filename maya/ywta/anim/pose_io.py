@@ -9,6 +9,8 @@ import tempfile
 
 import maya.cmds as cmds
 
+from ywta.core import undo_utils
+
 
 FORMAT = "ywta.pose"
 VERSION = 1
@@ -362,6 +364,7 @@ def apply(data, nodes=None, blend=1.0):
                 value = _blended_value(cmds.getAttr(plug), saved, current_type, float(blend))
             operations.append((node, attribute["name"], plug, value, bool(incoming)))
 
+    undo_utils.require_enabled("Pose Apply")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Pose Apply")
     failed = False
     try:

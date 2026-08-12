@@ -10,6 +10,7 @@ import tempfile
 import maya.cmds as cmds
 
 from ywta.anim import pose_io
+from ywta.core import undo_utils
 
 
 FORMAT = "ywta.animation_clip"
@@ -434,6 +435,7 @@ def apply(
             operations.append((plug, channel))
             resolved_nodes.add(node)
 
+    undo_utils.require_enabled("Animation Clip Apply")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Animation Clip Apply")
     failed = False
     applied_keys = 0

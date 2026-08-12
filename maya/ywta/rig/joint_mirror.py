@@ -7,6 +7,8 @@ import uuid
 
 import maya.cmds as cmds
 
+from ywta.core import undo_utils
+
 
 _SIDE_TOKEN = re.compile(r"(^|_)(left|right|lf|rt|l|r)(?=_|$)", re.IGNORECASE)
 _SIDE_PAIRS = {
@@ -99,6 +101,7 @@ def _resolve_uuid(node_uuid):
 def mirror_hierarchy(root):
     """joint hierarchyをworld YZ面で静的mirrorし、単一Undoにする。"""
     mirror_plan = plan(root)
+    undo_utils.require_enabled("Mirror Joint Hierarchy")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Mirror Joint Hierarchy")
     failed = False
     try:

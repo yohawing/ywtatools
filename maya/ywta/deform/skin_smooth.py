@@ -11,6 +11,7 @@ import maya.cmds as cmds
 
 from ywta.deform import skin_io
 from ywta.deform import skin_weight_command
+from ywta.core import undo_utils
 
 
 _VERTEX_RE = re.compile(r"^(.*)\.vtx\[(\d+)\]$")
@@ -140,6 +141,7 @@ def smooth(components=None, strength=0.5, iterations=1):
     """選択頂点をJacobi型隣接平均で単一Undo smoothingする。"""
     strength, iterations = _settings(strength, iterations)
     plans = [_smoothed_rows(shape, indices, strength, iterations) for shape, indices in _selected_groups(components).items()]
+    undo_utils.require_enabled("Smooth Skin Weights")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Smooth Skin Weights")
     failed = False
     try:

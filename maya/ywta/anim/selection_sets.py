@@ -9,6 +9,7 @@ import tempfile
 import maya.cmds as cmds
 
 from ywta.anim import pose_io
+from ywta.core import undo_utils
 
 
 FORMAT = "ywta.selection_sets"
@@ -69,6 +70,7 @@ def create_selection_set(label, nodes=None):
     members = _resolve_members(nodes)
     if any(_label(node).casefold() == label.casefold() for node in list_selection_sets()):
         raise ValueError("同名 selection set が既にあります: {}".format(label))
+    undo_utils.require_enabled("Create Selection Set")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Create Selection Set")
     failed = False
     try:
@@ -218,6 +220,7 @@ def apply(data):
         else:
             skipped.append({"label": entry["label"], "reason": "empty_after_resolve"})
 
+    undo_utils.require_enabled("Import Selection Sets")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Import Selection Sets")
     failed = False
     created = []

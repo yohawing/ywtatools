@@ -67,6 +67,7 @@ import maya.cmds as cmds
 import maya.api.OpenMaya as OpenMaya
 
 from ywta.settings import DOCUMENTATION_ROOT
+from ywta.core import undo_utils
 import ywta.shortcuts as shortcuts
 
 logger = logging.getLogger(__name__)
@@ -560,6 +561,7 @@ def swap_curve_shapes(transforms, curves):
         raise ValueError("差し替え対象のcontrolを1つ以上指定してください。")
 
     selection = cmds.ls(selection=True, long=True) or []
+    undo_utils.require_enabled("Swap Control Shapes")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Swap Control Shapes")
     failed = False
     try:
