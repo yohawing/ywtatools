@@ -94,6 +94,10 @@ def _smoothed_rows(shape, indices, strength, iterations):
                 row[influence_index] = current[vertex_index][influence_index] * (1.0 - strength) + average * strength
             remaining = max(0.0, 1.0 - sum(row[index] for index in locked))
             unlocked_total = sum(row[index] for index in unlocked)
+            if unlocked and unlocked_total <= skin_io.WEIGHT_EPSILON and remaining > 0.0:
+                for influence_index in unlocked:
+                    row[influence_index] = current[vertex_index][influence_index]
+                unlocked_total = sum(row[index] for index in unlocked)
             if unlocked and unlocked_total > skin_io.WEIGHT_EPSILON:
                 scale = remaining / unlocked_total
                 for influence_index in unlocked:

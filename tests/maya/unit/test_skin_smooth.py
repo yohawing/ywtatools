@@ -71,6 +71,24 @@ class SkinSmoothTests(TestCase):
 
         self.assertAlmostEqual(before[0], self._rows(mesh)[index][0])
 
+    def test_zero_unlocked_neighbor_average_keeps_normalized_target(self):
+        mesh, cluster = self._mesh("cloth")
+        index = 1
+        for neighbor in self._neighbors(mesh, index):
+            cmds.skinPercent(
+                cluster,
+                "{}.vtx[{}]".format(mesh, neighbor),
+                transformValue=((self.root, 1.0), (self.tip, 0.0)),
+            )
+        cmds.setAttr(self.root + ".lockInfluenceWeights", True)
+        before = self._rows(mesh)[index]
+
+        skin_smooth.smooth(["{}.vtx[{}]".format(mesh, index)], strength=1.0)
+
+        after = self._rows(mesh)[index]
+        self.assertAlmostEqual(before[0], after[0])
+        self.assertAlmostEqual(1.0, sum(after))
+
     def test_multiple_meshes_are_one_undoable_action(self):
         first, _first_cluster = self._mesh("first", -2.0)
         second, _second_cluster = self._mesh("second", 2.0)
