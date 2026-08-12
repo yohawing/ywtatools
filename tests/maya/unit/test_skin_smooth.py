@@ -98,10 +98,13 @@ class SkinSmoothTests(TestCase):
         components = [first + ".vtx[2]", second + ".vtx[2]"]
         before_first = self._rows(first)
         before_second = self._rows(second)
+        sentinel = first + ".vtx[0]"
+        cmds.select(sentinel, replace=True)
 
         result = skin_smooth.smooth(components, strength=1.0)
 
         self.assertEqual(2, result["meshes"])
+        self.assertEqual([sentinel], cmds.ls(selection=True, flatten=True))
         cmds.undo()
         self.assertEqual(before_first, self._rows(first))
         self.assertEqual(before_second, self._rows(second))
