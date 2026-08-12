@@ -81,6 +81,29 @@ class SkinWeightCommandTests(TestCase):
         cmds.undo()
         self.assertEqual([0.5, 0.5], self._weights())
 
+    def test_subset_influence_write_restores_full_old_weights(self):
+        """1 influenceだけのAPI writeでもUndoで全weightを正確に戻す。"""
+        cmds.skinPercent(
+            self.cluster,
+            self.mesh + ".vtx[0]",
+            transformValue=((self.joint, 0.25), (self.tip, 0.75)),
+        )
+        before = self._weights()
+
+        skin_weight_command.execute(
+            self.cluster,
+            self.shape,
+            [0],
+            [0],
+            [0.5],
+            normalize=False,
+        )
+        self.assertNotEqual(before, self._weights())
+
+        cmds.undo()
+        for expected, actual in zip(before, self._weights()):
+            self.assertAlmostEqual(expected, actual)
+
     def test_wrong_cluster_shape_and_out_of_range_indices_are_rejected(self):
         """MFnSkinClusterへ不整合node/indexを渡さない。"""
         other = cmds.polyPlane(name="other")[0]
