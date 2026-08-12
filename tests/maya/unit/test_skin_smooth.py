@@ -13,6 +13,9 @@ class SkinSmoothTests(TestCase):
     """隣接平均、lock保護、複数mesh、Undoを検証する。"""
 
     def setUp(self):
+        for option in (skin_smooth.STRENGTH_OPTION, skin_smooth.ITERATIONS_OPTION):
+            if cmds.optionVar(exists=option):
+                cmds.optionVar(remove=option)
         cmds.select(clear=True)
         self.root = cmds.joint(name="root_jnt", position=(-1.0, 0.0, 0.0))
         cmds.select(clear=True)
@@ -111,3 +114,17 @@ class SkinSmoothTests(TestCase):
             skin_smooth.smooth([mesh + ".vtx[0]"], strength=1.5)
 
         self.assertEqual(before, self._rows(mesh))
+
+    def test_settings_round_trip_and_invalid_stored_values_fall_back(self):
+        self.assertEqual((0.5, 1), skin_smooth.get_settings())
+        self.assertEqual((0.25, 3), skin_smooth.set_settings(0.25, 3))
+        self.assertEqual((0.25, 3), skin_smooth.get_settings())
+
+        cmds.optionVar(floatValue=(skin_smooth.STRENGTH_OPTION, 2.0))
+
+        self.assertEqual((0.5, 1), skin_smooth.get_settings())
+
+    def test_options_window_builds(self):
+        window = skin_smooth.show_options()
+
+        self.assertEqual("ywtaSkinSmoothOptionsWindow", window)

@@ -14,6 +14,10 @@ from ywta.deform import skin_weight_command
 
 
 _VERTEX_RE = re.compile(r"^(.*)\.vtx\[(\d+)\]$")
+STRENGTH_OPTION = "ywtaSkinSmoothStrength"
+ITERATIONS_OPTION = "ywtaSkinSmoothIterations"
+DEFAULT_STRENGTH = 0.5
+DEFAULT_ITERATIONS = 1
 
 
 def _settings(strength, iterations):
@@ -28,6 +32,24 @@ def _settings(strength, iterations):
     if not isinstance(iterations, int) or isinstance(iterations, bool) or iterations < 1:
         raise ValueError("iterationsは1以上の整数にしてください。")
     return float(strength), iterations
+
+
+def get_settings():
+    """optionVarから検証済みsmoothing設定を取得する。"""
+    strength = cmds.optionVar(query=STRENGTH_OPTION) if cmds.optionVar(exists=STRENGTH_OPTION) else DEFAULT_STRENGTH
+    iterations = cmds.optionVar(query=ITERATIONS_OPTION) if cmds.optionVar(exists=ITERATIONS_OPTION) else DEFAULT_ITERATIONS
+    try:
+        return _settings(strength, iterations)
+    except ValueError:
+        return DEFAULT_STRENGTH, DEFAULT_ITERATIONS
+
+
+def set_settings(strength, iterations):
+    """検証済みsmoothing設定をoptionVarへ保存する。"""
+    strength, iterations = _settings(strength, iterations)
+    cmds.optionVar(floatValue=(STRENGTH_OPTION, strength))
+    cmds.optionVar(intValue=(ITERATIONS_OPTION, iterations))
+    return strength, iterations
 
 
 def _selected_groups(components=None):
@@ -145,6 +167,49 @@ def smooth(components=None, strength=0.5, iterations=1):
     }
 
 
-def smooth_selected():
-    """現在選択を既定設定でsmoothingする。"""
-    return smooth()
+def smooth_selected(strength=None, iterations=None):
+    """現在選択を保存済み設定でsmoothingする。"""
+    saved_strength, saved_iterations = get_settings()
+    return smooth(
+        strength=saved_strength if strength is None else strength,
+        iterations=saved_iterations if iterations is None else iterations,
+    )
+
+
+def show_options():
+    """Skin Smooth設定と実行ボタンを持つMayaネイティブUIを表示する。"""
+    window = "ywtaSkinSmoothOptionsWindow"
+    if cmds.window(window, exists=True):
+        cmds.deleteUI(window)
+    strength, iterations = get_settings()
+    cmds.window(window, title="YWTA Skin Smooth", sizeable=False)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=8, width=360)
+    strength_field = cmds.floatSliderGrp(
+        label="Strength",
+        field=True,
+        minValue=0.0,
+        maxValue=1.0,
+        fieldMinValue=0.0,
+        fieldMaxValue=1.0,
+        value=strength,
+    )
+    iterations_field = cmds.intSliderGrp(
+        label="Iterations",
+        field=True,
+        minValue=1,
+        maxValue=20,
+        fieldMinValue=1,
+        fieldMaxValue=100,
+        value=iterations,
+    )
+
+    def apply_options(*_args):
+        values = set_settings(
+            cmds.floatSliderGrp(strength_field, query=True, value=True),
+            cmds.intSliderGrp(iterations_field, query=True, value=True),
+        )
+        return smooth_selected(*values)
+
+    cmds.button(label="Apply Smooth", command=apply_options)
+    cmds.showWindow(window)
+    return window

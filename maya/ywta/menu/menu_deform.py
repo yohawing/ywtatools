@@ -64,11 +64,18 @@ def create_deform_menu(parent_menu):
         command="import ywta.deform.skin_weights as skin_weights; skin_weights.average_vertex_weights()",
         annotation="選択頂点のスキンウェイトを平均して全選択頂点へ適用します",
     )
-    cmds.menuItem(
+    smooth_item = cmds.menuItem(
         parent=deform_menu,
         label="Smooth Selected Skin Weights",
         command="import ywta.deform.skin_smooth as skin_smooth; skin_smooth.smooth_selected()",
-        annotation="選択componentを隣接頂点平均へ50%で1回smoothingします",
+        annotation="保存済み設定で選択componentを隣接頂点平均へsmoothingします",
+    )
+    cmds.menuItem(
+        parent=deform_menu,
+        insertAfter=smooth_item,
+        optionBox=True,
+        command="import ywta.deform.skin_smooth as skin_smooth; skin_smooth.show_options()",
+        annotation="Skin Smoothのstrengthとiterationsを設定します",
     )
     cmds.menuItem(
         parent=deform_menu,
