@@ -69,7 +69,7 @@ def create_menu():
         parent=menu,
         label="Export Animation FBX",
         command="import ywta.io.fbx_exporter as fbx_exporter; fbx_exporter.export_animation()",
-        annotation="選択root jointのplayback range animationをFBX exportします",
+        annotation="選択root jointのhighlight/playback range animationをFBX exportします",
     )
 
     # Aboutセクション
