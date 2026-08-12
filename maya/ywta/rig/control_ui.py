@@ -53,9 +53,8 @@ from ywta.rig.control import (
     export_shape_to_library,
     rename_library_shape,
     mirror_curve,
-    import_curves_on_selected,
+    import_curve_files_on_selected,
     import_new_curve_files,
-    import_new_curves,
     combine_control_shapes,
     select_control_cvs,
     set_control_color,
@@ -265,15 +264,15 @@ class ControlWindow(SingletonWindowMixin, MayaQWidgetBaseMixin, QMainWindow):
         """Create the curves selected in the curve list."""
         sel = cmds.ls(sl=True)
         target = sel[0] if sel else None
-        func = import_curves_on_selected if target else import_new_curves
-        curves = []
-        for item in self.control_list.selectedItems():
-            text = item.text()
-            control_file = os.path.join(CONTROLS_DIRECTORY, "{0}.json".format(text))
-            controls = func(control_file)
-            curves += controls
-            if target:
-                cmds.select(target)
+        control_files = [
+            os.path.join(CONTROLS_DIRECTORY, "{0}.json".format(item.text())) for item in self.control_list.selectedItems()
+        ]
+        if not control_files:
+            raise ValueError("作成するcontrol shapeを1つ以上選択してください。")
+        if target:
+            curves = import_curve_files_on_selected(control_files)
+        else:
+            curves = import_new_curve_files(control_files)
         if curves:
             cmds.select(curves)
 

@@ -320,7 +320,20 @@ def import_curves_on_selected(file_path=None, tag_as_controller=False):
     :param tag_as_controller: True to tag the curve transform as a controller
     :return: The new curve transform
     """
-    controls = load_curves(file_path)
+    if file_path is None:
+        file_path = shortcuts.get_open_file_name("*.json", "ywta.control")
+        if not file_path:
+            return None
+    return import_curve_files_on_selected([file_path], tag_as_controller=tag_as_controller)
+
+
+def import_curve_files_on_selected(file_paths, tag_as_controller=False):
+    """複数Control JSONを事前検証し、選択transformへ1回のUndoで追加する。"""
+    if isinstance(file_paths, (str, bytes)) or not file_paths:
+        raise ValueError("Control JSON pathを1つ以上指定してください。")
+    controls = []
+    for file_path in file_paths:
+        controls.extend(load_curves(file_path))
     selected_transforms = cmds.ls(selection=True, long=True, type="transform") or []
     if not selected_transforms:
         return

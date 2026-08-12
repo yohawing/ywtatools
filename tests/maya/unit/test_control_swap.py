@@ -346,6 +346,24 @@ class ControlSwapTests(TestCase):
 
         self.assertFalse(cmds.objExists("would_create"))
 
+    def test_multiple_library_files_validate_before_applying_to_selection(self):
+        """後続JSONが壊れていれば選択controlへ前半shapeも追加しない。"""
+        target = cmds.circle(name="target")[0]
+        curve = self._line([(0, 0, 0), (1, 0, 0)])
+        curve.transform = "valid"
+        valid_path = self.get_temp_filename("valid_apply.json")
+        invalid_path = self.get_temp_filename("invalid_apply.json")
+        control._write_curve_data([curve], valid_path)
+        with open(invalid_path, "w", encoding="utf-8") as handle:
+            json.dump([{"transform": "broken"}], handle)
+        cmds.select(target, replace=True)
+
+        with self.assertRaises(ValueError):
+            control.import_curve_files_on_selected([valid_path, invalid_path])
+
+        self.assertEqual(1, len(cmds.listRelatives(target, shapes=True, type="nurbsCurve")))
+        self.assertEqual(["|target"], cmds.ls(selection=True, long=True))
+
     def test_combine_control_shapes_preserves_world_shape_and_undo(self):
         """source形状をworld位置のままtargetへ移し、1回でUndoする。"""
         source = cmds.curve(name="source_ctrl", degree=1, point=[(0, 0, 0), (1, 2, 0), (2, 0, 1)])
