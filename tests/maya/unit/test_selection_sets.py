@@ -146,6 +146,31 @@ class SelectionSetsTests(TestCase):
             {value.rsplit("|", 1)[-1] for value in selection_sets.members(result["created"][0])},
         )
 
+    def test_import_can_be_limited_to_selected_character_controls(self):
+        """同名controlが複数rigにあっても明示scope内だけへsetを作る。"""
+        source = self._control("source", "hand_ctrl")
+        node = selection_sets.create_selection_set("Hands", [source])
+        data = selection_sets.capture([node])
+        cmds.delete(node, source)
+        first = self._control("first", "hand_ctrl")
+        self._control("second", "hand_ctrl")
+
+        result = selection_sets.apply(data, nodes=[first])
+
+        self.assertEqual(1, len(result["created"]))
+        self.assertEqual([first], [member.rsplit("|", 1)[-1] for member in selection_sets.members(result["created"][0])])
+
+    def test_selected_import_dialog_forwards_explicit_scope(self):
+        """UI入口が現在選択controlをimport engineへ渡す。"""
+        control = self._control("character", "hand_ctrl")
+        cmds.select(control, replace=True)
+
+        with mock.patch.object(selection_sets, "import_dialog", return_value={"created": []}) as import_dialog:
+            result = selection_sets.import_to_selected_dialog()
+
+        self.assertEqual({"created": []}, result)
+        import_dialog.assert_called_once_with(nodes=["|character:hand_ctrl"])
+
     def test_ambiguous_target_fails_before_set_creation(self):
         source = self._control("source", "hand_ctrl")
         selection_sets.create_selection_set("Hands", [source])

@@ -98,6 +98,7 @@ Skinned Mesh Combineは実行時のjoint・mesh評価姿勢を新しいskinClust
 - Maya objectSet を正本とする Selection Sets と portable JSON
 - 参照scene由来のSelection Setはreference editを作らず削除前に拒否
 - Selection Sets capture APIは単一objectSet文字列とset列の両方に対応
+- `Import to Selected`で同名controlを持つ複数キャラクターから解決scopeを明示
 - namespace を除いた control 名による別キャラクターへの適用
 - `ywtaPoseId` string 属性による改名に強い明示アドレス
 - `Set Pose ID...`から選択control 1つへ明示アドレスを設定

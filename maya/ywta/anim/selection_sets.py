@@ -209,15 +209,15 @@ def read(file_path):
         return _validate(json.load(handle))
 
 
-def apply(data):
-    """portable selection sets を現在 scene の control へ解決して作成する。"""
+def apply(data, nodes=None):
+    """portable selection sets をscene全体または指定controlへ解決して作成する。"""
     data = _validate(data)
     existing_labels = {_label(node).casefold() for node in list_selection_sets()}
     incoming_labels = {entry["label"].casefold() for entry in data["sets"]}
     conflicts = existing_labels & incoming_labels
     if conflicts:
         raise ValueError("同名 selection set が既にあります: {}".format(", ".join(sorted(conflicts))))
-    index, ambiguous = pose_io.target_index()
+    index, ambiguous = pose_io.target_index(nodes)
     plans = []
     skipped = []
     for entry in data["sets"]:
@@ -267,8 +267,8 @@ def export_dialog():
     return save(paths[0])
 
 
-def import_dialog():
-    """Selection Sets JSON をダイアログで読み込む。"""
+def import_dialog(nodes=None):
+    """Selection Sets JSONをscene全体または指定controlへ読み込む。"""
     paths = cmds.fileDialog2(
         fileMode=1,
         dialogStyle=2,
@@ -277,7 +277,12 @@ def import_dialog():
     )
     if not paths:
         return None
-    return apply(read(paths[0]))
+    return apply(read(paths[0]), nodes=nodes)
+
+
+def import_to_selected_dialog():
+    """現在選択controlだけを候補にSelection Sets JSONを読み込む。"""
+    return import_dialog(nodes=_resolve_members())
 
 
 def show():
@@ -323,9 +328,13 @@ def show():
         label="Delete Set",
         command=lambda *_: (delete_selection_set(selected_node()), refresh()),
     )
-    cmds.rowLayout(numberOfColumns=2, adjustableColumn=1)
+    cmds.rowLayout(numberOfColumns=3, adjustableColumn=1)
     cmds.button(label="Export All", command=lambda *_: export_dialog())
     cmds.button(label="Import", command=lambda *_: (import_dialog(), refresh()))
+    cmds.button(
+        label="Import to Selected",
+        command=lambda *_: (import_to_selected_dialog(), refresh()),
+    )
     cmds.setParent("..")
     refresh()
     cmds.showWindow(window)
