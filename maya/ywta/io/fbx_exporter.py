@@ -55,7 +55,7 @@ def _nodes(nodes):
 
 
 def _mesh_shapes(node):
-    """node直下の表示mesh shapeをロングパスで返す。"""
+    """node自身または階層下の表示mesh shapeをロングパスで返す。"""
     matches = cmds.ls(node, long=True) or []
     if len(matches) != 1:
         return []
@@ -64,9 +64,10 @@ def _mesh_shapes(node):
         shapes = [node]
     elif cmds.objectType(node, isAType="transform"):
         shapes = cmds.listRelatives(node, shapes=True, fullPath=True, noIntermediate=True, type="mesh") or []
+        shapes.extend(cmds.listRelatives(node, allDescendents=True, fullPath=True, type="mesh") or [])
     else:
         shapes = []
-    return [shape for shape in shapes if not cmds.getAttr(shape + ".intermediateObject")]
+    return list(dict.fromkeys(shape for shape in shapes if not cmds.getAttr(shape + ".intermediateObject")))
 
 
 def _top_joint(joint):

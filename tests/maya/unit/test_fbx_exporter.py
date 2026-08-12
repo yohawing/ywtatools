@@ -88,6 +88,25 @@ class FbxExporterTests(TestCase):
         clusters = cmds.ls(cmds.listHistory("mesh_only_asset"), type="skinCluster")
         self.assertEqual(1, len(clusters))
 
+    def test_group_export_includes_descendant_skin_root(self):
+        """asset group単独選択でも子孫meshのjointをFBXへ含める。"""
+        group = cmds.createNode("transform", name="asset_grp")
+        mesh = cmds.polyCube(name="grouped_asset")[0]
+        cmds.parent(mesh, group)
+        cmds.select(clear=True)
+        root = cmds.joint(name="root_jnt")
+        child = cmds.joint(name="child_jnt", position=(1.0, 0.0, 0.0))
+        cmds.skinCluster(root, child, mesh, toSelectedBones=True)
+        path = self.get_temp_filename("grouped_asset.fbx")
+
+        fbx_exporter.export_selected(group, path)
+        cmds.file(new=True, force=True)
+        mel.eval('FBXImport -f "{}";'.format(path.replace("\\", "/")))
+
+        self.assertTrue(cmds.objExists("root_jnt"))
+        clusters = cmds.ls(cmds.listHistory("grouped_asset"), type="skinCluster")
+        self.assertEqual(1, len(clusters))
+
     def test_failed_export_preserves_existing_target_and_selection(self):
         cube = cmds.polyCube(name="asset")[0]
         sentinel = cmds.spaceLocator(name="selection_sentinel")[0]
