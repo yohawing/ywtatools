@@ -60,6 +60,7 @@ Fabricator 本体は Business Source License 1.1、YWTA は MIT License です�
 - bulk write 用の同梱 Python plugin による単一 Undo / Redo
 - plugin公開ラッパーでも個別weightを0～1に制限し、上位検証の迂回を防止
 - 元meshを残し、結合後の全頂点座標とface connectivityを完全検証するSkinned Mesh Combine
+- Combineはsource直下の補助transformを複製せず、結合mesh geometryだけを出力
 - Combineへ明示したnamespace付き出力名はMayaのcurrent namespaceに依存しない
 - 元meshを残し、shellごとの元vertex/face index mappingで分割するSkinned Mesh Separate
 - Separateは同位置頂点を位置照合せず、UV / normal / color set / material / weightをsubset転送
