@@ -51,6 +51,13 @@ def create_menu():
         annotation="スクリプト実行ツールを開きます",
     )
 
+    cmds.menuItem(
+        parent=menu,
+        label="Batch Runner",
+        command="import ywta.pipeline.batch_runner as batch_runner; batch_runner.show()",
+        annotation="sceneごとに独立mayapyでPython処理と明示的な上書き保存を実行します",
+    )
+
     # Aboutセクション
     cmds.menuItem(parent=menu, divider=True)
 
