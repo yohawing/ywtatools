@@ -102,6 +102,7 @@ Skinned Mesh Combineは実行時のjoint・mesh評価姿勢を新しいskinClust
 - Clipと既存animCurveのweighted tangent modeが異なる場合、範囲外キーを残すchannelは副作用を避けてskip
 - 同一アドレス候補が複数ある場合は推測せず拒否
 - Pose/Clipの全target欠落・全channel skipはUndo chunkを作らないno-op report
+- Selection Setsの全member欠落も空setを作らずUndo不要のno-op report
 
 現段階は JSON の保存・適用と Selection Sets 管理が中心です。カード型ライブラリ、
 thumbnail capture、カテゴリ検索、mirrored pose はまだありません。

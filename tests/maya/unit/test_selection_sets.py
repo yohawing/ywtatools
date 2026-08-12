@@ -126,6 +126,23 @@ class SelectionSetsTests(TestCase):
 
         self.assertFalse(selection_sets.list_selection_sets())
 
+    def test_all_missing_members_are_noop_when_undo_is_disabled(self):
+        """空解決のimport reportはUndo queueを必要としない。"""
+        source = self._control("source", "hand_ctrl")
+        selection_sets.create_selection_set("Hands", [source])
+        data = selection_sets.capture()
+        cmds.delete(selection_sets.list_selection_sets())
+        cmds.delete(source)
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            result = selection_sets.apply(data)
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+        self.assertFalse(result["created"])
+        self.assertEqual("target_missing", result["skipped"][0]["reason"])
+        self.assertFalse(selection_sets.list_selection_sets())
+
     def test_save_and_read_round_trip(self):
         hand = self._control("character", "hand_ctrl")
         selection_sets.create_selection_set("Hands", [hand])

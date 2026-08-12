@@ -230,6 +230,8 @@ def apply(data):
         else:
             skipped.append({"label": entry["label"], "reason": "empty_after_resolve"})
 
+    if not plans:
+        return {"created": [], "skipped": skipped}
     undo_utils.require_enabled("Import Selection Sets")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Import Selection Sets")
     failed = False
