@@ -67,6 +67,25 @@ class JointInsertTests(TestCase):
 
         self.assertFalse(cmds.objExists("insert_01_jnt"))
 
+    def test_constrained_joint_rejects_before_edit(self):
+        parent, child = self._chain()
+        driver = cmds.spaceLocator(name="driver")[0]
+        cmds.parentConstraint(driver, child, maintainOffset=True)
+
+        with self.assertRaises(ValueError):
+            joint_insert.insert_joints(parent, child)
+
+        self.assertFalse(cmds.objExists("insert_01_jnt"))
+
+    def test_ik_joint_rejects_before_edit(self):
+        parent, child = self._chain()
+        cmds.ikHandle(name="chain_ikh", startJoint=parent, endEffector=child, solver="ikSCsolver")
+
+        with self.assertRaises(ValueError):
+            joint_insert.insert_joints(parent, child)
+
+        self.assertFalse(cmds.objExists("insert_01_jnt"))
+
     def test_invalid_count_and_name_collision_reject_before_edit(self):
         parent, child = self._chain()
         cmds.createNode("transform", name="insert_01_jnt")
