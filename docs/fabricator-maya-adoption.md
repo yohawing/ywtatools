@@ -105,6 +105,15 @@ thumbnail capture、カテゴリ検索、mirrored pose はまだありません�
 deprecatedなlive mirror networkは採用していません。既存rigのDG接続と競合せず、
 明示的に独立したjoint hierarchyを作る操作に限定しています。
 
+### Selection Navigation
+
+メニュー: `YWTA > Rigging > Selection Navigation`
+
+- 選択階層の子孫jointまたは表示mesh transformを選択
+- 選択meshからskinClusterへ登録されたinfluence jointを選択
+- 選択jointから、そのjointがinfluenceとして登録されたmeshを選択
+- 複数skinCluster・複数output geometryを重複なしで処理
+
 ### Control Shape Swap
 
 メニュー: `YWTA > Rigging > Swap Selected Control Shapes`

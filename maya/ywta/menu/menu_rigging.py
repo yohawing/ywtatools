@@ -121,6 +121,32 @@ def create_rigging_menu(parent_menu):
         annotation="一時Skeleton JSONをrotate 0・joint scale 1へbakeしてインポートします",
     )
 
+    cmds.menuItem(parent=rig_menu, divider=True, dividerLabel="Selection Navigation")
+    cmds.menuItem(
+        parent=rig_menu,
+        label="Select Child Joints",
+        command="import ywta.rig.selection_tools as selection_tools; selection_tools.select_child_joints()",
+        annotation="選択階層の子孫jointを選択します",
+    )
+    cmds.menuItem(
+        parent=rig_menu,
+        label="Select Child Meshes",
+        command="import ywta.rig.selection_tools as selection_tools; selection_tools.select_child_meshes()",
+        annotation="選択階層の表示mesh transformを選択します",
+    )
+    cmds.menuItem(
+        parent=rig_menu,
+        label="Select Influencing Joints",
+        command="import ywta.rig.selection_tools as selection_tools; selection_tools.select_influencing_joints()",
+        annotation="選択meshのskinCluster influence jointを選択します",
+    )
+    cmds.menuItem(
+        parent=rig_menu,
+        label="Select Influenced Meshes",
+        command="import ywta.rig.selection_tools as selection_tools; selection_tools.select_influenced_meshes()",
+        annotation="選択jointがinfluenceとして登録されたmeshを選択します",
+    )
+
     item = cmds.menuItem(
         parent=rig_menu,
         label="Connect Twist Joint",

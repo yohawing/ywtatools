@@ -45,6 +45,10 @@ class FabricatorMenuTests(TestCase):
                 "Load Temporary Skeleton",
                 "Swap Selected Control Shapes",
                 "Mirror Selected Control Shape",
+                "Select Child Joints",
+                "Select Child Meshes",
+                "Select Influencing Joints",
+                "Select Influenced Meshes",
             }.issubset(labels)
         )
 
