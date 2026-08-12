@@ -1,10 +1,10 @@
 # YWTA C++ Components
 
-[リポジトリ全体のインデックスへ戻る](../README.md)
+[← YWTA Tools のトップへ戻る](../README.md)
 
-Maya と Blender から利用する共有 C++ コンポーネントです。利用者向けの操作方法は
-[Maya Tools](../maya/README.md) または [Blender Tools](../blender/README.md) を参照して
-ください。
+ここは AutoRemesher を自分でビルドしたい開発者向けのページです。ツールの操作方法を
+探している場合は、[Maya Tools](../maya/README.md) または
+[Blender Tools](../blender/README.md) を参照してください。
 
 ## AutoRemesher Core
 
@@ -13,7 +13,7 @@ Maya と Blender から利用する共有 C++ コンポーネントです。利�
 ビルドし、Blender などから呼び出せる C ABI DLL を提供します。外部ソースは
 `external/autoremesher` submodule の 1.0.0 に固定しており、submodule 内は変更しません。
 
-必要な環境は Windows 11、Visual Studio 2022、CMake です。Qt は不要です。
+ビルドには Windows 11、Visual Studio 2022、CMake が必要です。Qt は必要ありません。
 
 ```powershell
 git submodule update --init external/autoremesher

@@ -1,9 +1,9 @@
 # YWTA Rust Components
 
-[リポジトリ全体のインデックスへ戻る](../README.md)
+[← YWTA Tools のトップへ戻る](../README.md)
 
-Maya と Blender で共有する DCC 非依存の処理を Rust crate として管理します。利用者向けの
-操作方法は [Maya Tools](../maya/README.md) または
+ここはボリューム保持スムージングを自分でビルドしたい開発者向けのページです。ツールの
+操作方法を探している場合は、[Maya Tools](../maya/README.md) または
 [Blender Tools](../blender/README.md) を参照してください。
 
 ## Mesh Smoothing
@@ -12,7 +12,7 @@ Maya と Blender で共有する DCC 非依存の処理を Rust crate として�
 スムージング、体積保持、凹凸除去、連続マスク、輪郭 rail を共通コアで処理し、C ABI
 経由で各 DCC から呼び出します。
 
-必要な環境は Windows 11 と Rust toolchain（Cargo）です。
+ビルドには Windows 11 と Rust toolchain（Cargo）が必要です。
 
 ```powershell
 uvx nox -s mesh_smoothing_build

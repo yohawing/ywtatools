@@ -1,49 +1,48 @@
 # YWTA Tools
 
-個人制作で使う DCC 向けテクニカルアーティストツール集です。Maya、Blender、
-Photoshop の各ツールと、複数の DCC から利用するネイティブコアを同じリポジトリで
-管理しています。
+Maya、Blender、Photoshop での制作を少し楽にするために作っている、個人用の
+テクニカルアーティストツール集です。
 
-この README はリポジトリ全体のインデックスです。導入方法と機能の詳細は、対象の
-ツールに対応する README を参照してください。
+リギングやスキニングのように何度も繰り返す作業、メッシュの調整、テクスチャの
+書き出しなどを、なるべく安全に、少ない手順で済ませることを目指しています。
 
-## ツール一覧
+## 使いたいアプリから選ぶ
 
-| 対象 | 内容 | ドキュメント |
-| --- | --- | --- |
-| Maya 2024 | リギング、スキニング、アニメーション、メッシュ、入出力、パイプライン支援 | [Maya Tools](./maya/README.md) |
-| Blender 4.4 以降 | Geometry Nodes、Shape Key、AutoRemesher、ボリューム保持スムージング | [Blender Tools](./blender/README.md) |
-| Photoshop 24.4 以降 | PBR / Toon テクスチャ生成・書き出し用 UXP プラグイン | [Photoshop Tools](./photoshop/README.md) |
-| 共有 C++ コア | AutoRemesher と DCC 向け C ABI | [C++ Components](./cpp/README.md) |
-| 共有 Rust コア | ボリューム保持メッシュスムージングと C ABI | [Rust Components](./rust/README.md) |
+### [Maya Tools](./maya/README.md)
 
-Maya ツールは [chadmv/cmt](https://github.com/chadmv/cmt) をベースに、個人制作向けの
-機能追加と変更を行っています。
+Maya 2024 向けのメインツール群です。ジョイントやコントロールの作成、スキンウェイト、
+Pose / Animation Clip、FBX 書き出し、メッシュ処理などを `YWTA` メニューから使えます。
 
-## リポジトリ構成
+### [Blender Tools](./blender/README.md)
 
-```text
-maya/                 Maya Python モジュール、C++ プラグイン、アイコン
-blender/              Blender アドオンとネイティブ DLL バインディング
-photoshop/            Photoshop UXP プラグイン
-cpp/                  共有 C++ コアと C ABI
-rust/                 共有 Rust クレートと C ABI
-external/             外部ソースの submodule
-tests/                DCC 別・共有コアのテスト
-docs/                 横断的な設計・採用方針
-```
+Blender 4.4 以降向けのアドオンです。Shape Key 名の一括置換、Geometry Nodes の補助、
+クアッドリメッシュ、形を保ちながら表面を整えるスムージングを収録しています。
 
-各ツール固有の利用方法は、その実装に最も近い README に置きます。ルート README
-には個別機能の操作手順を重複させず、追加・移動されたツールを見つけるための索引だけを
-保ちます。
+### [Photoshop Tools](./photoshop/README.md)
 
-## 開発
+Photoshop 24.4 以降向けの UXP プラグインです。PSD のレイヤーグループから PBR / Toon
+テクスチャをまとめて書き出せます。
 
-Windows 11 上での開発を前提としています。Python 依存は
-[`requirements.txt`](./requirements.txt)、テスト構成は
-[`tests/README.md`](./tests/README.md) を参照してください。
+## このリポジトリについて
 
-代表的な検証コマンドは次のとおりです。
+それぞれのアプリ向けツールに加えて、Maya と Blender の両方で使う処理を C++ と Rust
+で共有しています。通常の利用では内部構造を意識する必要はありません。ネイティブ機能を
+自分でビルドしたい場合は、次の README を参照してください。
+
+- [C++ Components](./cpp/README.md) — AutoRemesher
+- [Rust Components](./rust/README.md) — ボリューム保持メッシュスムージング
+
+Maya ツールの一部は [chadmv/cmt](https://github.com/chadmv/cmt) をベースに、個人制作で
+使いやすいよう機能追加と変更を行っています。
+
+## 開発に参加する場合
+
+開発環境は Windows 11 を前提としています。まずは対象アプリの README を読み、全体の
+テスト構成は [`tests/README.md`](./tests/README.md)、開発ルールは
+[`AGENTS.md`](./AGENTS.md) を参照してください。Python の依存パッケージは
+[`requirements.txt`](./requirements.txt) にまとめています。
+
+よく使う検証コマンドは次のとおりです。
 
 ```powershell
 uvx nox -s lint
@@ -52,9 +51,19 @@ uvx nox -s blender_tests
 uvx nox -s photoshop_validate
 ```
 
-開発ルール、対応環境、コミット規律は [`AGENTS.md`](./AGENTS.md) を参照してください。
+コードの主な配置は次のとおりです。
+
+```text
+maya/        Maya ツール
+blender/     Blender アドオン
+photoshop/   Photoshop UXP プラグイン
+cpp/         共有 C++ コア
+rust/        共有 Rust コア
+tests/       テスト
+docs/        設計資料
+```
 
 ## ライセンス
 
-このリポジトリのライセンスは [`LICENSE`](./LICENSE) を参照してください。外部コードや
+このリポジトリのライセンスは [`LICENSE`](./LICENSE) を参照してください。外部コードと
 submodule には、それぞれのライセンスが適用されます。

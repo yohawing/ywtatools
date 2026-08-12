@@ -1,87 +1,91 @@
 # YWTA Blender Tools
 
-[リポジトリ全体のインデックスへ戻る](../README.md)
+[← YWTA Tools のトップへ戻る](../README.md)
 
-Blender 4.4 以降向けのアドオンです。Geometry Nodes の補助ノード、Shape Key の
-一括リネーム、クアッドリメッシュ、ボリューム保持スムージングを提供します。
+Blender 4.4 以降向けの小さなツール集です。Shape Key の整理、Geometry Nodes の補助、
+リメッシュ、表面のスムージングなど、モデリング中に繰り返しやすい作業をまとめています。
 
 ## インストール
 
-1. Blender の `Edit > Preferences > File Paths` を開く
-2. `Script Directories` に、このリポジトリの `blender` ディレクトリを追加する
-3. Blender を再起動する
-4. `Edit > Preferences > Add-ons` で `YWTA Tools` を検索して有効化する
+1. Blender の `Edit > Preferences > File Paths` を開きます。
+2. `Script Directories` に、このリポジトリの `blender` フォルダーを追加します。
+3. Blender を再起動します。
+4. `Edit > Preferences > Add-ons` で `YWTA Tools` を検索し、有効にします。
 
-有効化後、主な UI は 3D Viewport のサイドバーにある `YWTA` タブ、Object メニュー、
-Edit Mode の Vertex メニュー、Geometry Nodes の Add メニューへ追加されます。
+有効化すると、3D Viewport のサイドバーに `YWTA` タブが追加されます。機能によっては
+Object メニュー、Edit Mode の Vertex メニュー、Geometry Nodes の Add メニューにも
+項目が追加されます。
 
-## 機能
+## できること
 
-### Geometry Nodes
+### Shape Key の名前をまとめて直す
 
-- **Angle From Vector**: 2つのベクトルの内積から角度を計算
-- **Group Wrapper**: Geometry Node Group をラップして追加
+3D Viewport の `YWTA > ShapeKey名の検索と置換` を開きます。検索する文字と置換後の
+文字を入力するだけで、複数の Shape Key 名をまとめて変更できます。大文字小文字を
+区別するか、選択中のオブジェクトだけを対象にするかも選べます。`Basis` は変更しません。
 
-Geometry Nodes エディターの `Add > Extra` から利用できます。
+### Geometry Nodes を組みやすくする
 
-### Shape Key Rename
+Geometry Nodes エディターの `Add > Extra` に、次のノードを追加します。
 
-3D Viewport の `YWTA > ShapeKey名の検索と置換` から、Shape Key 名を検索・置換します。
-大文字小文字の区別と、選択オブジェクトだけを対象にするかを指定できます。`Basis` は
-変更しません。
+- **Angle From Vector** — 2つのベクトルが作る角度を計算します。
+- **Group Wrapper** — Geometry Node Group をラップして追加します。
 
-### AutoRemesher
+### メッシュをクアッドへリメッシュする
 
-Object Mode でメッシュを選択し、`Object > AutoRemesh` を実行します。実行後は Redo
-パネル（F9）で目標ポリゴン数、適応度、Organic / Hard Surface などを調整できます。
+Object Mode でメッシュを選び、`Object > AutoRemesh` を実行します。処理後も Redo
+パネル（F9）から、目標ポリゴン数、形状への追従度、Organic / Hard Surface などを
+調整できます。
 
-利用前に C++ DLL をビルドしてください。
+この機能は初回だけ C++ DLL のビルドが必要です。
 
 ```powershell
 git submodule update --init external/autoremesher
 uvx nox -s autoremesher_build
 ```
 
-DLL は `bin/windows/ywta_autoremesher.dll` に生成されます。別の場所へ配置する場合は、
-Blender の起動前に `YWTA_AUTOREMESHER_DLL` へ絶対パスを設定します。ビルドの詳細は
-[C++ Components](../cpp/README.md) を参照してください。
+通常は生成された `bin/windows/ywta_autoremesher.dll` をそのまま使います。別の場所へ
+置く場合だけ、Blender を起動する前に `YWTA_AUTOREMESHER_DLL` へ絶対パスを設定して
+ください。詳しいビルド条件は [C++ Components](../cpp/README.md) にあります。
 
-### Volume Preserving Smoothing
+### 形を保ちながら表面を滑らかにする
 
-Edit Mode の `Vertex > Volume Preserving Smooth` から、選択メッシュを体積保持しながら
-平滑化します。Vertex Group を連続マスクとして指定でき、hard edge、seam、crease、
-選択エッジを輪郭 rail として保持できます。
+Edit Mode で頂点を選び、`Vertex > Volume Preserving Smooth` を実行します。通常の
+スムージングよりもボリュームを保ちながら、表面の凹凸を整えられます。
 
-ブラシ版は 3D Viewport 左側の Toolbar（T キー）にある `Volume Smooth Brush` です。
-Tool Settings から Smooth / Volume / Remove Bumps、半径、強度を調整できます。
+Vertex Group を処理の強さとして使うこともできます。hard edge、seam、crease、選択
+エッジは輪郭として残せます。ブラシで調整したい場合は、3D Viewport 左側の Toolbar
+（T キー）から `Volume Smooth Brush` を選びます。
 
-利用前に Rust DLL をビルドして FFI smoke test を実行します。
+この機能は初回だけ Rust DLL のビルドが必要です。
 
 ```powershell
 uvx nox -s mesh_smoothing_build
 uvx nox -s mesh_smoothing_ffi_smoke
 ```
 
-DLL は `bin/windows/ywta_mesh_smoothing.dll` に生成されます。別の場所へ配置する場合は、
-Blender の起動前に `YWTA_MESH_SMOOTHING_DLL` へ絶対パスを設定します。詳細は
-[Rust Components](../rust/README.md) を参照してください。
+通常は `bin/windows/ywta_mesh_smoothing.dll` が使われます。別の場所へ置く場合は、
+Blender を起動する前に `YWTA_MESH_SMOOTHING_DLL` へ絶対パスを設定してください。
+詳しくは [Rust Components](../rust/README.md) を参照してください。
 
 ## テスト
+
+リポジトリのルートから次を実行します。
 
 ```powershell
 uvx nox -s blender_tests
 uvx nox -s blender_tests -- --type integration
 ```
 
-テストランナーはインストール済みの最新 Blender を自動検出します。検出できない場合は
-`BLENDER_EXECUTABLE` に `blender.exe` の絶対パスを設定してください。詳細は
-[`tests/README.md`](../tests/README.md) を参照してください。
+テストランナーは、インストール済みの最新 Blender を探して使用します。見つからない
+場合は `BLENDER_EXECUTABLE` に `blender.exe` の絶対パスを設定してください。その他の
+実行方法は [`tests/README.md`](../tests/README.md) にまとめています。
 
-## 実装場所
+## 開発者向けの配置案内
 
 ```text
-blender/addons/ywtatools_addon/     アドオン本体
-blender/modules/ywta_remesh/        AutoRemesher DLL バインディング
-blender/modules/ywta_mesh_smoothing/ スムージング DLL バインディング
-blender/startup/                     Blender startup スクリプト
+blender/addons/ywtatools_addon/      アドオン本体
+blender/modules/ywta_remesh/         AutoRemesher の接続部分
+blender/modules/ywta_mesh_smoothing/ スムージングの接続部分
+blender/startup/                     起動時スクリプト
 ```
