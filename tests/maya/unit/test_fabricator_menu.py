@@ -37,6 +37,7 @@ class FabricatorMenuTests(TestCase):
         self.assertTrue(
             {
                 "Name Tools",
+                "Rename Chain",
                 "Create Joint",
                 "Create at Selection Center",
                 "Null",

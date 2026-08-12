@@ -23,7 +23,7 @@ def create_utility_menu(parent_menu):
         parent=utility_menu,
         label="Scene Audit",
         command="import ywta.utility.scene_audit as scene_audit; scene_audit.show()",
-        annotation="重複短名、non-manifold、lamina faceを変更せずに監査します",
+        annotation="重複transform名、non-manifold、lamina、zero-area faceを変更せずに監査します",
     )
 
     # テスト・開発関連

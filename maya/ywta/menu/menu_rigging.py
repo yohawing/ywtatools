@@ -111,6 +111,14 @@ def create_rigging_menu(parent_menu):
 
     cmds.menuItem(
         parent=rig_menu,
+        label="Rename Chain",
+        command="import ywta.name; ywta.name.rename_chain_ui()",
+        image="menuIconModify.png",
+        annotation="従来のjoint chain一括rename UIを開きます",
+    )
+
+    cmds.menuItem(
+        parent=rig_menu,
         label="Joint Size Tools",
         command="import ywta.rig.joint_size as js; js.set_joint_size_from_menu()",
         image="joint.png",

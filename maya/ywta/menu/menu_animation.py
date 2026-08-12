@@ -69,7 +69,7 @@ def create_animation_menu(parent_menu):
         parent=animation_menu,
         label="Save Selected Animation Clip",
         command="import ywta.anim.clip_io as clip_io; clip_io.save_selected()",
-        annotation="選択コントロールのplayback rangeキーを可搬JSONへ保存します",
+        annotation="選択コントロールのhighlight/playback rangeキーを可搬JSONへ保存します",
     )
     configured_clip_item = cmds.menuItem(
         parent=animation_menu,
@@ -112,7 +112,7 @@ def create_animation_menu(parent_menu):
         parent=animation_menu,
         label="Save Temporary Animation Clip",
         command="import ywta.anim.clip_io as clip_io; clip_io.save_temp_selected()",
-        annotation="選択controlのplayback rangeをMayaユーザー用の一時Clip JSONへ保存します",
+        annotation="選択controlのhighlight/playback rangeをMayaユーザー用の一時Clip JSONへ保存します",
     )
     cmds.menuItem(
         parent=animation_menu,
