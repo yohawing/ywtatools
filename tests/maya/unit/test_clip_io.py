@@ -1,6 +1,7 @@
 """Animation Clip IO の Maya 単体テスト。"""
 
 import copy
+import os
 from unittest import mock
 
 import maya.cmds as cmds
@@ -59,6 +60,23 @@ class ClipIoTests(TestCase):
             mock.patch.object(clip_io.mel, "eval", side_effect=RuntimeError("no UI")),
         ):
             self.assertEqual((1.0, 24.0), clip_io.capture_time_range())
+
+    def test_save_selected_uses_resolved_capture_range(self):
+        """メニュー保存入口がhighlight/playback解決範囲をJSONへ渡す。"""
+        source = self._control("")
+        cmds.setKeyframe(source, attribute="translateX", time=5, value=1.0)
+        cmds.setKeyframe(source, attribute="translateX", time=13, value=2.0)
+        cmds.select(source, replace=True)
+        path = self.get_temp_filename("highlighted_clip.json")
+
+        with (
+            mock.patch.object(clip_io, "capture_time_range", return_value=(5.0, 13.0)),
+            mock.patch.object(clip_io.cmds, "fileDialog2", return_value=[path]),
+        ):
+            result = clip_io.save_selected()
+
+        self.assertEqual(os.path.abspath(path), result)
+        self.assertEqual(8.0, clip_io.read(path)["duration"])
 
     def test_clip_applies_across_namespace_with_offset(self):
         source, data = self._source_clip()
