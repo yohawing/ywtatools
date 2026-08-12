@@ -7,6 +7,7 @@ import maya.cmds as cmds
 from ywta.core import undo_utils
 from ywta.deform import skin_io
 from ywta.deform import skin_weight_command
+from ywta.deform.combine_skinned import _validated_output_name
 
 
 def _absolute_name(name):
@@ -227,9 +228,8 @@ def separate(mesh, base_name=None):
         raise ValueError("meshは1 shellだけのため分割できません: {}".format(source))
     if base_name is None:
         base_name = source.rsplit("|", 1)[-1] + "_shell"
-    if not isinstance(base_name, str) or not base_name.strip() or "|" in base_name:
-        raise ValueError("base_nameは空でないDAG short nameにしてください。")
-    names = ["{}{:02d}".format(base_name.strip(), index + 1) for index in range(len(plans))]
+    base_name = _validated_output_name(base_name, label="base_name")
+    names = ["{}{:02d}".format(base_name, index + 1) for index in range(len(plans))]
     occupied = [name for name in names if cmds.objExists(_absolute_name(name))]
     if occupied:
         raise ValueError("出力名が既に存在します: {}".format(", ".join(occupied)))

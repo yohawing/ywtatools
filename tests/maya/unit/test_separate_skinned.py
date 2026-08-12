@@ -149,6 +149,19 @@ class SeparateSkinnedTests(TestCase):
 
         self.assertFalse(cmds.objExists("single_shell01"))
 
+    def test_invalid_output_name_fails_before_undo(self):
+        """Maya自動変換名と未作成namespaceをpiece作成前に拒否する。"""
+        source, _left, _right, _shading_groups = self._source()
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            for invalid in ("bad name", "1piece", "piece#", "piece-name", "missing:piece"):
+                with self.assertRaises(ValueError):
+                    separate_skinned.separate(source, base_name=invalid)
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+        self.assertFalse(cmds.objExists("bad_name01"))
+
     def test_post_skin_topology_change_rejects_before_edit(self):
         """skinCluster後段のtopology変更を元index mappingで推測しない。"""
         source, _left, _right, _shading_groups = self._source()

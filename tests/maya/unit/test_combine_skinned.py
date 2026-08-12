@@ -207,6 +207,20 @@ class CombineSkinnedTests(TestCase):
         self.assertEqual(before, set(cmds.ls(long=True)))
         self.assertTrue(cmds.objExists(occupied))
 
+    def test_invalid_output_name_and_single_string_fail_before_undo(self):
+        """不正出力名と単一mesh文字列をscene編集前に拒否する。"""
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            for invalid in ("bad name", "1mesh", "mesh#", "mesh-name", "missing:mesh"):
+                with self.assertRaises(ValueError):
+                    combine_skinned.combine([self.left, self.right], name=invalid)
+            with self.assertRaises(ValueError):
+                combine_skinned.combine(self.left)
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+        self.assertFalse(cmds.objExists("bad_name"))
+
     def test_explicit_namespace_is_independent_of_current_namespace(self):
         cmds.namespace(add="character")
         cmds.namespace(add="working")

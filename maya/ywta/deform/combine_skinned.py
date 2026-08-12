@@ -21,9 +21,26 @@ def _absolute_name(name):
     return ":" + name.lstrip(":")
 
 
+def _validated_output_name(name, label="name"):
+    """Maya正規名と既存namespaceを検証した出力名を返す。"""
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("{}は空でないDAG short nameにしてください。".format(label))
+    name = name.strip().lstrip(":")
+    segments = name.split(":")
+    if any(not segment or cmds.namespace(validateName=segment) != segment for segment in segments):
+        raise ValueError("Mayaが自動変換する{}は使用できません: {}".format(label, name))
+    if len(segments) > 1:
+        namespace = ":".join(segments[:-1])
+        if not cmds.namespace(exists=":" + namespace):
+            raise ValueError("{}のnamespaceがありません: {}".format(label, namespace))
+    return name
+
+
 def _selected_meshes(meshes):
     """指定または選択されたmesh transformを一意なロングパスで返す。"""
     source = meshes if meshes is not None else cmds.ls(selection=True, long=True)
+    if isinstance(source, (str, bytes)):
+        raise ValueError("結合するskinned meshを2つ以上の列で指定してください。")
     if not source or len(source) < 2:
         raise ValueError("結合するskinned meshを2つ以上選択してください。")
     result = []
@@ -86,11 +103,7 @@ def combine(meshes=None, name="combined_skinned_mesh"):
     Returns:
         mesh / skin_cluster / vertex_countを持つ結果辞書。
     """
-    if not isinstance(name, str) or not name.strip() or "|" in name:
-        raise ValueError("nameは空でないDAG short nameにしてください。")
-    name = name.strip().lstrip(":")
-    if not name:
-        raise ValueError("nameは空でないDAG short nameにしてください。")
+    name = _validated_output_name(name)
     if cmds.objExists(_absolute_name(name)):
         raise ValueError("結合先名が既に存在します: {}".format(name))
     sources = _selected_meshes(meshes)
