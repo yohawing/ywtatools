@@ -124,8 +124,20 @@ class SkeletonIoTests(TestCase):
     def test_version_one_without_channel_states_remains_readable(self):
         root, _child = self._skeleton()
         data = skeleton_io.capture(root)
+        data["version"] = 1
         for joint in data["joints"]:
             del joint["channels"]
+            for attribute in (
+                "minRotLimit",
+                "maxRotLimit",
+                "minRotLimitEnable",
+                "maxRotLimitEnable",
+                "side",
+                "type",
+                "drawLabel",
+                "otherType",
+            ):
+                joint["attributes"].pop(attribute, None)
         cmds.delete(root)
 
         created = skeleton_io.create(data)
@@ -143,6 +155,17 @@ class SkeletonIoTests(TestCase):
 
         self.assertFalse(cmds.ls(type="joint"))
 
+    def test_unknown_future_version_is_rejected_before_edit(self):
+        root, _child = self._skeleton()
+        data = skeleton_io.capture(root)
+        data["version"] = 99
+        cmds.delete(root)
+
+        with self.assertRaises(ValueError):
+            skeleton_io.create(data)
+
+        self.assertFalse(cmds.ls(type="joint"))
+
     def test_save_and_read_round_trip(self):
         root, _child = self._skeleton()
         path = self.get_temp_filename("skeleton.skeleton.json")
@@ -151,6 +174,7 @@ class SkeletonIoTests(TestCase):
         data = skeleton_io.read(path)
 
         self.assertEqual(skeleton_io.FORMAT, data["format"])
+        self.assertEqual(2, data["version"])
         self.assertEqual(["root_jnt", "spine_jnt"], [joint["name"] for joint in data["joints"]])
         self.assertEqual(cmds.currentUnit(query=True, linear=True), data["scene"]["linear_unit"])
         self.assertEqual(cmds.currentUnit(query=True, angle=True), data["scene"]["angle_unit"])

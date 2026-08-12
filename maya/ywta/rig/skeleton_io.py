@@ -11,7 +11,8 @@ import maya.cmds as cmds
 
 
 FORMAT = "ywta.skeleton"
-VERSION = 1
+VERSION = 2
+SUPPORTED_VERSIONS = {1, VERSION}
 TEMP_SKELETON_FILENAME = "ywta_temp_skeleton.json"
 VECTOR_ATTRIBUTES = (
     "translate",
@@ -141,7 +142,7 @@ def _validate(data):
     """外部 skeleton JSON を scene 編集前に完全検証する。"""
     if not isinstance(data, dict) or data.get("format") != FORMAT:
         raise ValueError("YWTA Skeleton ファイルではありません。")
-    if data.get("version") != VERSION:
+    if data.get("version") not in SUPPORTED_VERSIONS:
         raise ValueError("未対応の Skeleton version です: {}".format(data.get("version")))
     scene = data.get("scene")
     if scene is not None and (
