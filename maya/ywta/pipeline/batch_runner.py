@@ -71,6 +71,19 @@ def validate_scenes(scenes):
     return result
 
 
+def validate_script(script):
+    """batch scriptを実行せずPython構文として事前検証する。"""
+    if not isinstance(script, str):
+        raise ValueError("script は文字列にしてください。")
+    try:
+        compile(script, "<YWTA Batch Runner>", "exec")
+    except (SyntaxError, ValueError, TypeError) as error:
+        line = getattr(error, "lineno", None)
+        location = " line {}".format(line) if line is not None else ""
+        raise ValueError("scriptの構文が不正です{}: {}".format(location, error)) from error
+    return script
+
+
 def resolve_mayapy():
     """現在の Maya または環境から mayapy executable を解決する。"""
     executable = Path(sys.executable)
@@ -169,8 +182,7 @@ def run_batch(
     Cancel は実行中 process を強制終了せず、現在 scene 完了後に新規起動を止める。
     """
     scenes = validate_scenes(scenes)
-    if not isinstance(script, str):
-        raise ValueError("script は文字列にしてください。")
+    script = validate_script(script)
     if not isinstance(save, bool):
         raise ValueError("save は bool にしてください。")
     mayapy_path = os.path.abspath(mayapy_path or resolve_mayapy())

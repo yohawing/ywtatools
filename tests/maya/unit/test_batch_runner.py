@@ -65,6 +65,20 @@ cmds.setAttr('asset.completed', True)
 
         self.assertEqual([os.path.abspath(scene)], result)
 
+    def test_invalid_script_is_rejected_before_process_launch(self):
+        scene = self._scene("invalid_script")
+
+        with mock.patch.object(batch_runner.subprocess, "Popen") as popen:
+            with self.assertRaises(ValueError) as context:
+                batch_runner.run_batch(
+                    [scene],
+                    script="if True print('broken')",
+                    mayapy_path=sys.executable,
+                )
+
+        self.assertIn("line 1", str(context.exception))
+        popen.assert_not_called()
+
     def test_cancel_stops_before_launching_next_scene(self):
         first = self._scene("first")
         second = self._scene("second")
