@@ -45,16 +45,20 @@ import maya.cmds as cmds
 YWTA_TESTING_VAR = "YWTA_UNITTEST"
 
 
-def run_tests(test=None, test_suite=None, pattern="test_*.py"):
+TEST_TYPES = ("unit", "integration", "performance")
+
+
+def run_tests(test=None, test_suite=None, pattern="test_*.py", test_type="unit"):
     """指定されたパスにあるすべてのテストを実行します。
 
     @param test: 実行する特定のテストの名前（オプション）。
     @param test_suite: 実行するTestSuite（オプション）。省略された場合、TestSuiteが生成されます。
     @param pattern: discoveryに使うテストファイルパターン。
+    @param test_type: unit / integration / performance の対象カテゴリ。
     @return: unittestの実行結果。
     """
     if test_suite is None:
-        test_suite = get_tests(test, pattern=pattern)
+        test_suite = get_tests(test, pattern=pattern, test_type=test_type)
     if not test_suite.countTestCases():
         raise ValueError("実行対象のMayaテストがありません: {}".format(test or pattern))
 
@@ -64,7 +68,7 @@ def run_tests(test=None, test_suite=None, pattern="test_*.py"):
     return runner.run(test_suite)
 
 
-def get_tests(test=None, test_suite=None, pattern="test_*.py"):
+def get_tests(test=None, test_suite=None, pattern="test_*.py", test_type="unit"):
     """必要なすべてのテストを含むunittest.TestSuiteを取得します。
     testsディレクトリを使用します。
 
@@ -72,11 +76,13 @@ def get_tests(test=None, test_suite=None, pattern="test_*.py"):
     @param test_suite: 発見されたテストを追加するunittest.TestSuite（オプション）。省略された場合、新しいTestSuiteが
     作成されます。
     @param pattern: discoveryに使うテストファイルパターン。
+    @param test_type: unit / integration / performance の対象カテゴリ。
     @return: テストが追加されたTestSuite。
     """
 
-    # maya/ywta/testsディレクトリから探す
-    directories = [os.path.join(os.path.dirname(__file__), "../../../tests/maya/unit")]
+    if test_type not in TEST_TYPES:
+        raise ValueError("未対応のMayaテストタイプです: {}".format(test_type))
+    directories = [os.path.join(os.path.dirname(__file__), "../../../tests/maya", test_type)]
 
     # Populate a TestSuite with all the tests
     if test_suite is None:
@@ -110,6 +116,7 @@ def run_tests_from_commandline():
     """
     parser = argparse.ArgumentParser(description="YWTA Tools Maya単体テスト")
     parser.add_argument("--maya", type=int, default=2024, help="Mayaバージョン")
+    parser.add_argument("--type", choices=TEST_TYPES, default="unit", help="テストタイプ")
     parser.add_argument("--pattern", default="test_*.py", help="テストファイルパターン")
     args = parser.parse_args()
 
@@ -129,7 +136,7 @@ def run_tests_from_commandline():
             sys.path.insert(0, p)
 
     try:
-        result = run_tests(pattern=args.pattern)
+        result = run_tests(pattern=args.pattern, test_type=args.type)
     finally:
         # Starting Maya 2016, we have to call uninitialize
         if float(cmds.about(v=True)) >= 2016.0:

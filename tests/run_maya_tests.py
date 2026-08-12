@@ -70,6 +70,13 @@ def main():
     """Maya用テスト実行のメイン関数"""
     parser = argparse.ArgumentParser(description="YWTA Tools Maya テスト実行ツール")
 
+    parser.add_argument(
+        "--type",
+        choices=["unit", "integration", "performance"],
+        default="unit",
+        help="テストタイプ (デフォルト: unit)",
+    )
+
     # テストファイルパターンの指定
     parser.add_argument(
         "--pattern",
@@ -99,6 +106,8 @@ def main():
         str(maya_unit_test),
         "--maya",
         str(args.maya),
+        "--type",
+        args.type,
         "--pattern",
         args.pattern,
     ]
