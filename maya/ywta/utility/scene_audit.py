@@ -155,9 +155,14 @@ def show():
         report = audit_scene()
         cmds.scrollField(output, edit=True, text=format_report(report))
 
+    def run_audit_and_select(*_args):
+        report = audit_scene()
+        cmds.scrollField(output, edit=True, text=format_report(report))
+        return select_issues(report)
+
     cmds.rowLayout(numberOfColumns=2, adjustableColumn=1)
     cmds.button(label="Audit", command=run_audit)
-    cmds.button(label="Select Issues", command=lambda *_: select_issues())
+    cmds.button(label="Audit + Select Issues", command=run_audit_and_select)
     cmds.setParent("..")
     cmds.showWindow(window)
     return window

@@ -179,6 +179,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - lamina face の一覧
 - world-space面積が0または非有限のface一覧
 - 問題 node / component の一括選択
+- UIの選択操作は古いscene reportを再利用せず、その場で再監査してから選択
 - 壊れた個別 mesh の scan error を記録し、残りの scene 監査を継続
 
 この機能は読み取り専用です。自動修復は既存 `TODO.md` にある dry-run、要素 mapping、
