@@ -104,6 +104,29 @@ class NameToolsTests(TestCase):
 
         self.assertTrue(cmds.objExists("original"))
 
+    def test_missing_explicit_node_rejects_partial_rename(self):
+        """明示入力の欠落を落として残りだけ改名しない。"""
+        node = cmds.createNode("transform", name="original")
+
+        with self.assertRaises(ValueError):
+            name_tools.hash_rename("renamed_##", [node, "missing_node"])
+
+        self.assertTrue(cmds.objExists("original"))
+        self.assertFalse(cmds.objExists("renamed_01"))
+
+    def test_ambiguous_explicit_node_rejects_partial_rename(self):
+        """曖昧な短名を複数対象として暗黙展開しない。"""
+        first_parent = cmds.createNode("transform", name="first_parent")
+        second_parent = cmds.createNode("transform", name="second_parent")
+        cmds.createNode("transform", name="control", parent=first_parent)
+        cmds.createNode("transform", name="control", parent=second_parent)
+
+        with self.assertRaises(ValueError):
+            name_tools.add_affixes(prefix="new_", nodes=["control"])
+
+        self.assertEqual(2, len(cmds.ls("control", long=True)))
+        self.assertFalse(cmds.ls("new_control", long=True))
+
     def test_duplicate_target_names_are_rejected_before_edit(self):
         first = cmds.createNode("transform", name="first")
         second = cmds.createNode("transform", name="second")

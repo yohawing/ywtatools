@@ -23,6 +23,7 @@ Fabricator 本体は Business Source License 1.1、YWTA は MIT License です�
 - 末尾番号の振り直し
 - 複数 wildcard による選択
 - 親子同時 rename、namespace 保持、名前交換、競合時 rollback
+- 明示nodeの欠落・曖昧な短名を編集前に全拒否し、残存nodeだけの部分renameをしない
 
 ### Skin IO と Vertex Weight Tools
 

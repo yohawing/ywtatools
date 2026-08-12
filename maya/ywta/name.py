@@ -15,7 +15,19 @@ _TRAILING_NUMBER_PATTERN = r"^(.*?)(?:{separator})(\d+)$"
 
 def _selected_nodes(nodes=None):
     """操作対象をロングパスで返す。"""
-    result = cmds.ls(nodes, long=True) if nodes is not None else cmds.ls(selection=True, long=True)
+    if nodes is None:
+        result = cmds.ls(selection=True, long=True) or []
+    else:
+        try:
+            source = [nodes] if isinstance(nodes, str) else list(nodes)
+        except TypeError as error:
+            raise ValueError("変更対象nodeは反復可能な列にしてください。") from error
+        result = []
+        for node in source:
+            matches = cmds.ls(node, long=True) or []
+            if len(matches) != 1:
+                raise ValueError("変更対象nodeを一意に解決できません: {}".format(node))
+            result.append(matches[0])
     if not result:
         raise RuntimeError("名前を変更するノードを選択してください。")
     return result
