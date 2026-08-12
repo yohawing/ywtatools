@@ -51,7 +51,20 @@ class ClipIoTests(TestCase):
             mock.patch.object(clip_io.mel, "eval", return_value="timeControl1"),
             mock.patch.object(clip_io.cmds, "timeControl", side_effect=time_control),
         ):
-            self.assertEqual((5.0, 13.0), clip_io.capture_time_range())
+            self.assertEqual((5.0, 12.0), clip_io.capture_time_range())
+
+    def test_single_highlighted_frame_is_valid_capture_range(self):
+        """終端exclusiveの1frame highlightをplaybackへ誤fallbackしない。"""
+        with (
+            mock.patch.object(clip_io.cmds, "playbackOptions", side_effect=[1.0, 24.0]),
+            mock.patch.object(clip_io.mel, "eval", return_value="timeControl1"),
+            mock.patch.object(
+                clip_io.cmds,
+                "timeControl",
+                side_effect=lambda _slider, **kwargs: True if kwargs.get("rangeVisible") else [5.0, 6.0],
+            ),
+        ):
+            self.assertEqual((5.0, 5.0), clip_io.capture_time_range())
 
     def test_capture_time_range_falls_back_without_time_slider(self):
         """Standaloneでtime sliderがない場合はplayback rangeを返す。"""
@@ -70,13 +83,13 @@ class ClipIoTests(TestCase):
         path = self.get_temp_filename("highlighted_clip.json")
 
         with (
-            mock.patch.object(clip_io, "capture_time_range", return_value=(5.0, 13.0)),
+            mock.patch.object(clip_io, "capture_time_range", return_value=(5.0, 12.0)),
             mock.patch.object(clip_io.cmds, "fileDialog2", return_value=[path]),
         ):
             result = clip_io.save_selected()
 
         self.assertEqual(os.path.abspath(path), result)
-        self.assertEqual(8.0, clip_io.read(path)["duration"])
+        self.assertEqual(7.0, clip_io.read(path)["duration"])
 
     def test_clip_applies_across_namespace_with_offset(self):
         source, data = self._source_clip()

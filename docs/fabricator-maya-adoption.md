@@ -85,7 +85,7 @@ Skinned Mesh Combineは実行時のjoint・mesh評価姿勢を新しいskinClust
 - 選択 control の keyable scalar 属性を保存する Pose JSON
 - Pose/Clipのinteger・bool channelは小数や0/1外を暗黙丸めせず外部入力で拒否
 - playback range のanimation keys、tangent type、fixed angle/weightを保存するClip JSON
-- GUIではtime sliderの複数frame highlightを優先し、未選択・standaloneではplayback rangeへfallback
+- GUIではtime sliderの終端exclusive highlightをinclusive範囲へ変換し、未選択・standaloneではplayback rangeへfallback
 - enum animationは表示ラベルで別リグのindexへ再解決（旧数値Clipも読込可能）
 - 適用対象enum labelは全件planning時に解決し、欠落時はkey編集前拒否
 - 旧数値enum keyも整数かつtarget enum定義内のindexだけを許可

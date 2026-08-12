@@ -221,8 +221,8 @@ def capture(nodes=None, start=None, end=None):
 def capture_time_range():
     """ハイライト範囲を優先し、なければplayback rangeを返す。
 
-    Maya timeControlが返す現在time unitの開始・終了値を使用する。standaloneなど
-    time sliderがない環境ではplayback rangeへ安全に戻る。
+    Maya timeControlの終端は次frame境界なので1を引いてinclusive rangeへする。
+    standaloneなどtime sliderがない環境ではplayback rangeへ安全に戻る。
     """
     playback = (
         float(cmds.playbackOptions(query=True, minTime=True)),
@@ -238,8 +238,8 @@ def capture_time_range():
     if len(values) != 2:
         return playback
     start = float(values[0])
-    end = float(values[1])
-    if not math.isfinite(start) or not math.isfinite(end) or end <= start:
+    end = float(values[1]) - 1.0
+    if not math.isfinite(start) or not math.isfinite(end) or end < start:
         return playback
     return start, end
 
