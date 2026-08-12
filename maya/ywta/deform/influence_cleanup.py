@@ -27,7 +27,8 @@ def _threshold(value):
 def get_settings():
     """optionVarから検証済みcleanup設定を取得する。"""
     threshold = cmds.optionVar(query=THRESHOLD_OPTION) if cmds.optionVar(exists=THRESHOLD_OPTION) else DEFAULT_THRESHOLD
-    protect_locked = bool(cmds.optionVar(query=PROTECT_LOCKED_OPTION)) if cmds.optionVar(exists=PROTECT_LOCKED_OPTION) else True
+    protect_raw = cmds.optionVar(query=PROTECT_LOCKED_OPTION) if cmds.optionVar(exists=PROTECT_LOCKED_OPTION) else True
+    protect_locked = bool(protect_raw) if isinstance(protect_raw, (bool, int)) and protect_raw in {0, 1} else True
     try:
         threshold = _threshold(threshold)
     except ValueError:

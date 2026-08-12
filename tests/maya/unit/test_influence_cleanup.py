@@ -117,6 +117,13 @@ class InfluenceCleanupTests(TestCase):
             influence_cleanup.get_settings(),
         )
 
+        cmds.optionVar(stringValue=(influence_cleanup.PROTECT_LOCKED_OPTION, "false"))
+
+        self.assertEqual(
+            (influence_cleanup.DEFAULT_THRESHOLD, True),
+            influence_cleanup.get_settings(),
+        )
+
     def test_options_window_builds(self):
         self.assertEqual(
             "ywtaUnusedInfluenceOptionsWindow",
