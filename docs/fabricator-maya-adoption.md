@@ -128,6 +128,15 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - `Create at Selection Center` submenuからNull / Locator / Cube / Sphere / Cylinder / Planeを作成
 - 基本objectも選択全体のworld bounding-box中心、空選択ではworld原点へ単一Undoで作成
 
+### Insert Joints
+
+メニュー: `YWTA > Rigging > Insert Joints Between Selected...`
+
+- 隣接する親joint、子joint間へ1～99個をworld位置で均等挿入
+- namespaceを親から継承し、`#`桁数による連番名を作成前検証
+- 子jointのworld matrixを維持し、挿入・再parent・選択を単一Undo / Redo
+- 分岐joint、参照joint、skinCluster / constraint / IK接続済みjointは編集前拒否
+
 ### Constraints
 
 メニュー: `YWTA > Rigging > Constraints`

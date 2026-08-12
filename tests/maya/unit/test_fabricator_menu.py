@@ -39,6 +39,7 @@ class FabricatorMenuTests(TestCase):
                 "Name Tools",
                 "Rename Chain",
                 "Create Joint",
+                "Insert Joints Between Selected...",
                 "Create at Selection Center",
                 "Null",
                 "Locator",

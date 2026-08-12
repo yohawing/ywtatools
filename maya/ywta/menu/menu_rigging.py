@@ -52,6 +52,14 @@ def create_rigging_menu(parent_menu):
         annotation="選択全体の中心、空選択では原点へjointを単一Undoで作成します",
     )
 
+    cmds.menuItem(
+        parent=rig_menu,
+        label="Insert Joints Between Selected...",
+        command="import ywta.rig.joint_insert as joint_insert; joint_insert.show_options()",
+        image="joint.png",
+        annotation="未skinの隣接親子joint間へ指定数を均等挿入します",
+    )
+
     create_menu = cmds.menuItem(
         parent=rig_menu,
         subMenu=True,
