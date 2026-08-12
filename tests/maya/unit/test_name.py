@@ -26,6 +26,18 @@ class NameToolsTests(TestCase):
         self.assertEqual("|new_parent", result[0])
         self.assertEqual("|new_parent|new_child", result[1])
 
+    def test_successful_batch_is_one_undo(self):
+        first = cmds.createNode("transform", name="first")
+        second = cmds.createNode("transform", name="second")
+
+        name_tools.rename_nodes([first, second], ["renamed_first", "renamed_second"])
+        cmds.undo()
+
+        self.assertTrue(cmds.objExists("first"))
+        self.assertTrue(cmds.objExists("second"))
+        self.assertFalse(cmds.objExists("renamed_first"))
+        self.assertFalse(cmds.objExists("renamed_second"))
+
     def test_find_replace_can_ignore_case(self):
         node = cmds.createNode("transform", name="Left_Arm_CTRL")
 

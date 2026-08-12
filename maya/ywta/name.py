@@ -107,6 +107,8 @@ def rename_nodes(nodes, names):
             renamed = cmds.rename(node, record["name"], ignoreShape=True)
             if renamed.rsplit("|", 1)[-1] != record["name"]:
                 raise RuntimeError("名前が競合しています: {} -> {}".format(record["name"], renamed))
+        result = [_resolve_uuid(record["uuid"]) for record in records]
+        cmds.select(result, replace=True)
     except Exception:
         failed = True
         raise
@@ -115,8 +117,6 @@ def rename_nodes(nodes, names):
         if failed:
             cmds.undo()
 
-    result = [_resolve_uuid(record["uuid"]) for record in records]
-    cmds.select(result, replace=True)
     return result
 
 

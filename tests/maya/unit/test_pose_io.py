@@ -38,6 +38,20 @@ class PoseIoTests(TestCase):
         self.assertAlmostEqual(4.5, cmds.getAttr(target + ".translateX"))
         self.assertAlmostEqual(-12.0, cmds.getAttr(target + ".rotateY"))
 
+    def test_successful_apply_is_one_undo(self):
+        source = self._control("source")
+        cmds.setAttr(source + ".translateX", 4.5)
+        cmds.setAttr(source + ".rotateY", -12.0)
+        data = pose_io.capture([source])
+        cmds.delete(source)
+        target = self._control("target")
+
+        pose_io.apply(data)
+        cmds.undo()
+
+        self.assertAlmostEqual(0.0, cmds.getAttr(target + ".translateX"))
+        self.assertAlmostEqual(0.0, cmds.getAttr(target + ".rotateY"))
+
     def test_explicit_pose_id_survives_control_rename(self):
         source = self._control("source", "left_hand")
         pose_io.set_pose_id(source, "arm.left.ik")
