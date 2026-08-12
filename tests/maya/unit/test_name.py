@@ -106,6 +106,19 @@ class NameToolsTests(TestCase):
 
         self.assertTrue(cmds.objExists("original"))
 
+    def test_maya_sanitized_name_and_missing_namespace_fail_before_undo(self):
+        """自動変換名と未作成namespaceをrename開始前に拒否する。"""
+        node = cmds.createNode("transform", name="original")
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            for invalid_name in ("bad name", "1node", "node#", "node-name", "missing:node"):
+                with self.assertRaises(ValueError):
+                    name_tools.rename_nodes([node], [invalid_name])
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+        self.assertTrue(cmds.objExists("original"))
+
     def test_missing_explicit_node_rejects_partial_rename(self):
         """明示入力の欠落を落として残りだけ改名しない。"""
         node = cmds.createNode("transform", name="original")

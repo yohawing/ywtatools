@@ -66,6 +66,17 @@ def _validate_leaf(name):
         raise ValueError("変更後の名前に DAG 区切り文字 '|' は使用できません: {}".format(name))
 
 
+def _validate_target_name(name):
+    """絶対rename前にnamespaceとMaya正規名を検証する。"""
+    segments = name.split(":")
+    if any(not segment or cmds.namespace(validateName=segment) != segment for segment in segments):
+        raise ValueError("Mayaが自動変換する名前は使用できません: {}".format(name))
+    if len(segments) > 1:
+        namespace = ":".join(segments[:-1])
+        if not cmds.namespace(exists=":" + namespace):
+            raise ValueError("変更先namespaceがありません: {}".format(namespace))
+
+
 def _parent_identity(node):
     """同一親判定用の安定した識別子を返す。"""
     parents = cmds.listRelatives(node, parent=True, fullPath=True) or []
@@ -105,6 +116,7 @@ def rename_nodes(nodes, names):
         name = name.lstrip(":")
         if ":" not in name:
             name = source_namespace + name
+        _validate_target_name(name)
         node_id = _node_uuid(node)
         if node_id in source_ids:
             raise ValueError("同じノードを重複して変更できません: {}".format(node))
