@@ -56,6 +56,7 @@ from ywta.rig.control import (
     import_curve_files_on_selected,
     import_new_curve_files,
     combine_control_shapes,
+    mirror_selected_control_shapes,
     select_control_cvs,
     set_control_color,
     documentation,
@@ -156,6 +157,10 @@ class ControlWindow(SingletonWindowMixin, MayaQWidgetBaseMixin, QMainWindow):
         b = QPushButton("Mirror Curve")
         b.released.connect(self.mirror_curve)
         hbox.addWidget(b)
+
+        b = QPushButton("Smart Mirror")
+        b.released.connect(mirror_selected_control_shapes)
+        vbox.addWidget(b)
 
         hbox = QHBoxLayout()
         vbox.addLayout(hbox)
