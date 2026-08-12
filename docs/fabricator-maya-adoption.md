@@ -38,6 +38,7 @@ Fabricator 本体は Business Source License 1.1、YWTA は MIT License です�
 - 頂点数だけでなく face connectivity の SHA-256 fingerprint を Direct load 時に検証
 - influence の完全検証、曖昧な短名の拒否、保存外 influence のゼロ化
 - Maya再起動後も使える永続Weight Clipboard、複数頂点へのPaste、複数頂点平均のCopyとその場Average
+- Weight Paste / Averageはlocked influenceを検出して曖昧な再配分を編集前拒否
 - 選択jointをウェイト0で追加、選択した未使用・unlocked influenceだけを安全に削除
 - world YZ面で方向を明示する+X→-X / -X→+X Skin Weight Mirror
 - Skin Weight Mirrorはlocked influenceを編集前拒否し、単一Undo / Redo

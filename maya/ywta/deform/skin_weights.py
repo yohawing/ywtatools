@@ -213,6 +213,13 @@ def _set_uniform_weights(shape, indices, data, chunk_name):
     failed = False
     try:
         cluster = skin_io._ensure_skin_cluster(shape, influences)
+        locked = [
+            influence
+            for influence in (cmds.skinCluster(cluster, query=True, influence=True) or [])
+            if cmds.objExists(influence + ".lockInfluenceWeights") and cmds.getAttr(influence + ".lockInfluenceWeights")
+        ]
+        if locked:
+            raise ValueError("locked influenceがあるためウェイトを変更できません: {}".format(", ".join(locked)))
         total = sum(float(value) for value in data["weights"])
         transform_values = [(influence, float(value) / total) for influence, value in zip(influences, data["weights"])]
         components = ["{}.vtx[{}]".format(shape, index) for index in indices]

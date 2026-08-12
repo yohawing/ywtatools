@@ -89,6 +89,26 @@ class SkinWeightsTests(TestCase):
             cmds.skinPercent(self.cluster, self.vertices[3], query=True, transform=extra),
         )
 
+    def test_locked_influence_rejects_and_rolls_back_added_influence(self):
+        """locked拒否前に追加したinfluenceも失敗時Undoで残さない。"""
+        data = skin_weights.capture_vertex_weights(self.vertices[0])
+        cmds.select(clear=True)
+        extra = cmds.joint(name="extra_jnt", position=(0.0, 1.0, 0.0))
+        extra_path = cmds.ls(extra, long=True)[0]
+        data["influences"].append({"name": "extra_jnt", "path": extra_path})
+        data["weights"].append(0.25)
+        cmds.setAttr(self.root + ".lockInfluenceWeights", True)
+        before = self._weights(self.vertices[3])
+        cmds.select(self.vertices[3], replace=True)
+
+        with self.assertRaises(ValueError):
+            skin_weights.paste_vertex_weights(data=data)
+
+        influences = cmds.ls(cmds.skinCluster(self.cluster, query=True, influence=True), long=True)
+        self.assertNotIn(extra_path, influences)
+        self.assertEqual(before, self._weights(self.vertices[3]))
+        self.assertEqual([self.vertices[3]], cmds.ls(selection=True, flatten=True))
+
     def test_vertices_from_multiple_meshes_are_rejected(self):
         other = cmds.polyPlane(name="other")[0]
 
