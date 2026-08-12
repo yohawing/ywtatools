@@ -43,6 +43,7 @@ Fabricator 本体は Business Source License 1.1、YWTA は MIT License です�
 - 空/空白付きinfluence identityと0～1範囲外weightをscene編集前拒否
 - Direct / Subset / Transferはtargetのlocked influenceを検出し、曖昧な部分適用をrollback
 - Maya再起動後も使える永続Weight Clipboard、複数mesh/頂点への単一Undo Paste、複数頂点平均のCopyとその場Average
+- Weight Clipboard JSONも非空identityと0～1の個別weightを読込前検証
 - Weight Paste / Averageはlocked influenceを検出して曖昧な再配分を編集前拒否
 - 選択jointをウェイト0で追加、選択した未使用・unlocked influenceだけを安全に削除
 - influence追加/削除APIは単一mesh/joint文字列とnode列の両方に対応

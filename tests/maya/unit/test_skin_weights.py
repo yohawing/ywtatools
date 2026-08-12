@@ -1,5 +1,6 @@
 """Vertex Weight Clipboard / Average の Maya 単体テスト。"""
 
+import copy
 import json
 
 import maya.cmds as cmds
@@ -166,6 +167,22 @@ class SkinWeightsTests(TestCase):
                 [self.vertices[3]],
                 clipboard_file=path,
             )
+
+        self.assertEqual(before, self._weights(self.vertices[3]))
+
+    def test_invalid_clipboard_identity_and_oversized_weight_fail_before_edit(self):
+        """空identityと1超weightをtarget skinへ渡さない。"""
+        data = skin_weights.capture_vertex_weights(self.vertices[0])
+        before = self._weights(self.vertices[3])
+        invalid_identity = copy.deepcopy(data)
+        invalid_identity["influences"][0]["path"] = ""
+        with self.assertRaises(ValueError):
+            skin_weights.paste_vertex_weights([self.vertices[3]], data=invalid_identity)
+
+        oversized = copy.deepcopy(data)
+        oversized["weights"][0] = 1.1
+        with self.assertRaises(ValueError):
+            skin_weights.paste_vertex_weights([self.vertices[3]], data=oversized)
 
         self.assertEqual(before, self._weights(self.vertices[3]))
 

@@ -97,13 +97,23 @@ def _validate_weights(data):
             not isinstance(influence, dict)
             or not isinstance(influence.get("name"), str)
             or not isinstance(influence.get("path"), str)
+            or not influence["name"]
+            or influence["name"] != influence["name"].strip()
+            or not influence["path"]
+            or influence["path"] != influence["path"].strip()
         ):
             raise ValueError("influence が不正です。")
         key = (influence["path"], influence["name"])
         if key in keys:
             raise ValueError("influence が重複しています: {}".format(influence["name"]))
         keys.add(key)
-        if not isinstance(weight, (int, float)) or isinstance(weight, bool) or not math.isfinite(weight) or weight < 0.0:
+        if (
+            not isinstance(weight, (int, float))
+            or isinstance(weight, bool)
+            or not math.isfinite(weight)
+            or weight < 0.0
+            or weight > 1.0
+        ):
             raise ValueError("weight が不正です。")
         total += float(weight)
     if total <= skin_io.WEIGHT_EPSILON:
