@@ -19,9 +19,9 @@ _LAST_REPORT = None
 
 
 def find_duplicate_short_names():
-    """同じ短名を持つ DAG node 群を返す。"""
+    """同じ短名を持つtransform/joint群を返す。"""
     by_name = {}
-    for node in cmds.ls(dagObjects=True, long=True) or []:
+    for node in cmds.ls(type="transform", long=True) or []:
         short_name = node.rsplit("|", 1)[-1]
         by_name.setdefault(short_name, []).append(node)
     return [{"name": name, "nodes": sorted(nodes)} for name, nodes in sorted(by_name.items()) if len(nodes) > 1]

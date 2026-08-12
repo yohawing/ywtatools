@@ -172,7 +172,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 
 メニュー: `YWTA > Utility > Scene Audit`
 
-- 重複する DAG short name の一覧
+- 重複するtransform / joint short nameの一覧（shape名の重複は除外）
 - non-manifold vertex / edge の一覧
 - lamina face の一覧
 - world-space面積が0または非有限のface一覧

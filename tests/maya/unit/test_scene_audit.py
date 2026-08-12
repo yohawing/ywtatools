@@ -42,6 +42,19 @@ class SceneAuditTests(TestCase):
         item = next(entry for entry in duplicates if entry["name"] == "control")
         self.assertEqual(["|first_group|control", "|second_group|control"], item["nodes"])
 
+    def test_duplicate_shape_names_are_not_transform_collisions(self):
+        """別階層の同名shapeをrig transform名の衝突として報告しない。"""
+        first_group = cmds.createNode("transform", name="first_group")
+        second_group = cmds.createNode("transform", name="second_group")
+        first = cmds.createNode("transform", name="first", parent=first_group)
+        second = cmds.createNode("transform", name="second", parent=second_group)
+        cmds.createNode("nurbsCurve", name="displayShape", parent=first)
+        cmds.createNode("nurbsCurve", name="displayShape", parent=second)
+
+        duplicates = scene_audit.find_duplicate_short_names()
+
+        self.assertNotIn("displayShape", {entry["name"] for entry in duplicates})
+
     def test_lamina_and_non_manifold_components_are_reported(self):
         shape = self._create_lamina_mesh()
 
