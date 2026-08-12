@@ -193,7 +193,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - 選択joint階層の非leaf jointをMaya標準joint orientで直接の子方向へ静的整列
 - +Xを子方向、+Yをsecondary axisとし、rotateを0のままjointOrientに保持
 - 子・孫jointのworld matrixと元のselectionを保持し、階層全体を1回のUndo / Redo
-- 分岐、同一位置の親子、参照、skinCluster / constraint / IK、接続・lock channelを編集前拒否
+- 分岐、同一位置の親子、参照、skinCluster / constraint / IK、animCurveを含む接続・lock channelを編集前拒否
 - `Joint Edit Tools`内の`Align with Child`も同じ原子的な階層orient経路を使用
 
 ### Joint Display Size
