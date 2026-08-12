@@ -55,22 +55,57 @@ def _capture_channel(node, attribute, start, end):
         return None
     in_tangents = cmds.keyTangent(plug, query=True, time=(start, end), inTangentType=True) or []
     out_tangents = cmds.keyTangent(plug, query=True, time=(start, end), outTangentType=True) or []
-    if not (len(times) == len(values) == len(in_tangents) == len(out_tangents)):
+    in_angles = cmds.keyTangent(plug, query=True, time=(start, end), inAngle=True) or []
+    out_angles = cmds.keyTangent(plug, query=True, time=(start, end), outAngle=True) or []
+    in_weights = cmds.keyTangent(plug, query=True, time=(start, end), inWeight=True) or []
+    out_weights = cmds.keyTangent(plug, query=True, time=(start, end), outWeight=True) or []
+    counts = {
+        len(times),
+        len(values),
+        len(in_tangents),
+        len(out_tangents),
+        len(in_angles),
+        len(out_angles),
+        len(in_weights),
+        len(out_weights),
+    }
+    if len(counts) != 1:
         raise RuntimeError("keyframe と tangent の件数が一致しません: {}".format(plug))
     keys = []
-    for time, value, in_tangent, out_tangent in zip(times, values, in_tangents, out_tangents):
-        if not math.isfinite(float(time)) or not math.isfinite(float(value)):
+    for values_at_key in zip(
+        times,
+        values,
+        in_tangents,
+        out_tangents,
+        in_angles,
+        out_angles,
+        in_weights,
+        out_weights,
+    ):
+        time, value, in_tangent, out_tangent, in_angle, out_angle, in_weight, out_weight = values_at_key
+        numeric = (time, value, in_angle, out_angle, in_weight, out_weight)
+        if not all(math.isfinite(float(item)) for item in numeric):
             raise ValueError("非有限の keyframe は保存できません: {}".format(plug))
         key = {
             "time": float(time) - start,
             "value": float(value),
             "in_tangent": in_tangent,
             "out_tangent": out_tangent,
+            "in_angle": float(in_angle),
+            "out_angle": float(out_angle),
+            "in_weight": float(in_weight),
+            "out_weight": float(out_weight),
         }
         if attr_type == "enum":
             key["enum_label"] = pose_io._enum_label(plug, value)
         keys.append(key)
-    return {"name": attribute, "type": attr_type, "keys": keys}
+    weighted = cmds.keyTangent(plug, query=True, weightedTangents=True) or [False]
+    return {
+        "name": attribute,
+        "type": attr_type,
+        "weighted_tangents": bool(weighted[0]),
+        "keys": keys,
+    }
 
 
 def capture(nodes=None, start=None, end=None):
@@ -151,12 +186,21 @@ def _validate(data):
             keys = channel.get("keys")
             if not isinstance(keys, list) or not keys:
                 raise ValueError("keys がありません: {}.{}".format(address, name))
+            if "weighted_tangents" in channel and not isinstance(channel["weighted_tangents"], bool):
+                raise ValueError("weighted tangent設定が不正です: {}.{}".format(address, name))
             previous_time = None
             for key in keys:
                 if not isinstance(key, dict):
                     raise ValueError("key が不正です: {}.{}".format(address, name))
                 time = _finite_number(key.get("time"), "key time")
                 _finite_number(key.get("value"), "key value")
+                tangent_values = ("in_angle", "out_angle", "in_weight", "out_weight")
+                present_values = [value_name in key for value_name in tangent_values]
+                if any(present_values) and not all(present_values):
+                    raise ValueError("tangent値が不足しています: {}.{}".format(address, name))
+                for value_name in tangent_values:
+                    if value_name in key:
+                        _finite_number(key[value_name], value_name)
                 if (
                     attr_type == "enum"
                     and "enum_label" in key
@@ -294,6 +338,15 @@ def apply(data, nodes=None, start_time=None, replace=True, mode=None):
                     else key["value"]
                 )
                 cmds.setKeyframe(plug, time=time, value=value)
+                applied_keys += 1
+            if "weighted_tangents" in channel:
+                cmds.keyTangent(
+                    plug,
+                    edit=True,
+                    weightedTangents=channel["weighted_tangents"],
+                )
+            for key in channel["keys"]:
+                time = start_time + key["time"]
                 cmds.keyTangent(
                     plug,
                     edit=True,
@@ -301,7 +354,17 @@ def apply(data, nodes=None, start_time=None, replace=True, mode=None):
                     inTangentType=key["in_tangent"],
                     outTangentType=key["out_tangent"],
                 )
-                applied_keys += 1
+                tangent_kwargs = {}
+                if key["in_tangent"] == "fixed" and "in_angle" in key:
+                    tangent_kwargs["inAngle"] = key["in_angle"]
+                    if channel.get("weighted_tangents"):
+                        tangent_kwargs["inWeight"] = key["in_weight"]
+                if key["out_tangent"] == "fixed" and "out_angle" in key:
+                    tangent_kwargs["outAngle"] = key["out_angle"]
+                    if channel.get("weighted_tangents"):
+                        tangent_kwargs["outWeight"] = key["out_weight"]
+                if tangent_kwargs:
+                    cmds.keyTangent(plug, edit=True, time=(time, time), **tangent_kwargs)
         if operations:
             cmds.dgdirty([plug for plug, _channel in operations])
     except Exception:

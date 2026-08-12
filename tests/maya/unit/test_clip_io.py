@@ -185,6 +185,48 @@ class ClipIoTests(TestCase):
             cmds.keyframe(target, attribute="space", query=True, valueChange=True),
         )
 
+    def test_fixed_weighted_tangents_round_trip(self):
+        source = self._control("source")
+        plug = source + ".translateX"
+        cmds.setKeyframe(plug, time=1, value=0)
+        cmds.setKeyframe(plug, time=10, value=5)
+        cmds.keyTangent(plug, edit=True, weightedTangents=True)
+        cmds.keyTangent(
+            plug,
+            edit=True,
+            time=(1, 1),
+            inTangentType="fixed",
+            outTangentType="fixed",
+            inAngle=12.0,
+            outAngle=34.0,
+            inWeight=0.5,
+            outWeight=0.75,
+        )
+        data = clip_io.capture([source], start=1, end=10)
+        cmds.delete(source)
+        target = self._control("target")
+        target_plug = target + ".translateX"
+
+        clip_io.apply(data, nodes=[target], start_time=20)
+
+        self.assertEqual([True], cmds.keyTangent(target_plug, query=True, weightedTangents=True))
+        self.assertAlmostEqual(
+            12.0,
+            cmds.keyTangent(target_plug, query=True, time=(20, 20), inAngle=True)[0],
+        )
+        self.assertAlmostEqual(
+            34.0,
+            cmds.keyTangent(target_plug, query=True, time=(20, 20), outAngle=True)[0],
+        )
+        self.assertAlmostEqual(
+            0.5,
+            cmds.keyTangent(target_plug, query=True, time=(20, 20), inWeight=True)[0],
+        )
+        self.assertAlmostEqual(
+            0.75,
+            cmds.keyTangent(target_plug, query=True, time=(20, 20), outWeight=True)[0],
+        )
+
     def test_driven_channel_is_skipped(self):
         source, data = self._source_clip()
         cmds.delete(source)

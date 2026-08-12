@@ -44,7 +44,7 @@ Skin JSON は geometry と weight を含むため、大きいメッシュでは�
 メニュー: `YWTA > Animation`
 
 - 選択 control の keyable scalar 属性を保存する Pose JSON
-- playback range の animation keys と tangent type を保存する Clip JSON
+- playback range のanimation keys、tangent type、fixed angle/weightを保存するClip JSON
 - enum animationは表示ラベルで別リグのindexへ再解決（旧数値Clipも読込可能）
 - Maya objectSet を正本とする Selection Sets と portable JSON
 - namespace を除いた control 名による別キャラクターへの適用
