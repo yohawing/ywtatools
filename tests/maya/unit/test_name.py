@@ -1,5 +1,7 @@
 """Name Tools の Maya 単体テスト。"""
 
+from unittest import mock
+
 import maya.cmds as cmds
 
 import ywta.name as name_tools
@@ -159,6 +161,25 @@ class NameToolsTests(TestCase):
         self.assertTrue(cmds.objExists("first"))
         self.assertTrue(cmds.objExists("second"))
         self.assertFalse(cmds.objExists("renamed"))
+
+    def test_referenced_node_rejects_before_batch_rename(self):
+        """参照nodeを含むbatchで他nodeも改名しない。"""
+        local = cmds.createNode("transform", name="local")
+        referenced = cmds.createNode("transform", name="referenced")
+        original_reference_query = name_tools.cmds.referenceQuery
+
+        def reference_query(node, **kwargs):
+            if kwargs.get("isNodeReferenced") and node == "|referenced":
+                return True
+            return original_reference_query(node, **kwargs)
+
+        with mock.patch.object(name_tools.cmds, "referenceQuery", side_effect=reference_query):
+            with self.assertRaises(ValueError):
+                name_tools.rename_nodes([local, referenced], ["new_local", "new_referenced"])
+
+        self.assertTrue(cmds.objExists("local"))
+        self.assertTrue(cmds.objExists("referenced"))
+        self.assertFalse(cmds.objExists("new_local"))
 
     def test_select_by_name_unions_patterns_without_duplicates(self):
         left = cmds.createNode("transform", name="arm_L_jnt")

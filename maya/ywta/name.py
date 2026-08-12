@@ -101,6 +101,8 @@ def rename_nodes(nodes, names):
     source_ids = set()
     for node, name in zip(long_nodes, names):
         _validate_leaf(name)
+        if cmds.referenceQuery(node, isNodeReferenced=True):
+            raise ValueError("参照nodeはrenameできません: {}".format(node))
         source_namespace = _split_leaf(node)[0]
         name = name.lstrip(":")
         if ":" not in name:
