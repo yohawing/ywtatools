@@ -118,6 +118,13 @@ def create_rigging_menu(parent_menu):
         annotation="コントロールカーブをインポートします",
     )
 
+    cmds.menuItem(
+        parent=rig_menu,
+        label="Swap Selected Control Shapes",
+        command="import ywta.rig.control as control; control.swap_selected_curves()",
+        annotation="transform接続とshape表示状態を維持して選択controlの形状を差し替えます",
+    )
+
     # HumanIK関連
     cmds.menuItem(parent=rig_menu, divider=True, dividerLabel="HumanIK")
 

@@ -251,7 +251,8 @@ class CurveShape(object):
                 cmds.setAttr("{}.overrideRGBColors".format(shape), True)
                 cmds.setAttr("{}.overrideColorRGB".format(shape), *self.color)
         cmds.parent(shape, transform, r=True, s=True)
-        shape = cmds.rename(shape, "{}Shape".format(transform))
+        short_name = transform.rsplit("|", 1)[-1]
+        shape = cmds.rename(shape, "{}Shape".format(short_name))
         cmds.delete(curve)
         if as_controller:
             cmds.controller(transform)
@@ -386,6 +387,119 @@ def mirror_curve(source, destination):
     source_curve.transform = destination
     source_curve.create(destination, as_controller=is_controller)
     return source_curve
+
+
+def _curve_shapes(transform):
+    """transform直下の表示用NURBS curve shapeをロングパスで返す。"""
+    return (
+        cmds.listRelatives(
+            transform,
+            shapes=True,
+            noIntermediate=True,
+            fullPath=True,
+            type="nurbsCurve",
+        )
+        or []
+    )
+
+
+def _shape_display_state(shape):
+    """shape差し替え時に保持する表示状態を取得する。"""
+    visibility_sources = cmds.listConnections(shape + ".visibility", source=True, destination=False, plugs=True) or []
+    if len(visibility_sources) > 1:
+        raise RuntimeError("visibility入力を一意に解決できません: {}".format(shape))
+    return {
+        "override_enabled": cmds.getAttr(shape + ".overrideEnabled"),
+        "override_rgb": cmds.getAttr(shape + ".overrideRGBColors"),
+        "override_color": cmds.getAttr(shape + ".overrideColor"),
+        "override_color_rgb": cmds.getAttr(shape + ".overrideColorRGB")[0],
+        "override_display_type": cmds.getAttr(shape + ".overrideDisplayType"),
+        "visibility_source": visibility_sources[0] if visibility_sources else None,
+    }
+
+
+def _apply_shape_display_state(shape, state):
+    """保存済み表示状態を新しいcurve shapeへ適用する。"""
+    cmds.setAttr(shape + ".overrideEnabled", state["override_enabled"])
+    cmds.setAttr(shape + ".overrideRGBColors", state["override_rgb"])
+    cmds.setAttr(shape + ".overrideColor", state["override_color"])
+    cmds.setAttr(shape + ".overrideColorRGB", *state["override_color_rgb"], type="double3")
+    cmds.setAttr(shape + ".overrideDisplayType", state["override_display_type"])
+    if state["visibility_source"]:
+        cmds.connectAttr(state["visibility_source"], shape + ".visibility", force=True)
+
+
+def swap_curve_shapes(transforms, curves):
+    """transform接続を維持してcontrol curve shapeだけを差し替える。
+
+    Args:
+        transforms: 差し替え対象のtransform名。
+        curves: 新規作成に使う :class:`CurveShape` の列。
+
+    Returns:
+        差し替えたtransformのロングパス一覧。
+    """
+    if not curves or not all(isinstance(curve, CurveShape) and curve.cvs for curve in curves):
+        raise ValueError("有効なCurveShapeを1つ以上指定してください。")
+    resolved = []
+    plans = []
+    seen = set()
+    for transform in transforms or []:
+        matches = cmds.ls(transform, long=True, type="transform") or []
+        if len(matches) != 1:
+            raise ValueError("transformを一意に解決できません: {}".format(transform))
+        target = matches[0]
+        node_uuid = (cmds.ls(target, uuid=True) or [None])[0]
+        if node_uuid in seen:
+            continue
+        seen.add(node_uuid)
+        old_shapes = _curve_shapes(target)
+        if not old_shapes:
+            raise ValueError("NURBS curve shapeがありません: {}".format(target))
+        plans.append((target, old_shapes, [_shape_display_state(shape) for shape in old_shapes]))
+        resolved.append(target)
+    if not plans:
+        raise ValueError("差し替え対象のcontrolを1つ以上指定してください。")
+
+    selection = cmds.ls(selection=True, long=True) or []
+    cmds.undoInfo(openChunk=True, chunkName="YWTA Swap Control Shapes")
+    failed = False
+    try:
+        for target, old_shapes, states in plans:
+            before = set(old_shapes)
+            for curve in curves:
+                curve.create(target, as_controller=False)
+            new_shapes = [shape for shape in _curve_shapes(target) if shape not in before]
+            if len(new_shapes) != len(curves):
+                raise RuntimeError("作成したcurve shape数が一致しません: {}".format(target))
+            for index, shape in enumerate(new_shapes):
+                state = states[index] if len(states) == len(new_shapes) else states[0]
+                _apply_shape_display_state(shape, state)
+            cmds.delete(old_shapes)
+        valid_selection = [item for item in selection if cmds.objExists(item)]
+        if valid_selection:
+            cmds.select(valid_selection, replace=True)
+        else:
+            cmds.select(clear=True)
+    except Exception:
+        failed = True
+        raise
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        if failed:
+            cmds.undo()
+    return resolved
+
+
+def swap_selected_curves(file_path=None):
+    """選択controlのshapeをJSON内のcurveへ差し替える。"""
+    transforms = cmds.ls(selection=True, long=True, type="transform") or []
+    if not transforms:
+        raise ValueError("差し替えるcontrolを1つ以上選択してください。")
+    curves = load_curves(file_path)
+    if curves is None:
+        return None
+    return swap_curve_shapes(transforms, curves)
 
 
 def get_knots(curve):
