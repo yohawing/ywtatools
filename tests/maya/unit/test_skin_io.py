@@ -95,10 +95,13 @@ class SkinIoTests(TestCase):
         data = skin_io.capture(self.mesh)
         target = cmds.duplicate(self.mesh, name="unskinned_target")[0]
         cmds.delete(target, constructionHistory=True)
+        sentinel = cmds.spaceLocator(name="selection_sentinel")[0]
+        cmds.select(sentinel, replace=True)
 
         cluster = skin_io.apply(target, data)
 
         self.assertTrue(cmds.objExists(cluster))
+        self.assertEqual([sentinel], cmds.ls(selection=True))
         restored = skin_io.capture(target)
         self.assertEqual(data["weights"], restored["weights"])
 
@@ -234,6 +237,8 @@ class SkinIoTests(TestCase):
     def test_transfer_to_different_topology_and_undo(self):
         data = skin_io.capture(self.mesh)
         target = cmds.polyPlane(name="retopo", subdivisionsX=2, subdivisionsY=1)[0]
+        sentinel = cmds.spaceLocator(name="selection_sentinel")[0]
+        cmds.select(sentinel, replace=True)
 
         cluster = skin_io.transfer(target, data)
 
@@ -246,6 +251,7 @@ class SkinIoTests(TestCase):
         self.assertGreater(left_root, 0.99)
         self.assertGreater(right_tip, 0.99)
         self.assertFalse(cmds.ls("__ywtaSkinTransferSource*", type="transform"))
+        self.assertEqual([sentinel], cmds.ls(selection=True))
 
         cmds.undo()
         target_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]

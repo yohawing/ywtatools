@@ -348,6 +348,15 @@ def _ensure_skin_cluster(shape, influences):
     return cluster
 
 
+def _restore_selection(selection):
+    """存在する元selectionを復元し、全欠落時はclearする。"""
+    valid = [item for item in selection if cmds.objExists(item)]
+    if valid:
+        cmds.select(valid, replace=True)
+    else:
+        cmds.select(clear=True)
+
+
 def _vertex_indices(values, vertex_count):
     """部分適用する頂点indexを順序保持して検証する。"""
     if isinstance(values, (str, bytes)):
@@ -426,6 +435,7 @@ def apply(mesh, data):
     shape = _mesh_shape(mesh)
     _ensure_topology(shape, data["mesh"]["topology"])
     influences = _resolve_influences(data["influences"])
+    original_selection = cmds.ls(selection=True, long=True) or []
 
     undo_utils.require_enabled("Skin IO Load")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Skin IO Load")
@@ -437,9 +447,15 @@ def apply(mesh, data):
         failed = True
         raise
     finally:
-        cmds.undoInfo(closeChunk=True)
-        if failed:
-            cmds.undo()
+        try:
+            _restore_selection(original_selection)
+        except Exception:
+            failed = True
+            raise
+        finally:
+            cmds.undoInfo(closeChunk=True)
+            if failed:
+                cmds.undo()
     return cluster
 
 
@@ -460,6 +476,7 @@ def apply_subset(mesh, data, vertex_indices):
     influences = _resolve_influences(data["influences"])
     if _skin_cluster(shape) is None:
         raise ValueError("部分適用には既存skinClusterが必要です: {}".format(shape))
+    original_selection = cmds.ls(selection=True, long=True) or []
 
     undo_utils.require_enabled("Skin IO Load Subset")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Skin IO Load Subset")
@@ -477,9 +494,15 @@ def apply_subset(mesh, data, vertex_indices):
         failed = True
         raise
     finally:
-        cmds.undoInfo(closeChunk=True)
-        if failed:
-            cmds.undo()
+        try:
+            _restore_selection(original_selection)
+        except Exception:
+            failed = True
+            raise
+        finally:
+            cmds.undoInfo(closeChunk=True)
+            if failed:
+                cmds.undo()
     return cluster
 
 
@@ -548,6 +571,7 @@ def transfer(mesh, data, surface_association="closestPoint"):
     _ensure_transfer_convention(data)
     target_shape = _mesh_shape(mesh)
     influences = _resolve_influences(data["influences"])
+    original_selection = cmds.ls(selection=True, long=True) or []
 
     undo_utils.require_enabled("Skin IO Transfer")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Skin IO Transfer")
@@ -573,11 +597,11 @@ def transfer(mesh, data, surface_association="closestPoint"):
     finally:
         try:
             if temporary and cmds.objExists(temporary):
-                try:
-                    cmds.delete(temporary)
-                except Exception:
-                    failed = True
-                    raise
+                cmds.delete(temporary)
+            _restore_selection(original_selection)
+        except Exception:
+            failed = True
+            raise
         finally:
             cmds.undoInfo(closeChunk=True)
             if failed:
