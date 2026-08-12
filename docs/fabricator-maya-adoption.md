@@ -333,6 +333,8 @@ import失敗はskipへ変換せず、検証失敗として扱います。
 - ML AutoSkin と追加依存の自動インストール
 - AI bridge / assistant
 - Project Setup の engine template
+- Armature / Fabricator blueprintを埋め込むUSD importとUsdSkel delivery
+- scene networkとproject mappingに永続化するmodel / animation export queue
 - Joint Aimer の viewport preview と mirror workflow
 - deprecated Smart Joint Mirror のlive DG network
 - skinCluster接続を切断するDisconnect/Reconnect All Skins
