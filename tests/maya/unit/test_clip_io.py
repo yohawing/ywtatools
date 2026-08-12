@@ -348,6 +348,26 @@ class ClipIoTests(TestCase):
         self.assertEqual(clip_io.FORMAT, data["format"])
         self.assertEqual(10.0, data["duration"])
 
+    def test_temporary_clip_round_trip_uses_validated_engine(self):
+        source, _data = self._source_clip()
+        path = self.get_temp_filename("temporary_clip.json")
+        clip_io.save_temp([source], file_path=path, start=10, end=20)
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.currentTime(100)
+
+        result = clip_io.load_temp(
+            nodes=[target],
+            file_path=path,
+            mode="place",
+        )
+
+        self.assertEqual(2, result["applied_keys"])
+        self.assertEqual(
+            [100.0, 110.0],
+            cmds.keyframe(target, attribute="translateX", query=True, timeChange=True),
+        )
+
     def test_load_settings_round_trip_and_invalid_mode_falls_back(self):
         self.assertEqual(("replace", False), clip_io.get_load_settings())
         self.assertEqual(("insert", True), clip_io.set_load_settings("insert", True))

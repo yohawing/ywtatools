@@ -59,6 +59,7 @@ Skin JSON は geometry と weight を含むため、大きいメッシュでは�
 - PoseのBlend / Selected-onlyを保存・実行できるMaya Option UI
 - file dialogなしで再利用できるユーザー単位のTemporary Pose Clipboard
 - Animation ClipのPlace / Replace / Insert適用モード
+- file dialogなしで再利用できるユーザー単位のTemporary Animation Clip
 - 実キーがないclip開始・終了へ評価値anchorを補い、Load Optionsで個別除外可能
 - ModeとSelected-onlyを任意組合せで保存・実行できるClip Option UI
 - Insert時は解決・適用可能なcontrolだけの後続キーをclip占有フレーム数ぶん移動
@@ -156,6 +157,7 @@ Undo の共通 contract が完成するまで追加しません。
 - Joint Aimer の viewport preview と mirror workflow
 - deprecated Smart Joint Mirror のlive DG network
 - skinned mesh の separate
+- skinCluster接続を切断するDisconnect/Reconnect All Skins
 - Scene Audit の自動修復
 - thumbnail 付き Pose / Animation library UI
 

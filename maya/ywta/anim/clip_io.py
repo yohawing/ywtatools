@@ -33,6 +33,7 @@ MODE_OPTION = "ywtaClipLoadMode"
 SELECTED_ONLY_OPTION = "ywtaClipLoadSelectedOnly"
 START_ANCHOR_OPTION = "ywtaClipLoadStartAnchor"
 END_ANCHOR_OPTION = "ywtaClipLoadEndAnchor"
+TEMP_CLIP_FILENAME = "ywta_temp_animation_clip.json"
 LOAD_MODES = ("place", "replace", "insert")
 
 
@@ -318,6 +319,38 @@ def read(file_path):
         return _validate(json.load(handle))
 
 
+def temp_clip_path():
+    """Mayaユーザー用の一時Animation Clip JSONパスを返す。"""
+    return os.path.join(cmds.internalVar(userAppDir=True), TEMP_CLIP_FILENAME)
+
+
+def save_temp(nodes, file_path=None, start=None, end=None):
+    """animation clipを固定または指定の一時JSONへ保存する。"""
+    return save(
+        nodes,
+        file_path or temp_clip_path(),
+        start=start,
+        end=end,
+    )
+
+
+def load_temp(
+    nodes=None,
+    file_path=None,
+    mode="replace",
+    apply_start_anchor=True,
+    apply_end_anchor=True,
+):
+    """一時Clip JSONを既存の検証済み適用経路でロードする。"""
+    return apply(
+        read(file_path or temp_clip_path()),
+        nodes=nodes,
+        mode=mode,
+        apply_start_anchor=apply_start_anchor,
+        apply_end_anchor=apply_end_anchor,
+    )
+
+
 def _apply_mode(mode, replace):
     """新旧引数から clip 適用モードを解決する。"""
     if mode is None:
@@ -493,6 +526,38 @@ def save_selected():
     if not paths:
         return None
     return save(selected, paths[0])
+
+
+def save_temp_selected():
+    """選択controlのplayback rangeを一時Clip JSONへ保存する。"""
+    selected = pose_io.resolve_controls()
+    path = save_temp(selected)
+    cmds.inViewMessage(
+        statusMessage="Saved temporary animation clip.",
+        position="topCenter",
+        fade=True,
+    )
+    return path
+
+
+def load_temp_with_settings():
+    """保存済みMode/Selected-only/anchor設定で一時Clipを適用する。"""
+    mode, selected_only = get_load_settings()
+    start_anchor, end_anchor = get_anchor_settings()
+    selected = pose_io.resolve_controls() if selected_only else None
+    result = load_temp(
+        nodes=selected,
+        mode=mode,
+        apply_start_anchor=start_anchor,
+        apply_end_anchor=end_anchor,
+    )
+    if result["unit_mismatches"]:
+        cmds.warning(
+            "Animation Clip unit mismatch {}; raw値・rawフレームで適用しました。".format(
+                ", ".join(result["unit_mismatches"])
+            )
+        )
+    return result
 
 
 def load_clip(

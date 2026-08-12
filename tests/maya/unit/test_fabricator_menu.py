@@ -78,6 +78,8 @@ class FabricatorMenuTests(TestCase):
                 "Save Selected Animation Clip",
                 "Load Animation Clip (Configured)",
                 "Load Animation Clip (Insert)",
+                "Save Temporary Animation Clip",
+                "Load Temporary Animation Clip (Configured)",
             }.issubset(labels)
         )
 

@@ -108,5 +108,17 @@ def create_animation_menu(parent_menu):
         command="import ywta.anim.clip_io as clip_io; clip_io.load_clip(selected_only=True, mode='replace')",
         annotation="clipを現在フレームから選択コントロールだけへ置換適用します",
     )
+    cmds.menuItem(
+        parent=animation_menu,
+        label="Save Temporary Animation Clip",
+        command="import ywta.anim.clip_io as clip_io; clip_io.save_temp_selected()",
+        annotation="選択controlのplayback rangeをMayaユーザー用の一時Clip JSONへ保存します",
+    )
+    cmds.menuItem(
+        parent=animation_menu,
+        label="Load Temporary Animation Clip (Configured)",
+        command="import ywta.anim.clip_io as clip_io; clip_io.load_temp_with_settings()",
+        annotation="保存済みMode/Selected-only/anchor設定で一時Clipを適用します",
+    )
 
     return animation_menu
