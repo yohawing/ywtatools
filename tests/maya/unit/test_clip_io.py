@@ -74,6 +74,19 @@ class ClipIoTests(TestCase):
         ):
             self.assertEqual((1.0, 24.0), clip_io.capture_time_range())
 
+    def test_capture_time_range_falls_back_for_malformed_ui_values(self):
+        """壊れたtimeControl値を保存範囲へ渡さない。"""
+        with (
+            mock.patch.object(clip_io.cmds, "playbackOptions", side_effect=[1.0, 24.0]),
+            mock.patch.object(clip_io.mel, "eval", return_value="timeControl1"),
+            mock.patch.object(
+                clip_io.cmds,
+                "timeControl",
+                side_effect=lambda _slider, **kwargs: True if kwargs.get("rangeVisible") else ["bad", 6.0],
+            ),
+        ):
+            self.assertEqual((1.0, 24.0), clip_io.capture_time_range())
+
     def test_save_selected_uses_resolved_capture_range(self):
         """メニュー保存入口がhighlight/playback解決範囲をJSONへ渡す。"""
         source = self._control("")

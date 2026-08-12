@@ -233,15 +233,13 @@ def capture_time_range():
         if not slider or not cmds.timeControl(slider, query=True, rangeVisible=True):
             return playback
         values = cmds.timeControl(slider, query=True, rangeArray=True) or []
-    except RuntimeError:
+        if len(values) != 2:
+            return playback
+        start = float(values[0])
+        end = float(values[1]) - 1.0
+    except (RuntimeError, TypeError, ValueError):
         return playback
-    if len(values) != 2:
-        return playback
-    start = float(values[0])
-    end = float(values[1]) - 1.0
-    if not math.isfinite(start) or not math.isfinite(end) or end < start:
-        return playback
-    return start, end
+    return (start, end) if math.isfinite(start) and math.isfinite(end) and end >= start else playback
 
 
 def _validate(data):
