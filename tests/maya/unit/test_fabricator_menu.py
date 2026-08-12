@@ -38,6 +38,13 @@ class FabricatorMenuTests(TestCase):
             {
                 "Name Tools",
                 "Create Joint",
+                "Create at Selection Center",
+                "Null",
+                "Locator",
+                "Poly Cube",
+                "Poly Sphere",
+                "Poly Cylinder",
+                "Poly Plane",
                 "Mirror Joint Hierarchy (Static YZ)",
                 "Export Skeleton",
                 "Import Skeleton",

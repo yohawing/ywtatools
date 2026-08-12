@@ -52,6 +52,27 @@ def create_rigging_menu(parent_menu):
         annotation="選択全体の中心、空選択では原点へjointを単一Undoで作成します",
     )
 
+    create_menu = cmds.menuItem(
+        parent=rig_menu,
+        subMenu=True,
+        tearOff=True,
+        label="Create at Selection Center",
+        annotation="選択全体の中心、空選択では原点へ基本objectを作成します",
+    )
+    for label, function in (
+        ("Null", "create_null"),
+        ("Locator", "create_locator"),
+        ("Poly Cube", "create_cube"),
+        ("Poly Sphere", "create_sphere"),
+        ("Poly Cylinder", "create_cylinder"),
+        ("Poly Plane", "create_plane"),
+    ):
+        cmds.menuItem(
+            parent=create_menu,
+            label=label,
+            command="import ywta.rig.create_object as create_object; create_object.{}()".format(function),
+        )
+
     cmds.menuItem(
         parent=rig_menu,
         label="Name Tools",
