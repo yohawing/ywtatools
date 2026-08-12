@@ -26,6 +26,7 @@ Fabricator 本体は Business Source License 1.1、YWTA は MIT License です�
 メニュー: `YWTA > Deform`
 
 - 同一トポロジーへの JSON 保存・復元
+- 同一トポロジーJSONから選択頂点だけを1回Undoで部分復元
 - 保存した world-space source mesh を再構築する closest-point 転送
 - Transfer時は保存元と適用先のlinear unit / up axis不一致を編集前拒否
 - 頂点数だけでなく face connectivity の SHA-256 fingerprint を Direct load 時に検証

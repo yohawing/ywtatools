@@ -39,6 +39,14 @@ def create_deform_menu(parent_menu):
 
     cmds.menuItem(
         parent=deform_menu,
+        label="Load Skin Weights to Selected Vertices",
+        command="import ywta.deform.skin_io as skin_io; skin_io.load_selected_subset()",
+        image="smoothSkin.png",
+        annotation="同一トポロジーJSONから選択頂点だけのウェイトを復元します",
+    )
+
+    cmds.menuItem(
+        parent=deform_menu,
         label="Transfer Skin Weights (Closest Point)",
         command="import ywta.deform.skin_io as skin_io; skin_io.load_selected_transfer()",
         image="copySkinWeight.png",

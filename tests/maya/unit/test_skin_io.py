@@ -100,6 +100,76 @@ class SkinIoTests(TestCase):
         extra_weights = [cmds.skinPercent(self.cluster, vertex, query=True, transform=extra) for vertex in vertices]
         self.assertTrue(all(abs(value) < 1.0e-8 for value in extra_weights))
 
+    def test_subset_apply_only_changes_requested_vertices_and_undoes(self):
+        data = skin_io.capture(self.mesh)
+        vertices = cmds.ls(self.mesh + ".vtx[*]", flatten=True)
+        for vertex in vertices:
+            cmds.skinPercent(
+                self.cluster,
+                vertex,
+                transformValue=((self.joint_a, 1.0), (self.joint_b, 0.0)),
+            )
+        modified = skin_io.capture(self.mesh)["weights"]
+
+        skin_io.apply_subset(self.mesh, data, [0, 2])
+
+        partial = skin_io.capture(self.mesh)["weights"]
+        self.assertEqual(data["weights"][0], partial[0])
+        self.assertEqual(modified[1], partial[1])
+        self.assertEqual(data["weights"][2], partial[2])
+        self.assertEqual(modified[3], partial[3])
+        cmds.undo()
+        self.assertEqual(modified, skin_io.capture(self.mesh)["weights"])
+
+    def test_subset_zeros_extra_influence_only_on_requested_vertices(self):
+        data = skin_io.capture(self.mesh)
+        cmds.select(clear=True)
+        extra = cmds.joint(name="extra_jnt", position=(0.0, 1.0, 0.0))
+        cmds.skinCluster(self.cluster, edit=True, addInfluence=extra, weight=1.0)
+        vertices = cmds.ls(self.mesh + ".vtx[*]", flatten=True)
+        before = [cmds.skinPercent(self.cluster, vertex, query=True, transform=extra) for vertex in vertices]
+
+        skin_io.apply_subset(self.mesh, data, [0])
+
+        weights = [cmds.skinPercent(self.cluster, vertex, query=True, transform=extra) for vertex in vertices]
+        self.assertAlmostEqual(0.0, weights[0])
+        self.assertEqual(before[1:], weights[1:])
+
+    def test_subset_invalid_indices_fail_before_edit(self):
+        data = skin_io.capture(self.mesh)
+        before = skin_io.capture(self.mesh)["weights"]
+
+        with self.assertRaises(ValueError):
+            skin_io.apply_subset(self.mesh, data, [0, 99])
+
+        self.assertEqual(before, skin_io.capture(self.mesh)["weights"])
+
+    def test_subset_requires_existing_skin_cluster(self):
+        data = skin_io.capture(self.mesh)
+        target = cmds.duplicate(self.mesh, name="unskinned_target")[0]
+        cmds.delete(target, constructionHistory=True)
+
+        with self.assertRaises(ValueError):
+            skin_io.apply_subset(target, data, [0])
+
+        target_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
+        self.assertIsNone(skin_io._skin_cluster(target_shape))
+
+    def test_selected_vertex_target_flattens_indices(self):
+        cmds.select(self.mesh + ".vtx[0:1]", replace=True)
+
+        shape, indices = skin_io._selected_vertex_target()
+
+        self.assertEqual(skin_io._mesh_shape(self.mesh), shape)
+        self.assertEqual([0, 1], indices)
+
+    def test_selected_vertex_target_requires_one_mesh(self):
+        second = cmds.polyPlane(name="cape")[0]
+        cmds.select(self.mesh + ".vtx[0]", second + ".vtx[0]", replace=True)
+
+        with self.assertRaises(ValueError):
+            skin_io._selected_vertex_target()
+
     def test_same_vertex_count_with_changed_connectivity_is_rejected(self):
         data = skin_io.capture(self.mesh)
         data["mesh"]["topology"]["sha256"] = "0" * 64

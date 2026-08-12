@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import struct
 import tempfile
 
@@ -338,7 +339,26 @@ def _ensure_skin_cluster(shape, influences):
     return cluster
 
 
-def _write_weights(shape, cluster, influences, data):
+def _vertex_indices(values, vertex_count):
+    """部分適用する頂点indexを順序保持して検証する。"""
+    if isinstance(values, (str, bytes)):
+        raise ValueError("vertex_indicesは整数列にしてください。")
+    try:
+        result = list(values)
+    except TypeError as error:
+        raise ValueError("vertex_indicesは整数列にしてください。") from error
+    if not result:
+        raise ValueError("vertex_indicesが空です。")
+    if any(not isinstance(index, int) or isinstance(index, bool) for index in result):
+        raise ValueError("vertex indexは整数にしてください。")
+    if len(set(result)) != len(result):
+        raise ValueError("vertex indexが重複しています。")
+    if any(index < 0 or index >= vertex_count for index in result):
+        raise ValueError("vertex indexが範囲外です。")
+    return result
+
+
+def _write_weights(shape, cluster, influences, data, vertex_indices=None):
     """検証済み sparse weights を skinCluster へ一括設定する。"""
     fn_skin = oma.MFnSkinCluster(_depend_node(cluster))
     physical_paths = [path.fullPathName() for path in fn_skin.influenceObjects()]
@@ -346,17 +366,19 @@ def _write_weights(shape, cluster, influences, data):
     physical_indices = [physical_by_path[influence] for influence in influences]
 
     vertex_count = data["mesh"]["topology"]["vertex_count"]
-    dense = om.MDoubleArray([0.0] * (vertex_count * len(physical_paths)))
-    for vertex_index, row in enumerate(data["weights"]):
+    indices = range(vertex_count) if vertex_indices is None else vertex_indices
+    dense = om.MDoubleArray([0.0] * (len(indices) * len(physical_paths)))
+    for row_index, vertex_index in enumerate(indices):
+        row = data["weights"][vertex_index]
         total = sum(float(entry[1]) for entry in row)
         for saved_index, value in row:
             physical_index = physical_indices[saved_index]
-            dense[vertex_index * len(physical_paths) + physical_index] = float(value) / total
+            dense[row_index * len(physical_paths) + physical_index] = float(value) / total
 
     skin_weight_command.execute(
         cluster,
         shape,
-        range(vertex_count),
+        indices,
         range(len(physical_paths)),
         dense,
         normalize=True,
@@ -414,6 +436,45 @@ def apply(mesh, data):
 def load(mesh, file_path):
     """JSON を読み込み、同一トポロジーのメッシュへ適用する。"""
     return apply(mesh, read(file_path))
+
+
+def apply_subset(mesh, data, vertex_indices):
+    """同一トポロジーmeshの指定頂点だけへ検証済みweightsを適用する。"""
+    data = _validate_data(data)
+    shape = _mesh_shape(mesh)
+    _ensure_topology(shape, data["mesh"]["topology"])
+    indices = _vertex_indices(
+        vertex_indices,
+        data["mesh"]["topology"]["vertex_count"],
+    )
+    influences = _resolve_influences(data["influences"])
+    if _skin_cluster(shape) is None:
+        raise ValueError("部分適用には既存skinClusterが必要です: {}".format(shape))
+
+    cmds.undoInfo(openChunk=True, chunkName="YWTA Skin IO Load Subset")
+    failed = False
+    try:
+        cluster = _ensure_skin_cluster(shape, influences)
+        _write_weights(
+            shape,
+            cluster,
+            influences,
+            data,
+            vertex_indices=indices,
+        )
+    except Exception:
+        failed = True
+        raise
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        if failed:
+            cmds.undo()
+    return cluster
+
+
+def load_subset(mesh, file_path, vertex_indices):
+    """JSONを読み込み、同一トポロジーmeshの指定頂点だけへ適用する。"""
+    return apply_subset(mesh, read(file_path), vertex_indices)
 
 
 def _create_transfer_source(geometry):
@@ -517,6 +578,44 @@ def load_selected():
     if not paths:
         return None
     return load(selected[0], paths[0])
+
+
+def _selected_vertex_target():
+    """現在選択から単一meshとflatten済み頂点indexを返す。"""
+    components = cmds.filterExpand(
+        cmds.ls(selection=True, long=True) or [],
+        selectionMask=31,
+        expand=True,
+    ) or []
+    if not components:
+        raise ValueError("復元先のmesh頂点を1つ以上選択してください。")
+    shapes = []
+    indices = []
+    for component in components:
+        match = re.match(r"^(.*)\.vtx\[(\d+)\]$", component)
+        if not match:
+            raise ValueError("mesh頂点だけを選択してください: {}".format(component))
+        shape = _mesh_shape(match.group(1))
+        if shape not in shapes:
+            shapes.append(shape)
+        indices.append(int(match.group(2)))
+    if len(shapes) != 1:
+        raise ValueError("1つのmesh上の頂点だけを選択してください。")
+    return shapes[0], indices
+
+
+def load_selected_subset():
+    """選択頂点へ同一トポロジーSkin IO JSONを部分適用する。"""
+    mesh, indices = _selected_vertex_target()
+    paths = cmds.fileDialog2(
+        fileMode=1,
+        dialogStyle=2,
+        caption="Load Skin Weights to Selected Vertices",
+        fileFilter="JSON (*.json)",
+    )
+    if not paths:
+        return None
+    return load_subset(mesh, paths[0], indices)
 
 
 def load_selected_transfer():
