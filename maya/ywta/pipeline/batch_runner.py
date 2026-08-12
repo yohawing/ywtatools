@@ -158,6 +158,9 @@ def _read_report(path, scene):
         not isinstance(report, dict)
         or report.get("status") not in {"ok", "error"}
         or not isinstance(report.get("stages"), list)
+        or not isinstance(report.get("scene"), str)
+        or os.path.normcase(os.path.abspath(report.get("scene", "")))
+        != os.path.normcase(os.path.abspath(scene))
     ):
         return {
             "scene": scene,
@@ -235,6 +238,13 @@ def run_batch(
             reader.join(timeout=2.0)
             _drain_output(output_queue, logs, on_log)
             report = _read_report(report_path, scene)
+            if process.returncode != 0 and report.get("status") == "ok":
+                report = {
+                    "scene": scene,
+                    "status": "error",
+                    "error": "child process が非0で終了しました: {}".format(process.returncode),
+                    "stages": report.get("stages", []),
+                }
             result = {
                 "scene": scene,
                 "returncode": process.returncode,

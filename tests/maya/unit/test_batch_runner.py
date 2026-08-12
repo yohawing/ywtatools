@@ -113,6 +113,8 @@ cmds.setAttr('asset.completed', True)
                 self.stdout = io.StringIO("")
                 self.returncode = 0
                 report_path = arguments[3]
+                with open(arguments[2], "r", encoding="utf-8") as payload_handle:
+                    scene = json.load(payload_handle)["scene"]
                 launches["count"] += 1
                 with open(report_path, "w", encoding="utf-8") as handle:
                     if launches["count"] == 1:
@@ -120,7 +122,7 @@ cmds.setAttr('asset.completed', True)
                     else:
                         json.dump(
                             {
-                                "scene": arguments[2],
+                                "scene": scene,
                                 "status": "ok",
                                 "stages": ["opened"],
                             },
@@ -138,3 +140,54 @@ cmds.setAttr('asset.completed', True)
 
         self.assertEqual(["error", "ok"], [item["report"]["status"] for item in results])
         self.assertIn("読み込めません", results[0]["report"]["error"])
+
+    def test_nonzero_child_exit_overrides_success_report(self):
+        scene = self._scene("nonzero")
+
+        class FakeProcess:
+            """success report後に非0終了したchildを模倣する。"""
+
+            def __init__(self, arguments, **_kwargs):
+                self.stdout = io.StringIO("")
+                self.returncode = 7
+                with open(arguments[2], "r", encoding="utf-8") as payload_handle:
+                    payload = json.load(payload_handle)
+                with open(arguments[3], "w", encoding="utf-8") as handle:
+                    json.dump(
+                        {
+                            "scene": payload["scene"],
+                            "status": "ok",
+                            "stages": ["opened"],
+                        },
+                        handle,
+                    )
+
+            def poll(self):
+                return self.returncode
+
+        with mock.patch.object(batch_runner.subprocess, "Popen", FakeProcess):
+            results = batch_runner.run_batch(
+                [scene],
+                mayapy_path=sys.executable,
+            )
+
+        self.assertEqual("error", results[0]["report"]["status"])
+        self.assertIn("7", results[0]["report"]["error"])
+
+    def test_report_for_different_scene_is_rejected(self):
+        scene = self._scene("expected")
+        report = self.get_temp_filename("wrong_report.json")
+        with open(report, "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "scene": self.get_temp_filename("other.ma"),
+                    "status": "ok",
+                    "stages": [],
+                },
+                handle,
+            )
+
+        result = batch_runner._read_report(report, scene)
+
+        self.assertEqual("error", result["status"])
+        self.assertIn("形式が不正", result["error"])
