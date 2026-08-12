@@ -24,7 +24,7 @@ import maya.cmds as cmds
 
 # Import from core modules instead of deprecated shortcuts
 from ywta.core.ui_utils import SingletonWindowMixin
-import ywta.rig.skeleton as skeleton
+from ywta.rig import joint_insert
 
 logger = logging.getLogger(__name__)
 
@@ -127,8 +127,15 @@ class JointEditToolsWindow(SingletonWindowMixin):
         cmds.text(label="挿入するジョイント数:", align="right")
         self.insert_joint_field = cmds.intField(
             minValue=1,
+            maxValue=99,
             value=1,
             annotation="選択された親ジョイントと子ジョイントの間に挿入するジョイント数",
+        )
+
+        cmds.text(label="名前パターン:", align="right")
+        self.insert_joint_name_field = cmds.textField(
+            text="insert_##_jnt",
+            annotation="連番の桁数を#で指定します",
         )
 
         # スペーサー
@@ -343,10 +350,11 @@ class JointEditToolsWindow(SingletonWindowMixin):
 
     # Event handlers
     def _insert_joints(self, *args):
-        """Insert joints between selected joint and its child."""
+        """選択した隣接親子joint間へ安全にjointを挿入する。"""
         try:
             joint_count = cmds.intField(self.insert_joint_field, query=True, value=True)
-            skeleton.insert_joints(joint_count=joint_count)
+            name_pattern = cmds.textField(self.insert_joint_name_field, query=True, text=True)
+            joint_insert.insert_selected(count=joint_count, name_pattern=name_pattern)
             logger.info(f"Inserted {joint_count} joints")
         except Exception as e:
             logger.error(f"Failed to insert joints: {e}")

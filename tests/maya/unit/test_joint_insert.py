@@ -4,7 +4,7 @@ from unittest import mock
 
 import maya.cmds as cmds
 
-from ywta.rig import joint_insert
+from ywta.rig import joint_edit_tools, joint_insert
 from ywta.test import TestCase
 
 
@@ -128,6 +128,21 @@ class JointInsertTests(TestCase):
         created = joint_insert.insert_selected()
 
         self.assertEqual(["|parent_jnt|insert_01_jnt"], created)
+
+    def test_joint_edit_tools_routes_insert_through_safe_entry(self):
+        """旧windowの挿入buttonも安全な共通経路を使う。"""
+        window = joint_edit_tools.JointEditToolsWindow.__new__(joint_edit_tools.JointEditToolsWindow)
+        window.insert_joint_field = "countField"
+        window.insert_joint_name_field = "nameField"
+
+        with (
+            mock.patch.object(joint_edit_tools.cmds, "intField", return_value=3),
+            mock.patch.object(joint_edit_tools.cmds, "textField", return_value="twist_##_jnt"),
+            mock.patch.object(joint_edit_tools.joint_insert, "insert_selected") as insert_selected,
+        ):
+            window._insert_joints()
+
+        insert_selected.assert_called_once_with(count=3, name_pattern="twist_##_jnt")
 
     def test_second_insert_failure_rolls_back_first_insert(self):
         parent, child = self._chain()

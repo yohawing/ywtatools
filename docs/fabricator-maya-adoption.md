@@ -136,6 +136,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - namespaceを親から継承し、`#`桁数による連番名を作成前検証
 - 子jointのworld matrixを維持し、挿入・再parent・選択を単一Undo / Redo
 - 分岐joint、参照joint、skinCluster / constraint / IK接続済みjointは編集前拒否
+- `Joint Edit Tools`内の従来の挿入buttonも同じ安全な検証経路を使用
 
 ### Constraints
 
