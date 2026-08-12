@@ -150,3 +150,47 @@ class SkeletonIoTests(TestCase):
         cmds.undo()
 
         self.assertFalse(cmds.ls(root_uuid, uuid=True))
+
+    def test_zero_joint_scales_preserves_world_translation_and_rotation(self):
+        root, child = self._skeleton()
+        cmds.setAttr(root + ".scale", 2.0, 0.5, 1.5)
+        cmds.setAttr(child + ".scale", 0.75, 1.25, 2.0)
+        expected = {
+            joint.rsplit("|", 1)[-1]: (
+                cmds.xform(joint, query=True, worldSpace=True, translation=True),
+                cmds.xform(joint, query=True, worldSpace=True, rotation=True),
+            )
+            for joint in cmds.ls(root, child, long=True)
+        }
+        data = skeleton_io.capture(root)
+        cmds.delete(root)
+
+        created = skeleton_io.create(data, zero_joint_scales=True)
+
+        for joint in created:
+            self.assertEqual((1.0, 1.0, 1.0), cmds.getAttr(joint + ".scale")[0])
+            leaf = joint.rsplit("|", 1)[-1]
+            actual = (
+                cmds.xform(joint, query=True, worldSpace=True, translation=True),
+                cmds.xform(joint, query=True, worldSpace=True, rotation=True),
+            )
+            for expected_values, actual_values in zip(expected[leaf], actual):
+                for expected_value, actual_value in zip(expected_values, actual_values):
+                    self.assertAlmostEqual(expected_value, actual_value)
+
+    def test_clean_joint_trs_combines_scale_and_rotate_bakes(self):
+        root, child = self._skeleton()
+        cmds.setAttr(root + ".scale", 2.0, 0.5, 1.5)
+        cmds.setAttr(child + ".rotate", 9.0, 11.0, -14.0)
+        data = skeleton_io.capture(root)
+        cmds.delete(root)
+
+        created = skeleton_io.create(
+            data,
+            zero_joint_scales=True,
+            bake_to_joint_orient=True,
+        )
+
+        for joint in created:
+            self.assertEqual((1.0, 1.0, 1.0), cmds.getAttr(joint + ".scale")[0])
+            self.assertEqual((0.0, 0.0, 0.0), cmds.getAttr(joint + ".rotate")[0])

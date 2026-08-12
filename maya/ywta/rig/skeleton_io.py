@@ -249,6 +249,7 @@ def create(
     namespace="",
     allow_scene_mismatch=False,
     bake_to_joint_orient=False,
+    zero_joint_scales=False,
 ):
     """検証済み hierarchy を衝突拒否・一括 Undo で作成する。"""
     data = _validate(data)
@@ -256,6 +257,8 @@ def create(
         raise ValueError("allow_scene_mismatchはboolにしてください。")
     if not isinstance(bake_to_joint_orient, bool):
         raise ValueError("bake_to_joint_orientはboolにしてください。")
+    if not isinstance(zero_joint_scales, bool):
+        raise ValueError("zero_joint_scalesはboolにしてください。")
     mismatches = _scene_convention_mismatches(data)
     if mismatches and not allow_scene_mismatch:
         raise ValueError("Skeleton scene conventionが一致しません: {}".format(", ".join(mismatches)))
@@ -281,6 +284,15 @@ def create(
                 raise RuntimeError("joint 名が競合しています: {} -> {}".format(name, joint))
             _set_attributes(joint, item["attributes"])
             created.append((cmds.ls(joint, long=True) or [joint])[0])
+        if zero_joint_scales:
+            for joint in created:
+                cmds.makeIdentity(
+                    joint,
+                    apply=True,
+                    translate=False,
+                    rotate=False,
+                    scale=True,
+                )
         if bake_to_joint_orient:
             for joint in created:
                 cmds.makeIdentity(
@@ -306,6 +318,7 @@ def load(
     namespace="",
     allow_scene_mismatch=False,
     bake_to_joint_orient=False,
+    zero_joint_scales=False,
 ):
     """Skeleton JSON を読み込み scene に作成する。"""
     return create(
@@ -313,6 +326,7 @@ def load(
         namespace=namespace,
         allow_scene_mismatch=allow_scene_mismatch,
         bake_to_joint_orient=bake_to_joint_orient,
+        zero_joint_scales=zero_joint_scales,
     )
 
 
@@ -332,7 +346,7 @@ def save_selected():
     return save(selected[0], paths[0])
 
 
-def load_dialog(bake_to_joint_orient=False):
+def load_dialog(bake_to_joint_orient=False, zero_joint_scales=False):
     """ファイルと任意 namespace をダイアログで指定して import する。"""
     paths = cmds.fileDialog2(
         fileMode=1,
@@ -357,4 +371,5 @@ def load_dialog(bake_to_joint_orient=False):
         paths[0],
         namespace=namespace,
         bake_to_joint_orient=bake_to_joint_orient,
+        zero_joint_scales=zero_joint_scales,
     )

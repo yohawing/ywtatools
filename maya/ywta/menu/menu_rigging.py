@@ -86,6 +86,14 @@ def create_rigging_menu(parent_menu):
         annotation="world姿勢を維持してrotateをjointOrientへ統合してインポートします",
     )
 
+    cmds.menuItem(
+        parent=rig_menu,
+        label="Import Skeleton (Clean Joint TRS)",
+        command="import ywta.rig.skeleton_io as skeleton_io; skeleton_io.load_dialog(bake_to_joint_orient=True, zero_joint_scales=True)",
+        image="kinJoint.png",
+        annotation="world位置・回転を維持し、rotateをjointOrientへ統合してjoint scaleを1にします",
+    )
+
     item = cmds.menuItem(
         parent=rig_menu,
         label="Connect Twist Joint",
