@@ -53,6 +53,26 @@ def create_deform_menu(parent_menu):
         annotation="保存sourceを再構築して異なるトポロジーへスキンウェイトを転送します",
     )
 
+    cmds.menuItem(parent=deform_menu, divider=True, dividerLabel="Temporary Skin Clipboard")
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Save Temporary Skin Weights",
+        command="import ywta.deform.skin_io as skin_io; skin_io.save_temp_selected()",
+        annotation="選択meshのウェイトをMayaユーザー用の一時JSONへ保存します",
+    )
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Load Temporary Skin Weights (Direct)",
+        command="import ywta.deform.skin_io as skin_io; skin_io.load_temp_selected()",
+        annotation="一時JSONを同一トポロジーの選択meshへ復元します",
+    )
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Transfer Temporary Skin Weights",
+        command="import ywta.deform.skin_io as skin_io; skin_io.load_temp_selected(transfer_mode=True)",
+        annotation="一時JSONを異なるトポロジーの選択meshへclosest-point転送します",
+    )
+
     cmds.menuItem(parent=deform_menu, divider=True, dividerLabel="Vertex Weights")
     cmds.menuItem(
         parent=deform_menu,

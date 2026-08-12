@@ -70,6 +70,27 @@ class SkinIoTests(TestCase):
         self.assertEqual(cmds.currentUnit(query=True, linear=True), data["scene"]["linear_unit"])
         self.assertEqual(cmds.upAxis(query=True, axis=True), data["scene"]["up_axis"])
 
+    def test_temporary_skin_round_trip_uses_validated_engine(self):
+        path = self.get_temp_filename("temp_skin.json")
+        expected = skin_io.capture(self.mesh)["weights"]
+        skin_io.save_temp(self.mesh, file_path=path)
+        for vertex in cmds.ls(self.mesh + ".vtx[*]", flatten=True):
+            cmds.skinPercent(
+                self.cluster,
+                vertex,
+                transformValue=((self.joint_a, 1.0), (self.joint_b, 0.0)),
+            )
+
+        cluster = skin_io.load_temp(self.mesh, file_path=path)
+
+        self.assertEqual(self.cluster, cluster)
+        actual = skin_io.capture(self.mesh)["weights"]
+        self.assertEqual(expected, actual)
+
+    def test_temporary_skin_transfer_mode_validates_bool(self):
+        with self.assertRaises(ValueError):
+            skin_io.load_temp(self.mesh, transfer_mode="yes")
+
     def test_apply_creates_skin_cluster_on_unskinned_mesh(self):
         data = skin_io.capture(self.mesh)
         target = cmds.duplicate(self.mesh, name="unskinned_target")[0]

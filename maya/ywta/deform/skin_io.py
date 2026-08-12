@@ -20,6 +20,7 @@ from ywta.deform import skin_weight_command
 FORMAT = "ywta.skin_weights"
 VERSION = 1
 WEIGHT_EPSILON = 1.0e-8
+TEMP_SKIN_FILENAME = "ywta_temp_skin_weights.json"
 
 
 def _mesh_shape(mesh):
@@ -477,6 +478,26 @@ def load_subset(mesh, file_path, vertex_indices):
     return apply_subset(mesh, read(file_path), vertex_indices)
 
 
+def temp_skin_path():
+    """Mayaユーザー用の一時Skin IO JSONパスを返す。"""
+    return os.path.join(cmds.internalVar(userAppDir=True), TEMP_SKIN_FILENAME)
+
+
+def save_temp(mesh, file_path=None):
+    """mesh weightsを固定または指定の一時JSONへ保存する。"""
+    return save(mesh, file_path or temp_skin_path())
+
+
+def load_temp(mesh, file_path=None, transfer_mode=False):
+    """一時JSONをDirectまたはclosest-point Transferで適用する。"""
+    if not isinstance(transfer_mode, bool):
+        raise ValueError("transfer_modeはboolにしてください。")
+    data = read(file_path or temp_skin_path())
+    if transfer_mode:
+        return transfer(mesh, data)
+    return apply(mesh, data)
+
+
 def _create_transfer_source(geometry):
     """保存 geometry から一時 source mesh を再構築する。"""
     transform = cmds.createNode("transform", name="__ywtaSkinTransferSource#")
@@ -569,6 +590,20 @@ def save_selected():
     return save(selected[0], paths[0])
 
 
+def save_temp_selected():
+    """選択meshをMayaユーザー用の一時Skin IO JSONへ保存する。"""
+    selected = cmds.ls(selection=True, long=True) or []
+    if len(selected) != 1:
+        raise ValueError("一時保存するメッシュを1つ選択してください。")
+    path = save_temp(selected[0])
+    cmds.inViewMessage(
+        statusMessage="Saved temporary skin weights.",
+        position="topCenter",
+        fade=True,
+    )
+    return path
+
+
 def load_selected():
     """選択メッシュへファイルダイアログ経由で復元する。"""
     selected = cmds.ls(selection=True, long=True) or []
@@ -616,6 +651,14 @@ def load_selected_subset():
     if not paths:
         return None
     return load_subset(mesh, paths[0], indices)
+
+
+def load_temp_selected(transfer_mode=False):
+    """選択meshへMayaユーザー用の一時Skin IO JSONを適用する。"""
+    selected = cmds.ls(selection=True, long=True) or []
+    if len(selected) != 1:
+        raise ValueError("一時ウェイトの適用先メッシュを1つ選択してください。")
+    return load_temp(selected[0], transfer_mode=transfer_mode)
 
 
 def load_selected_transfer():
