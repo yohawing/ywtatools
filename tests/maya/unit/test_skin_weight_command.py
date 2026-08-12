@@ -80,3 +80,19 @@ class SkinWeightCommandTests(TestCase):
         self.assertEqual([1.0, 0.0], self._weights())
         cmds.undo()
         self.assertEqual([0.5, 0.5], self._weights())
+
+    def test_wrong_cluster_shape_and_out_of_range_indices_are_rejected(self):
+        """MFnSkinClusterへ不整合node/indexを渡さない。"""
+        other = cmds.polyPlane(name="other")[0]
+        other_shape = cmds.listRelatives(other, shapes=True, fullPath=True)[0]
+        before = self._weights()
+
+        with self.assertRaises(ValueError):
+            skin_weight_command.execute(self.cluster, other_shape, [0], [0], [1.0])
+        with self.assertRaises(ValueError):
+            skin_weight_command.execute(self.cluster, self.shape, [999], [0], [1.0])
+        with self.assertRaises(ValueError):
+            skin_weight_command.execute(self.cluster, self.shape, [0], [999], [1.0])
+
+        self.assertEqual(before, self._weights())
+        self.assertFalse(skin_weight_command._OPERATIONS)

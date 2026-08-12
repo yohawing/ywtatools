@@ -53,9 +53,21 @@ def execute(cluster, shape, component_indices, influence_indices, weights, norma
     """bulk weight write を Maya Undo queue に1 command として積む。"""
     if not isinstance(cluster, str) or not cluster or not isinstance(shape, str) or not shape:
         raise ValueError("skinClusterとmesh shape名を指定してください。")
-    components = list(component_indices)
-    influences = list(influence_indices)
-    values = list(weights)
+    cluster_matches = cmds.ls(cluster, long=True, type="skinCluster") or []
+    shape_matches = cmds.ls(shape, long=True, type="mesh") or []
+    if len(cluster_matches) != 1 or len(shape_matches) != 1:
+        raise ValueError("skinClusterとmesh shapeを一意に解決できません。")
+    cluster = cluster_matches[0]
+    shape = shape_matches[0]
+    history = cmds.ls(cmds.listHistory(shape, pruneDagObjects=True) or [], type="skinCluster") or []
+    if cluster not in history:
+        raise ValueError("mesh shapeは指定skinClusterの出力ではありません。")
+    try:
+        components = list(component_indices)
+        influences = list(influence_indices)
+        values = list(weights)
+    except TypeError as error:
+        raise ValueError("indexとweightは反復可能な列にしてください。") from error
     for label, indices in (("component", components), ("influence", influences)):
         if not indices:
             raise ValueError("{} indexが空です。".format(label))
@@ -63,6 +75,12 @@ def execute(cluster, shape, component_indices, influence_indices, weights, norma
             raise ValueError("{} indexが不正です。".format(label))
         if len(set(indices)) != len(indices):
             raise ValueError("{} indexが重複しています。".format(label))
+    vertex_count = cmds.polyEvaluate(shape, vertex=True)
+    influence_count = len(cmds.skinCluster(cluster, query=True, influence=True) or [])
+    if any(index >= vertex_count for index in components):
+        raise ValueError("component indexが頂点範囲外です。")
+    if any(index >= influence_count for index in influences):
+        raise ValueError("influence indexが範囲外です。")
     expected = len(components) * len(influences)
     if len(values) != expected:
         raise ValueError("weight件数が不正です: expected={} actual={}".format(expected, len(values)))
