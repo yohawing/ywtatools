@@ -361,6 +361,9 @@ def import_new_curve_files(file_paths, tag_as_controller=False, world_position=N
     for key, curve in records:
         if key not in mapping:
             name = curve.transform
+            namespace, separator, _leaf = name.rpartition(":")
+            if separator and not cmds.namespace(exists=":" + namespace):
+                raise ValueError("Control作成先namespaceがありません: {}".format(namespace))
             suffix = 1
             while cmds.objExists(name) or name in reserved:
                 name = "{}{}".format(curve.transform, suffix)
@@ -477,7 +480,12 @@ def _validate_curve_payload(data):
         if not isinstance(record, dict) or set(record) != required:
             raise ValueError("curve recordの項目が不正です: {}".format(record_index))
         transform = record["transform"]
-        if not isinstance(transform, str) or not transform.strip() or "|" in transform:
+        if (
+            not isinstance(transform, str)
+            or not transform.strip()
+            or "|" in transform
+            or any(not segment or cmds.namespace(validateName=segment) != segment for segment in transform.split(":"))
+        ):
             raise ValueError("curve transform名が不正です: {}".format(record_index))
         degree = record["degree"]
         form = record["form"]

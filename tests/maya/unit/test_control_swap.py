@@ -241,6 +241,25 @@ class ControlSwapTests(TestCase):
         self.assertFalse(cmds.objExists("safe_ctrl"))
         self.assertFalse(cmds.objExists("broken_ctrl"))
 
+    def test_control_import_rejects_sanitized_names_and_missing_namespace(self):
+        """Mayaが変換する名前と未作成namespaceを新規作成前に拒否する。"""
+        curve = self._line([(0, 0, 0), (1, 0, 0)])
+        path = self.get_temp_filename("invalid_name_control.json")
+
+        for invalid_name in ("bad name", "1control", "control#", "control-name"):
+            curve.transform = invalid_name
+            control._write_curve_data([curve], path)
+            with self.assertRaises(ValueError):
+                control.import_new_curves(path)
+
+        curve.transform = "missing:control"
+        control._write_curve_data([curve], path)
+        with self.assertRaises(ValueError):
+            control.import_new_curves(path)
+
+        self.assertFalse(cmds.objExists("bad_name"))
+        self.assertFalse(cmds.namespace(exists="missing"))
+
     def test_control_import_rolls_back_partial_creation(self):
         """後半shape作成の失敗で先に作ったtransformも残さない。"""
         target = cmds.circle(name="multi_ctrl", sections=4)[0]

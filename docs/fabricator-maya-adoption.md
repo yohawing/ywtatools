@@ -241,6 +241,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - Edit CVs / Combine / Set ColorはControl Creatorウィンドウから直接実行可能
 - 複数shape controlを1つのtransformとして原子的JSON保存・再作成
 - 外部Control JSONの全curve schema / CV / knot / colorを作成前検証
+- 外部Control JSONのMaya正規transform名と新規作成先namespaceを作成前検証
 - Control JSON Importはmulti-shapeを単一Undoで作成し、途中失敗時rollback
 - Library Saveは複数controlのworld形状を1 entryへbakeし、既存名の上書きを明示確認
 - Library RenameはJSON schemaを再検証して内部名も更新し、既存entryへの上書きを拒否
