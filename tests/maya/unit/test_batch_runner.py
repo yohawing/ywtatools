@@ -187,14 +187,15 @@ cmds.setAttr('asset.completed', True)
 import os
 import time
 if os.path.basename(cmds.file(query=True, sceneName=True)).startswith('timeout'):
-    time.sleep(10)
+    time.sleep(30)
 """
 
         results = batch_runner.run_batch(
             [first, second],
             script=script,
             mayapy_path=sys.executable,
-            scene_timeout=6.0,
+            # Maya standaloneのcold startも計測対象なので、正常sceneの起動余裕を持たせる。
+            scene_timeout=15.0,
         )
 
         self.assertEqual(["error", "ok"], [result["report"]["status"] for result in results])
