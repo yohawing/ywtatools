@@ -110,6 +110,18 @@ def create_deform_menu(parent_menu):
         command="import ywta.deform.skin_influences as influences; influences.remove_selected_influences()",
         annotation="選択jointが未使用かつunlockedの場合だけ選択meshから削除します",
     )
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Mirror Skin Weights +X to -X",
+        command="import ywta.deform.skin_mirror as skin_mirror; skin_mirror.mirror_selected_positive_to_negative()",
+        annotation="選択meshのウェイトをworld YZ面で+Xから-Xへミラーします",
+    )
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Mirror Skin Weights -X to +X",
+        command="import ywta.deform.skin_mirror as skin_mirror; skin_mirror.mirror_selected_negative_to_positive()",
+        annotation="選択meshのウェイトをworld YZ面で-Xから+Xへミラーします",
+    )
     smooth_item = cmds.menuItem(
         parent=deform_menu,
         label="Smooth Selected Skin Weights",

@@ -68,6 +68,8 @@ class FabricatorMenuTests(TestCase):
                 "Copy Vertex Weights",
                 "Copy Average Vertex Weights",
                 "Add Selected Skin Influences",
+                "Mirror Skin Weights +X to -X",
+                "Mirror Skin Weights -X to +X",
                 "Smooth Selected Skin Weights",
                 "Remove Unused Skin Influences",
                 "Combine Skinned Meshes",
