@@ -76,11 +76,17 @@ def _selection():
 
 
 def add_influences(meshes, influences, lock_weights=False):
-    """jointを既存ウェイトを変えずweight 0でskinClusterへ追加する。"""
+    """jointを既存ウェイトとjoint-global lockを保ってweight 0で追加する。"""
     if not isinstance(lock_weights, bool):
         raise ValueError("lock_weightsはboolにしてください。")
     clusters = _clusters(meshes)
     influences = _unique_nodes(influences, "joint")
+    original_locks = {
+        influence: bool(cmds.getAttr("{}.lockInfluenceWeights".format(influence)))
+        if cmds.attributeQuery("lockInfluenceWeights", node=influence, exists=True)
+        else False
+        for influence in influences
+    }
     plans = []
     for cluster in clusters:
         current = {node_uuid for _name, node_uuid in _cluster_influences(cluster)}
@@ -105,6 +111,9 @@ def add_influences(meshes, influences, lock_weights=False):
                 lockWeights=lock_weights,
             )
             added.append({"cluster": cluster, "influence": influence})
+        for influence in influences:
+            if original_locks[influence] and cmds.attributeQuery("lockInfluenceWeights", node=influence, exists=True):
+                cmds.setAttr("{}.lockInfluenceWeights".format(influence), True)
     except Exception:
         failed = True
         raise

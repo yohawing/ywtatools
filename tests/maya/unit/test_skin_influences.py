@@ -39,6 +39,27 @@ class SkinInfluenceTests(TestCase):
         self.assertEqual(1, len(result["added"]))
         self.assertIn(self.extra, self._influences())
 
+    def test_add_preserves_joint_global_influence_lock(self):
+        """別skinClusterで使用中のjoint-global lockを暗黙解除しない。"""
+        source_mesh = cmds.polyPlane(name="source_cloth")[0]
+        cmds.skinCluster(self.extra, source_mesh, toSelectedBones=True)
+        cmds.setAttr(self.extra + ".lockInfluenceWeights", True)
+
+        skin_influences.add_influences(self.mesh, self.extra)
+
+        self.assertTrue(cmds.getAttr(self.extra + ".lockInfluenceWeights"))
+        self.assertIn(self.extra, self._influences())
+        cmds.undo()
+        self.assertTrue(cmds.getAttr(self.extra + ".lockInfluenceWeights"))
+        self.assertNotIn(self.extra, self._influences())
+
+    def test_add_can_explicitly_lock_new_influence(self):
+        """明示指定時は新規influenceをlockedで追加する。"""
+        skin_influences.add_influences(self.mesh, self.extra, lock_weights=True)
+
+        self.assertTrue(cmds.getAttr(self.extra + ".lockInfluenceWeights"))
+        self.assertIn(self.extra, self._influences())
+
     def test_remove_unused_is_one_undo(self):
         skin_influences.add_influences([self.mesh], [self.extra])
         cmds.flushUndo()
