@@ -64,6 +64,12 @@ def create_deform_menu(parent_menu):
         command="import ywta.deform.skin_weights as skin_weights; skin_weights.average_vertex_weights()",
         annotation="選択頂点のスキンウェイトを平均して全選択頂点へ適用します",
     )
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Remove Unused Skin Influences",
+        command="import ywta.deform.influence_cleanup as cleanup; cleanup.remove_unused_selected()",
+        annotation="全出力meshで未使用のunlocked influenceだけを単一Undoで削除します",
+    )
 
     transfer_shape_menu_item = cmds.menuItem(
         parent=deform_menu,
