@@ -158,6 +158,31 @@ class FbxExporterTests(TestCase):
         with mock.patch.object(fbx_exporter.mel, "eval", side_effect=RuntimeError("standalone")):
             self.assertEqual(playback, fbx_exporter.animation_range())
 
+    def test_animation_range_accepts_single_frame_and_rejects_malformed_ui_values(self):
+        """1frame highlightを保持し、壊れたtimeControl値はplaybackへ戻す。"""
+        playback = (
+            float(cmds.playbackOptions(query=True, minTime=True)),
+            float(cmds.playbackOptions(query=True, maxTime=True)),
+        )
+
+        def time_control(_slider, **kwargs):
+            return True if kwargs.get("rangeVisible") else [7.0, 8.0]
+
+        with (
+            mock.patch.object(fbx_exporter.mel, "eval", return_value="timeControl1"),
+            mock.patch.object(fbx_exporter.cmds, "timeControl", side_effect=time_control),
+        ):
+            self.assertEqual((7.0, 7.0), fbx_exporter.animation_range())
+
+        def malformed_time_control(_slider, **kwargs):
+            return True if kwargs.get("rangeVisible") else ["bad", 8.0]
+
+        with (
+            mock.patch.object(fbx_exporter.mel, "eval", return_value="timeControl1"),
+            mock.patch.object(fbx_exporter.cmds, "timeControl", side_effect=malformed_time_control),
+        ):
+            self.assertEqual(playback, fbx_exporter.animation_range())
+
     def test_mid_chain_animation_root_fails_before_file_write(self):
         """joint chainの途中だけを完全なanimationとして出力しない。"""
         cmds.select(clear=True)
