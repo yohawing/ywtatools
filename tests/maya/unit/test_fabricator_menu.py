@@ -49,6 +49,7 @@ class FabricatorMenuTests(TestCase):
                 "Select Child Meshes",
                 "Select Influencing Joints",
                 "Select Influenced Meshes",
+                "Snap A to B (Position)",
             }.issubset(labels)
         )
 

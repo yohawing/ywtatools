@@ -146,6 +146,12 @@ def create_rigging_menu(parent_menu):
         command="import ywta.rig.selection_tools as selection_tools; selection_tools.select_influenced_meshes()",
         annotation="選択jointがinfluenceとして登録されたmeshを選択します",
     )
+    cmds.menuItem(
+        parent=rig_menu,
+        label="Snap A to B (Position)",
+        command="import ywta.rig.selection_tools as selection_tools; selection_tools.snap_to_last()",
+        annotation="最後に選択したtransformのworld pivotへ他の選択を位置だけ合わせます",
+    )
 
     item = cmds.menuItem(
         parent=rig_menu,

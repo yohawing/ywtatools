@@ -53,3 +53,35 @@ class SelectionToolsTests(TestCase):
             selection_tools.select_influencing_joints([mesh])
 
         self.assertEqual([sentinel], cmds.ls(selection=True))
+
+    def test_snap_to_last_matches_world_pivot_and_is_undoable(self):
+        """複数sourceをtarget pivotへ合わせ、1回のUndoで戻す。"""
+        first = cmds.createNode("transform", name="first")
+        second = cmds.createNode("transform", name="second")
+        target = cmds.createNode("transform", name="target")
+        cmds.setAttr(first + ".translate", 1.0, 2.0, 3.0)
+        cmds.setAttr(second + ".translate", -2.0, 4.0, 1.0)
+        cmds.setAttr(target + ".translate", 8.0, -1.0, 5.0)
+        before = [cmds.xform(node, query=True, worldSpace=True, translation=True) for node in (first, second)]
+
+        result = selection_tools.snap_to_last([first, second, target])
+
+        expected = cmds.xform(target, query=True, worldSpace=True, rotatePivot=True)
+        self.assertEqual(["first", "second"], [node.rsplit("|", 1)[-1] for node in result])
+        for source in (first, second):
+            self.assertEqual(expected, cmds.xform(source, query=True, worldSpace=True, rotatePivot=True))
+        cmds.undo()
+        self.assertEqual(before, [cmds.xform(node, query=True, worldSpace=True, translation=True) for node in (first, second)])
+
+    def test_snap_rejects_locked_source_before_other_source_moves(self):
+        """1つでもtranslate不可なら全sourceを編集しない。"""
+        first = cmds.createNode("transform", name="first")
+        locked = cmds.createNode("transform", name="locked")
+        target = cmds.createNode("transform", name="target")
+        cmds.setAttr(target + ".translateX", 5.0)
+        cmds.setAttr(locked + ".translateX", lock=True)
+
+        with self.assertRaises(ValueError):
+            selection_tools.snap_to_last([first, locked, target])
+
+        self.assertEqual(0.0, cmds.getAttr(first + ".translateX"))

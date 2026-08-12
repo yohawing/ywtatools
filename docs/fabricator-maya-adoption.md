@@ -113,6 +113,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - 選択meshからskinClusterへ登録されたinfluence jointを選択
 - 選択jointから、そのjointがinfluenceとして登録されたmeshを選択
 - 複数skinCluster・複数output geometryを重複なしで処理
+- 最後に選択したtargetのworld pivotへ複数transformを位置だけ単一UndoでSnap
 
 ### Control Shape Swap
 

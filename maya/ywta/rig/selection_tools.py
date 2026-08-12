@@ -6,6 +6,7 @@ import maya.api.OpenMayaAnim as oma
 import maya.cmds as cmds
 
 from ywta.deform import skin_io
+from ywta.core import undo_utils
 
 
 def _unique_nodes(nodes, node_type=None):
@@ -115,3 +116,39 @@ def select_influenced_meshes(joints=None):
                 seen.add(node_uuid)
                 result.append(transform)
     return _select(result)
+
+
+def snap_to_last(nodes=None):
+    """最後のtransformのworld pivotへ、それ以前のtransformを位置合わせする。"""
+    transforms = _unique_nodes(nodes)
+    if len(transforms) < 2:
+        raise ValueError("移動元と最後のtargetを含むtransformを2つ以上選択してください。")
+    sources = transforms[:-1]
+    target = transforms[-1]
+    if any(target in (cmds.listRelatives(source, allDescendents=True, fullPath=True) or []) for source in sources):
+        raise ValueError("targetのancestorは移動元にできません。")
+    for source in sources:
+        blocked = [
+            axis
+            for axis in "XYZ"
+            if not cmds.getAttr("{}.translate{}".format(source, axis), settable=True)
+        ]
+        if blocked:
+            raise ValueError("translateが編集できません: {} ({})".format(source, ", ".join(blocked)))
+    target_pivot = cmds.xform(target, query=True, worldSpace=True, rotatePivot=True)
+    undo_utils.require_enabled("Snap A to B")
+    cmds.undoInfo(openChunk=True, chunkName="YWTA Snap A to B")
+    failed = False
+    try:
+        for source in sources:
+            source_pivot = cmds.xform(source, query=True, worldSpace=True, rotatePivot=True)
+            delta = [target_pivot[index] - source_pivot[index] for index in range(3)]
+            cmds.move(*delta, source, relative=True, worldSpace=True)
+    except Exception:
+        failed = True
+        raise
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        if failed:
+            cmds.undo()
+    return sources
