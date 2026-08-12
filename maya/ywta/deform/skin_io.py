@@ -137,6 +137,10 @@ def capture(mesh):
     return {
         "format": FORMAT,
         "version": VERSION,
+        "scene": {
+            "linear_unit": cmds.currentUnit(query=True, linear=True),
+            "up_axis": cmds.upAxis(query=True, axis=True),
+        },
         "mesh": {
             "name": shape.rsplit("|", 1)[-1],
             "topology": _topology(fn_mesh),
@@ -176,6 +180,14 @@ def _validate_data(data):
         raise ValueError("YWTA Skin IO ファイルではありません。")
     if data.get("version") != VERSION:
         raise ValueError("未対応の Skin IO version です: {}".format(data.get("version")))
+    scene = data.get("scene")
+    if scene is not None and (
+        not isinstance(scene, dict)
+        or not isinstance(scene.get("linear_unit"), str)
+        or not scene["linear_unit"]
+        or scene.get("up_axis") not in {"y", "z"}
+    ):
+        raise ValueError("scene conventionが不正です。")
     mesh = data.get("mesh")
     topology = mesh.get("topology") if isinstance(mesh, dict) else None
     if not isinstance(topology, dict):
@@ -419,6 +431,20 @@ def _create_transfer_source(geometry):
     return transform, shape
 
 
+def _ensure_transfer_convention(data):
+    """world-space geometryのscene convention一致を検証する。"""
+    saved = data.get("scene")
+    if saved is None:
+        return
+    current = {
+        "linear_unit": cmds.currentUnit(query=True, linear=True),
+        "up_axis": cmds.upAxis(query=True, axis=True),
+    }
+    mismatches = [key for key in ("linear_unit", "up_axis") if saved[key] != current[key]]
+    if mismatches:
+        raise ValueError("Skin Transfer scene conventionが一致しません: saved={} current={}".format(saved, current))
+
+
 def transfer(mesh, data, surface_association="closestPoint"):
     """保存 source を再構築し、異なる topology の target へ weights を転送する。"""
     data = _validate_data(data)
@@ -427,6 +453,7 @@ def transfer(mesh, data, surface_association="closestPoint"):
     geometry = data["mesh"].get("geometry")
     if geometry is None:
         raise ValueError("この Skin IO ファイルには transfer geometry がありません。")
+    _ensure_transfer_convention(data)
     target_shape = _mesh_shape(mesh)
     influences = _resolve_influences(data["influences"])
 

@@ -67,6 +67,8 @@ class SkinIoTests(TestCase):
         self.assertEqual(4, data["mesh"]["topology"]["vertex_count"])
         self.assertEqual(2, len(data["influences"]))
         self.assertEqual(4, len(data["mesh"]["geometry"]["points"]))
+        self.assertEqual(cmds.currentUnit(query=True, linear=True), data["scene"]["linear_unit"])
+        self.assertEqual(cmds.upAxis(query=True, axis=True), data["scene"]["up_axis"])
 
     def test_apply_creates_skin_cluster_on_unskinned_mesh(self):
         data = skin_io.capture(self.mesh)
@@ -146,6 +148,17 @@ class SkinIoTests(TestCase):
     def test_transfer_requires_saved_geometry_before_edit(self):
         data = skin_io.capture(self.mesh)
         del data["mesh"]["geometry"]
+        target = cmds.polyPlane(name="retopo", subdivisionsX=2)[0]
+
+        with self.assertRaises(ValueError):
+            skin_io.transfer(target, data)
+
+        target_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
+        self.assertIsNone(skin_io._skin_cluster(target_shape))
+
+    def test_transfer_rejects_scene_convention_mismatch_before_edit(self):
+        data = skin_io.capture(self.mesh)
+        data["scene"]["linear_unit"] = "m" if cmds.currentUnit(query=True, linear=True) != "m" else "cm"
         target = cmds.polyPlane(name="retopo", subdivisionsX=2)[0]
 
         with self.assertRaises(ValueError):
