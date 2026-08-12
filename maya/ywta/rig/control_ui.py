@@ -52,6 +52,8 @@ from ywta.rig.control import (
     mirror_curve,
     import_curves_on_selected,
     import_new_curves,
+    combine_control_shapes,
+    select_control_cvs,
     set_control_color,
     documentation,
 )
@@ -146,6 +148,15 @@ class ControlWindow(SingletonWindowMixin, MayaQWidgetBaseMixin, QMainWindow):
         hbox.addWidget(b)
         b = QPushButton("Mirror Curve")
         b.released.connect(self.mirror_curve)
+        hbox.addWidget(b)
+
+        hbox = QHBoxLayout()
+        vbox.addLayout(hbox)
+        b = QPushButton("Edit CVs")
+        b.released.connect(select_control_cvs)
+        hbox.addWidget(b)
+        b = QPushButton("Combine")
+        b.released.connect(combine_control_shapes)
         hbox.addWidget(b)
 
         hbox = QHBoxLayout()
