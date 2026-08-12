@@ -268,6 +268,7 @@ Undo の共通 contract が完成するまで追加しません。
 - child stdout のライブ表示、scene 単位の結果、失敗後の継続
 - 全scene起動前のPython script構文検証
 - Cancel 後は処理中 scene を完了し、次 scene を起動しない
+- hung childはscene単位の既定10分timeoutで終了し、error記録後に次sceneを継続
 - scene list、script、Save 設定を versioned `QSettings` state に保存
 
 汎用 `Export` checkbox は追加していません。FBX / USD、対象 root、出力先、命名規則が

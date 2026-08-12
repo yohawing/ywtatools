@@ -3,6 +3,7 @@
 from __future__ import absolute_import
 
 import json
+import math
 import os
 from pathlib import Path
 import queue
@@ -200,6 +201,7 @@ def run_batch(
     on_log=None,
     cancel_requested=None,
     on_wait=None,
+    scene_timeout=600.0,
 ):
     """scene ごとに新しい mayapy を起動して順次処理する。
 
@@ -209,6 +211,14 @@ def run_batch(
     script = validate_script(script)
     if not isinstance(save, bool):
         raise ValueError("save は bool にしてください。")
+    if (
+        not isinstance(scene_timeout, (int, float))
+        or isinstance(scene_timeout, bool)
+        or not math.isfinite(float(scene_timeout))
+        or scene_timeout <= 0.0
+    ):
+        raise ValueError("scene_timeoutは0より大きい有限秒にしてください。")
+    scene_timeout = float(scene_timeout)
     mayapy_path = os.path.abspath(mayapy_path or resolve_mayapy())
     if not os.path.isfile(mayapy_path):
         raise ValueError("mayapy がありません: {}".format(mayapy_path))
@@ -270,15 +280,33 @@ def run_batch(
                 daemon=True,
             )
             reader.start()
+            started = time.monotonic()
+            timed_out = False
             while process.poll() is None:
                 _drain_output(output_queue, logs, on_log)
                 if on_wait:
                     on_wait()
+                if time.monotonic() - started >= scene_timeout:
+                    timed_out = True
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5.0)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    break
                 time.sleep(0.05)
             reader.join(timeout=2.0)
             _drain_output(output_queue, logs, on_log)
             report = _read_report(report_path, scene)
-            if process.returncode != 0 and report.get("status") == "ok":
+            if timed_out:
+                report = {
+                    "scene": scene,
+                    "status": "error",
+                    "error": "child processがscene timeoutを超えました: {}秒".format(scene_timeout),
+                    "stages": report.get("stages", []),
+                }
+            elif process.returncode != 0 and report.get("status") == "ok":
                 report = {
                     "scene": scene,
                     "status": "error",

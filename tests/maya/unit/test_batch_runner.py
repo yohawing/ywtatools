@@ -145,6 +145,36 @@ cmds.setAttr('asset.completed', True)
             os.path.normcase(results[0]["scene"]),
         )
 
+    def test_scene_timeout_terminates_child_and_continues(self):
+        """停止childを終了し、次sceneのfresh processへ進む。"""
+        first = self._scene("timeout")
+        second = self._scene("next")
+        script = """
+import os
+import time
+if os.path.basename(cmds.file(query=True, sceneName=True)).startswith('timeout'):
+    time.sleep(10)
+"""
+
+        results = batch_runner.run_batch(
+            [first, second],
+            script=script,
+            mayapy_path=sys.executable,
+            scene_timeout=6.0,
+        )
+
+        self.assertEqual(["error", "ok"], [result["report"]["status"] for result in results])
+        self.assertIn("timeout", results[0]["report"]["error"])
+
+    def test_invalid_scene_timeout_rejects_before_process_launch(self):
+        scene = self._scene("invalid_timeout")
+
+        with mock.patch.object(batch_runner.subprocess, "Popen") as popen:
+            with self.assertRaises(ValueError):
+                batch_runner.run_batch([scene], mayapy_path=sys.executable, scene_timeout=0)
+
+        popen.assert_not_called()
+
     def test_malformed_child_report_becomes_error_and_batch_continues(self):
         first = self._scene("first")
         second = self._scene("second")
