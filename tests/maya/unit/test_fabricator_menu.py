@@ -114,6 +114,7 @@ class FabricatorMenuTests(TestCase):
         self.assertTrue(
             {
                 "Selection Sets",
+                "Set Pose ID...",
                 "Save Selected Pose",
                 "Load Pose",
                 "Load Pose to Selected",

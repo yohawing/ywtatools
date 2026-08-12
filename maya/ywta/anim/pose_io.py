@@ -146,6 +146,30 @@ def set_pose_id(node, pose_id):
     return plug
 
 
+def set_pose_id_selected():
+    """選択control 1つへダイアログからPose IDを設定する。"""
+    selected = cmds.ls(selection=True, objectsOnly=True, long=True) or []
+    controls = _long_nodes(selected)
+    if len(controls) != 1 or not cmds.objectType(controls[0], isAType="transform"):
+        raise ValueError("Pose IDを設定するcontrolを1つ選択してください。")
+    plug = "{}.{}".format(controls[0], POSE_ID_ATTRIBUTE)
+    current = ""
+    if cmds.objExists(plug) and cmds.getAttr(plug, type=True) == "string":
+        current = cmds.getAttr(plug) or ""
+    result = cmds.promptDialog(
+        title="Set Pose ID",
+        message="Pose ID:",
+        text=current,
+        button=["Set", "Cancel"],
+        defaultButton="Set",
+        cancelButton="Cancel",
+        dismissString="Cancel",
+    )
+    if result != "Set":
+        return None
+    return set_pose_id(controls[0], cmds.promptDialog(query=True, text=True))
+
+
 def _capture_attribute(node, attribute):
     """対応する keyable scalar 属性を JSON 値へ変換する。"""
     plug = "{}.{}".format(node, attribute)

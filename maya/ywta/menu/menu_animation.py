@@ -28,6 +28,12 @@ def create_animation_menu(parent_menu):
     cmds.menuItem(parent=animation_menu, divider=True, dividerLabel="Pose")
     cmds.menuItem(
         parent=animation_menu,
+        label="Set Pose ID...",
+        command="import ywta.anim.pose_io as pose_io; pose_io.set_pose_id_selected()",
+        annotation="選択controlへ改名後も安定する明示Pose IDを設定します",
+    )
+    cmds.menuItem(
+        parent=animation_menu,
         label="Save Selected Pose",
         command="import ywta.anim.pose_io as pose_io; pose_io.save_selected()",
         annotation="選択コントロールのポーズをnamespace可搬JSONへ保存します",

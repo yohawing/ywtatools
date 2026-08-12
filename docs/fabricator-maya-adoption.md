@@ -100,6 +100,7 @@ Skinned Mesh Combineは実行時のjoint・mesh評価姿勢を新しいskinClust
 - Selection Sets capture APIは単一objectSet文字列とset列の両方に対応
 - namespace を除いた control 名による別キャラクターへの適用
 - `ywtaPoseId` string 属性による改名に強い明示アドレス
+- `Set Pose ID...`から選択control 1つへ明示アドレスを設定
 - Pose ID設定は参照controlとlock/接続済み既存属性を編集前拒否
 - blend、選択 control 限定適用、開始フレーム offset、範囲内キー置換
 - PoseのBlend / Selected-onlyを保存・実行できるMaya Option UI

@@ -77,6 +77,34 @@ class PoseIoTests(TestCase):
         cmds.redo()
         self.assertEqual("arm.left.ik", cmds.getAttr(plug))
 
+    def test_pose_id_dialog_sets_selected_control(self):
+        """メニュー用ダイアログから選択controlへ明示IDを設定する。"""
+        control = self._control("character")
+        cmds.select(control, replace=True)
+
+        def prompt_dialog(**kwargs):
+            return "arm.left.ik" if kwargs.get("query") else "Set"
+
+        with mock.patch.object(pose_io.cmds, "promptDialog", side_effect=prompt_dialog):
+            plug = pose_io.set_pose_id_selected()
+
+        self.assertEqual("arm.left.ik", cmds.getAttr(plug))
+
+    def test_pose_id_dialog_cancel_and_multiple_selection_do_not_edit(self):
+        """Cancelと複数選択でPose ID属性を部分作成しない。"""
+        first = self._control("character", "first_ctrl")
+        second = self._control("character", "second_ctrl")
+        cmds.select(first, replace=True)
+        with mock.patch.object(pose_io.cmds, "promptDialog", return_value="Cancel"):
+            self.assertIsNone(pose_io.set_pose_id_selected())
+        self.assertFalse(cmds.objExists(first + "." + pose_io.POSE_ID_ATTRIBUTE))
+
+        cmds.select(first, second, replace=True)
+        with mock.patch.object(pose_io.cmds, "promptDialog") as prompt:
+            with self.assertRaises(ValueError):
+                pose_io.set_pose_id_selected()
+        prompt.assert_not_called()
+
     def test_pose_id_rejects_non_string_before_edit(self):
         """文字列以外のPose IDで属性を作成しない。"""
         control = self._control("character")
