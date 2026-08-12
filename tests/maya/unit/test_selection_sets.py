@@ -233,3 +233,18 @@ class SelectionSetsTests(TestCase):
         data = selection_sets.capture(selection_set)
 
         self.assertEqual(["Hands"], [entry["label"] for entry in data["sets"]])
+
+    def test_window_builds_with_selected_import_action(self):
+        """管理windowと選択scope import buttonをMaya UI上で構築する。"""
+        calls = []
+
+        def button(*_args, **kwargs):
+            calls.append(kwargs)
+            return "button{}".format(len(calls))
+
+        with mock.patch.object(selection_sets.cmds, "button", side_effect=button):
+            window = selection_sets.show()
+
+        self.assertEqual("ywtaSelectionSetsWindow", window)
+        labels = [call.get("label") for call in calls]
+        self.assertIn("Import to Selected", labels)
