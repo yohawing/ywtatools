@@ -86,6 +86,40 @@ class JointInsertTests(TestCase):
 
         self.assertFalse(cmds.objExists("insert_01_jnt"))
 
+    def test_animated_child_rejects_before_world_motion_changes(self):
+        """childのkeyを保持したまま階層offsetを加えてworld motionをずらさない。"""
+        parent, child = self._chain()
+        cmds.setKeyframe(child, attribute="translateX", time=1, value=9.0)
+        cmds.setKeyframe(child, attribute="translateX", time=10, value=12.0)
+        before_keys = cmds.keyframe(
+            child,
+            attribute="translateX",
+            query=True,
+            valueChange=True,
+        )
+
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            with self.assertRaises(ValueError):
+                joint_insert.insert_joints(parent, child)
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+        self.assertFalse(cmds.objExists("insert_01_jnt"))
+        self.assertEqual(
+            before_keys,
+            cmds.keyframe(
+                child,
+                attribute="translateX",
+                query=True,
+                valueChange=True,
+            ),
+        )
+        self.assertEqual(
+            ["child_jnt"],
+            cmds.listRelatives(parent, children=True, type="joint"),
+        )
+
     def test_invalid_count_and_name_collision_reject_before_edit(self):
         parent, child = self._chain()
         cmds.createNode("transform", name="insert_01_jnt")

@@ -79,6 +79,26 @@ def rig_dependencies(joints):
     return sorted(set(reasons))
 
 
+def _blocked_child_channels(child):
+    """階層挿入でworld姿勢を保てないchild TRS plugを返す。"""
+    blocked = []
+    for compound in ("translate", "rotate", "scale"):
+        for axis in "XYZ":
+            plug = "{}.{}{}".format(child, compound, axis)
+            incoming = (
+                cmds.listConnections(
+                    plug,
+                    source=True,
+                    destination=False,
+                    plugs=True,
+                )
+                or []
+            )
+            if incoming or not cmds.getAttr(plug, settable=True):
+                blocked.append(plug)
+    return blocked
+
+
 def insert_joints(parent, child, count=1, name_pattern="insert_##_jnt"):
     """隣接親子joint間へ指定数を均等挿入する。
 
@@ -104,6 +124,9 @@ def insert_joints(parent, child, count=1, name_pattern="insert_##_jnt"):
     dependencies = rig_dependencies((parent, child))
     if dependencies:
         raise ValueError("skin/constraint/IK接続済みjointには挿入できません: {}".format(", ".join(dependencies)))
+    blocked = _blocked_child_channels(child)
+    if blocked:
+        raise ValueError("child jointのTRS channelが編集できないため挿入できません: {}".format(", ".join(blocked)))
     names = _planned_names(parent, count, name_pattern)
     start = cmds.xform(parent, query=True, worldSpace=True, translation=True)
     end = cmds.xform(child, query=True, worldSpace=True, translation=True)
