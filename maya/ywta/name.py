@@ -60,6 +60,11 @@ def _parent_identity(node):
     return _node_uuid(parents[0]) if parents else None
 
 
+def _absolute_name(name):
+    """Maya current namespaceに依存しない絶対名を返す。"""
+    return ":" + name.lstrip(":")
+
+
 def rename_nodes(nodes, names):
     """複数ノードを一括 Undo 可能なトランザクションで変更する。
 
@@ -84,6 +89,10 @@ def rename_nodes(nodes, names):
     source_ids = set()
     for node, name in zip(long_nodes, names):
         _validate_leaf(name)
+        source_namespace = _split_leaf(node)[0]
+        name = name.lstrip(":")
+        if ":" not in name:
+            name = source_namespace + name
         node_id = _node_uuid(node)
         if node_id in source_ids:
             raise ValueError("同じノードを重複して変更できません: {}".format(node))
@@ -97,7 +106,7 @@ def rename_nodes(nodes, names):
             {
                 "uuid": node_id,
                 "name": name,
-                "namespace": _split_leaf(node)[0],
+                "namespace": source_namespace,
             }
         )
 
@@ -111,11 +120,11 @@ def rename_nodes(nodes, names):
         for record in records:
             node = _resolve_uuid(record["uuid"])
             temporary = "{}__ywta_rename_{}".format(record["namespace"], uuid.uuid4().hex)
-            cmds.rename(node, temporary, ignoreShape=True)
+            cmds.rename(node, _absolute_name(temporary), ignoreShape=True)
 
         for record in records:
             node = _resolve_uuid(record["uuid"])
-            renamed = cmds.rename(node, record["name"], ignoreShape=True)
+            renamed = cmds.rename(node, _absolute_name(record["name"]), ignoreShape=True)
             if renamed.rsplit("|", 1)[-1] != record["name"]:
                 raise RuntimeError("名前が競合しています: {} -> {}".format(record["name"], renamed))
         result = [_resolve_uuid(record["uuid"]) for record in records]

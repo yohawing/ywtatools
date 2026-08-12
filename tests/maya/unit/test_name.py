@@ -66,6 +66,23 @@ class NameToolsTests(TestCase):
 
         self.assertEqual("character:L_hand_jnt", result[0].rsplit("|", 1)[-1])
 
+    def test_rename_is_independent_of_current_namespace(self):
+        """元namespaceとroot nodeをcurrent namespaceへ誤移動しない。"""
+        cmds.namespace(add="character")
+        cmds.namespace(add="working")
+        character_node = cmds.createNode("transform", name=":character:old")
+        root_node = cmds.createNode("transform", name=":root_old")
+        cmds.namespace(set="working")
+
+        character_result = name_tools.hash_rename("new_##", [character_node])
+        root_result = name_tools.rename_nodes([root_node], ["root_new"])
+        cmds.namespace(set=":")
+
+        self.assertEqual("character:new_01", character_result[0].rsplit("|", 1)[-1])
+        self.assertEqual("root_new", root_result[0].rsplit("|", 1)[-1])
+        self.assertFalse(cmds.objExists(":working:new_01"))
+        self.assertFalse(cmds.objExists(":working:root_new"))
+
     def test_renumber_replaces_existing_trailing_number(self):
         nodes = [
             cmds.createNode("transform", name="finger_12"),
