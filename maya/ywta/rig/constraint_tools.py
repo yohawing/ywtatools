@@ -1,0 +1,187 @@
+"""選択順に基づくconstraint作成・削除ツール。"""
+
+import math
+
+import maya.cmds as cmds
+
+from ywta.core import undo_utils
+
+
+CONSTRAINT_COMMANDS = {
+    "parent": cmds.parentConstraint,
+    "point": cmds.pointConstraint,
+    "orient": cmds.orientConstraint,
+    "scale": cmds.scaleConstraint,
+    "aim": cmds.aimConstraint,
+}
+DRIVEN_CHANNELS = {
+    "parent": ("translate", "rotate"),
+    "point": ("translate",),
+    "orient": ("rotate",),
+    "scale": ("scale",),
+    "aim": ("rotate",),
+}
+
+
+def _resolve_transform(node):
+    """transform派生nodeを一意なロングパスへ解決する。"""
+    matches = cmds.ls(node, long=True) or []
+    matches = [match for match in matches if cmds.objectType(match, isAType="transform")]
+    if len(matches) != 1:
+        raise ValueError("transformを一意に解決できません: {}".format(node))
+    return matches[0]
+
+
+def _validate_vector(value, label):
+    """3要素の有限vectorをfloat tupleへ変換する。"""
+    if (
+        not isinstance(value, (list, tuple))
+        or len(value) != 3
+        or any(
+            not isinstance(component, (int, float)) or isinstance(component, bool) or not math.isfinite(float(component))
+            for component in value
+        )
+    ):
+        raise ValueError("{}が不正です。".format(label))
+    return tuple(float(component) for component in value)
+
+
+def create_constraint(
+    kind,
+    drivers,
+    driven,
+    maintain_offset=True,
+    aim_vector=(1.0, 0.0, 0.0),
+    up_vector=(0.0, 1.0, 0.0),
+):
+    """driverからdrivenへconstraintを単一Undoで作成する。
+
+    Args:
+        kind: parent / point / orient / scale / aim。
+        drivers: 1つ以上のdriver transform。
+        driven: constraint対象transform。
+        maintain_offset: 現在の相対姿勢を維持するか。
+        aim_vector: Aim constraintのlocal aim軸。
+        up_vector: Aim constraintのlocal up軸。
+
+    Returns:
+        作成したconstraint nodeのロング名。
+    """
+    if kind not in CONSTRAINT_COMMANDS:
+        raise ValueError("未対応のconstraint種別です: {}".format(kind))
+    if not isinstance(maintain_offset, bool):
+        raise ValueError("maintain_offsetはboolで指定してください。")
+    if not isinstance(drivers, (list, tuple)) or not drivers:
+        raise ValueError("driverを1つ以上指定してください。")
+    resolved_driven = _resolve_transform(driven)
+    resolved_drivers = []
+    seen = set()
+    for driver in drivers:
+        resolved = _resolve_transform(driver)
+        node_uuid = (cmds.ls(resolved, uuid=True) or [None])[0]
+        if node_uuid in seen:
+            raise ValueError("同じdriverを複数回指定できません: {}".format(resolved))
+        seen.add(node_uuid)
+        resolved_drivers.append(resolved)
+    driven_uuid = (cmds.ls(resolved_driven, uuid=True) or [None])[0]
+    if driven_uuid in seen:
+        raise ValueError("driverとdrivenは別nodeにしてください。")
+    referenced = [node for node in resolved_drivers + [resolved_driven] if cmds.referenceQuery(node, isNodeReferenced=True)]
+    if referenced:
+        raise ValueError("参照nodeにはconstraintを作成できません: {}".format(", ".join(referenced)))
+
+    blocked = []
+    for channel in DRIVEN_CHANNELS[kind]:
+        for axis in "XYZ":
+            attribute = "{}.{}{}".format(resolved_driven, channel, axis)
+            if not cmds.getAttr(attribute, settable=True):
+                blocked.append(channel + axis)
+    if blocked:
+        raise ValueError("driven channelが編集できません: {} ({})".format(resolved_driven, ", ".join(blocked)))
+
+    options = {"maintainOffset": maintain_offset}
+    if kind == "aim":
+        options.update(
+            aimVector=_validate_vector(aim_vector, "aim_vector"),
+            upVector=_validate_vector(up_vector, "up_vector"),
+            worldUpType="vector",
+            worldUpVector=_validate_vector(up_vector, "up_vector"),
+        )
+
+    selection = cmds.ls(selection=True, long=True) or []
+    undo_utils.require_enabled("Create {} Constraint".format(kind.title()))
+    cmds.undoInfo(openChunk=True, chunkName="YWTA Create {} Constraint".format(kind.title()))
+    failed = False
+    try:
+        constraint = CONSTRAINT_COMMANDS[kind](resolved_drivers, resolved_driven, **options)[0]
+        constraint = (cmds.ls(constraint, long=True) or [constraint])[0]
+        if selection:
+            cmds.select(selection, replace=True)
+        else:
+            cmds.select(clear=True)
+    except Exception:
+        failed = True
+        raise
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        if failed:
+            cmds.undo()
+    return constraint
+
+
+def create_selected(kind, maintain_offset=True):
+    """選択順の最後をdriven、それ以前をdriversとして作成する。"""
+    selected = []
+    seen = set()
+    for node in cmds.ls(selection=True, objectsOnly=True, long=True) or []:
+        if not cmds.objectType(node, isAType="transform"):
+            continue
+        node_uuid = (cmds.ls(node, uuid=True) or [None])[0]
+        if node_uuid not in seen:
+            seen.add(node_uuid)
+            selected.append(node)
+    if len(selected) < 2:
+        raise ValueError("driverを先、drivenを最後に2つ以上選択してください。")
+    return create_constraint(kind, selected[:-1], selected[-1], maintain_offset=maintain_offset)
+
+
+def delete_constraints(nodes=None):
+    """指定transformを駆動するconstraintを単一Undoで削除する。"""
+    if nodes is None:
+        nodes = cmds.ls(selection=True, objectsOnly=True, long=True) or []
+    transforms = []
+    for node in nodes or []:
+        resolved = _resolve_transform(node)
+        if resolved not in transforms:
+            transforms.append(resolved)
+    if not transforms:
+        raise ValueError("constraintを削除するtransformを1つ以上選択してください。")
+    constraints = []
+    for transform in transforms:
+        for constraint in cmds.listConnections(transform, source=True, destination=False, type="constraint") or []:
+            if constraint not in constraints:
+                constraints.append(constraint)
+    if not constraints:
+        raise ValueError("選択nodeを駆動するconstraintがありません。")
+    referenced = [constraint for constraint in constraints if cmds.referenceQuery(constraint, isNodeReferenced=True)]
+    if referenced:
+        raise ValueError("参照constraintは削除できません: {}".format(", ".join(referenced)))
+
+    selection = cmds.ls(selection=True, long=True) or []
+    undo_utils.require_enabled("Delete Constraints")
+    cmds.undoInfo(openChunk=True, chunkName="YWTA Delete Constraints")
+    failed = False
+    try:
+        cmds.delete(constraints)
+        if selection:
+            cmds.select(selection, replace=True)
+        else:
+            cmds.select(clear=True)
+    except Exception:
+        failed = True
+        raise
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        if failed:
+            cmds.undo()
+    return constraints

@@ -123,6 +123,16 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - `Create at Selection Center` submenuからNull / Locator / Cube / Sphere / Cylinder / Planeを作成
 - 基本objectも選択全体のworld bounding-box中心、空選択ではworld原点へ単一Undoで作成
 
+### Constraints
+
+メニュー: `YWTA > Rigging > Constraints`
+
+- driversを先、drivenを最後に選ぶParent / Point / Orient / Scale / Aim constraint
+- maintain offset対応のPython APIと、明示したlocal aim/up軸によるAim
+- 参照node、重複driver、locked・接続済みdriven channelを編集前拒否
+- 選択transformへ入るconstraintだけを削除するDelete Constraints
+- 作成・削除とも選択を維持し、単一Undo / 失敗rollback
+
 ### Selection Navigation
 
 メニュー: `YWTA > Rigging > Selection Navigation`

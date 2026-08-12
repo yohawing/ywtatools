@@ -73,6 +73,33 @@ def create_rigging_menu(parent_menu):
             command="import ywta.rig.create_object as create_object; create_object.{}()".format(function),
         )
 
+    constraint_menu = cmds.menuItem(
+        parent=rig_menu,
+        subMenu=True,
+        tearOff=True,
+        label="Constraints",
+        annotation="driversを先、drivenを最後に選択してconstraintを作成します",
+    )
+    for label, kind in (
+        ("Parent Constraint", "parent"),
+        ("Point Constraint", "point"),
+        ("Orient Constraint", "orient"),
+        ("Scale Constraint", "scale"),
+        ("Aim Constraint", "aim"),
+    ):
+        cmds.menuItem(
+            parent=constraint_menu,
+            label=label,
+            command="import ywta.rig.constraint_tools as constraints; constraints.create_selected('{}')".format(kind),
+        )
+    cmds.menuItem(parent=constraint_menu, divider=True)
+    cmds.menuItem(
+        parent=constraint_menu,
+        label="Delete Constraints",
+        command="import ywta.rig.constraint_tools as constraints; constraints.delete_constraints()",
+        annotation="選択transformを駆動するconstraintを単一Undoで削除します",
+    )
+
     cmds.menuItem(
         parent=rig_menu,
         label="Name Tools",
