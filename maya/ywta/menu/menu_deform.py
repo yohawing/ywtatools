@@ -70,6 +70,12 @@ def create_deform_menu(parent_menu):
         command="import ywta.deform.influence_cleanup as cleanup; cleanup.remove_unused_selected()",
         annotation="全出力meshで未使用のunlocked influenceだけを単一Undoで削除します",
     )
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Combine Skinned Meshes",
+        command="import ywta.deform.combine_skinned as combine_skinned; combine_skinned.combine_selected()",
+        annotation="元meshを残し、頂点順を検証して正確なウェイト付きで結合します",
+    )
 
     transfer_shape_menu_item = cmds.menuItem(
         parent=deform_menu,
