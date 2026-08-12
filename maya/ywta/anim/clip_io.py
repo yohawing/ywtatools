@@ -146,6 +146,8 @@ def capture(nodes=None, start=None, end=None):
         "version": VERSION,
         "duration": end - start,
         "time_unit": cmds.currentUnit(query=True, time=True),
+        "linear_unit": cmds.currentUnit(query=True, linear=True),
+        "angle_unit": cmds.currentUnit(query=True, angle=True),
         "controls": controls,
     }
 
@@ -159,8 +161,9 @@ def _validate(data):
     duration = _finite_number(data.get("duration"), "duration")
     if duration < 0.0:
         raise ValueError("duration は0以上にしてください。")
-    if "time_unit" in data and (not isinstance(data["time_unit"], str) or not data["time_unit"]):
-        raise ValueError("time_unitが不正です。")
+    for unit_name in ("time_unit", "linear_unit", "angle_unit"):
+        if unit_name in data and (not isinstance(data[unit_name], str) or not data[unit_name]):
+            raise ValueError("{}が不正です。".format(unit_name))
     controls = data.get("controls")
     if not isinstance(controls, list) or not controls:
         raise ValueError("controls がありません。")
@@ -377,6 +380,12 @@ def apply(data, nodes=None, start_time=None, replace=True, mode=None):
         cmds.undoInfo(closeChunk=True)
         if failed:
             cmds.undo()
+    scene_units = {
+        "time_unit": cmds.currentUnit(query=True, time=True),
+        "linear_unit": cmds.currentUnit(query=True, linear=True),
+        "angle_unit": cmds.currentUnit(query=True, angle=True),
+    }
+    unit_mismatches = [key for key in scene_units if data.get(key) and data[key] != scene_units[key]]
     return {
         "applied_channels": len(operations),
         "applied_keys": applied_keys,
@@ -384,8 +393,11 @@ def apply(data, nodes=None, start_time=None, replace=True, mode=None):
         "insert_offset": insert_offset,
         "mode": mode,
         "source_time_unit": data.get("time_unit"),
-        "scene_time_unit": cmds.currentUnit(query=True, time=True),
-        "time_unit_mismatch": bool(data.get("time_unit") and data["time_unit"] != cmds.currentUnit(query=True, time=True)),
+        "scene_time_unit": scene_units["time_unit"],
+        "time_unit_mismatch": "time_unit" in unit_mismatches,
+        "unit_mismatches": unit_mismatches,
+        "source_units": {key: data.get(key) for key in scene_units},
+        "scene_units": scene_units,
         "skipped": skipped,
     }
 
@@ -406,10 +418,8 @@ def load_clip(selected_only=False, mode="replace"):
     if not paths:
         return None
     result = apply(read(paths[0]), nodes=selected, mode=mode)
-    if result["time_unit_mismatch"]:
+    if result["unit_mismatches"]:
         cmds.warning(
-            "Animation Clip time unit {} != scene {}; retimeせず適用しました。".format(
-                result["source_time_unit"], result["scene_time_unit"]
-            )
+            "Animation Clip unit mismatch {}; raw値・rawフレームで適用しました。".format(", ".join(result["unit_mismatches"]))
         )
     return result

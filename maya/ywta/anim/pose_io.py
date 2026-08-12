@@ -122,7 +122,13 @@ def capture(nodes=None):
             )
     if not controls:
         raise ValueError("保存可能な keyable 属性がありません。")
-    return {"format": FORMAT, "version": VERSION, "controls": controls}
+    return {
+        "format": FORMAT,
+        "version": VERSION,
+        "linear_unit": cmds.currentUnit(query=True, linear=True),
+        "angle_unit": cmds.currentUnit(query=True, angle=True),
+        "controls": controls,
+    }
 
 
 def _validate(data):
@@ -131,6 +137,9 @@ def _validate(data):
         raise ValueError("YWTA Pose ファイルではありません。")
     if data.get("version") != VERSION:
         raise ValueError("未対応の Pose version です: {}".format(data.get("version")))
+    for unit_name in ("linear_unit", "angle_unit"):
+        if unit_name in data and (not isinstance(data[unit_name], str) or not data[unit_name]):
+            raise ValueError("{}が不正です。".format(unit_name))
     controls = data.get("controls")
     if not isinstance(controls, list) or not controls:
         raise ValueError("controls がありません。")
@@ -327,7 +336,18 @@ def apply(data, nodes=None, blend=1.0):
         cmds.undoInfo(closeChunk=True)
         if failed:
             cmds.undo()
-    return {"applied": len(operations), "skipped": skipped}
+    scene_units = {
+        "linear_unit": cmds.currentUnit(query=True, linear=True),
+        "angle_unit": cmds.currentUnit(query=True, angle=True),
+    }
+    unit_mismatches = [key for key in scene_units if data.get(key) and data[key] != scene_units[key]]
+    return {
+        "applied": len(operations),
+        "skipped": skipped,
+        "unit_mismatches": unit_mismatches,
+        "source_units": {key: data.get(key) for key in scene_units},
+        "scene_units": scene_units,
+    }
 
 
 def save_selected():
@@ -345,4 +365,7 @@ def load_pose(selected_only=False, blend=1.0):
     paths = cmds.fileDialog2(fileMode=1, dialogStyle=2, caption="Load Pose", fileFilter="JSON (*.json)")
     if not paths:
         return None
-    return apply(read(paths[0]), nodes=selected, blend=blend)
+    result = apply(read(paths[0]), nodes=selected, blend=blend)
+    if result["unit_mismatches"]:
+        cmds.warning("Pose unit mismatch {}; raw値で適用しました。".format(", ".join(result["unit_mismatches"])))
+    return result

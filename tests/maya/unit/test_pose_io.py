@@ -106,6 +106,21 @@ class PoseIoTests(TestCase):
 
         self.assertEqual(pose_io.FORMAT, data["format"])
         self.assertEqual("name:hand_ctrl", data["controls"][0]["address"])
+        self.assertEqual(cmds.currentUnit(query=True, linear=True), data["linear_unit"])
+        self.assertEqual(cmds.currentUnit(query=True, angle=True), data["angle_unit"])
+
+    def test_unit_mismatch_is_reported_without_value_conversion(self):
+        source = self._control("source")
+        cmds.setAttr(source + ".translateX", 5.0)
+        data = pose_io.capture([source])
+        data["linear_unit"] = "m" if cmds.currentUnit(query=True, linear=True) != "m" else "cm"
+        cmds.delete(source)
+        target = self._control("target")
+
+        result = pose_io.apply(data, nodes=[target])
+
+        self.assertEqual(["linear_unit"], result["unit_mismatches"])
+        self.assertAlmostEqual(5.0, cmds.getAttr(target + ".translateX"))
 
     def test_animated_channel_is_keyed_at_current_time(self):
         source = self._control("source")
