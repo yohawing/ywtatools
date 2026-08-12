@@ -239,6 +239,7 @@ Undo の共通 contract が完成するまで追加しません。
 メニュー: `YWTA > Export Selected FBX / Export Animation FBX`
 
 - 静的 mesh、skinned mesh、joint animation の selected export
+- skinned mesh単独選択時はskinClusterのtop influence joint rootを自動でexport対象へ追加
 - Autodesk FBX settings の push / pop と Maya selection の復元
 - 同じディレクトリの一時 FBX に出力し、成功時だけ出力先を置換
 - animation range の bake export

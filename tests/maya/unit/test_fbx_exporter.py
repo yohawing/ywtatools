@@ -70,6 +70,24 @@ class FbxExporterTests(TestCase):
         clusters = cmds.ls(cmds.listHistory("skinned_asset"), type="skinCluster")
         self.assertEqual(1, len(clusters))
 
+    def test_skinned_mesh_only_export_includes_influence_root(self):
+        """mesh単独選択でもjointとskinClusterをFBXに含める。"""
+        mesh = cmds.polyCube(name="mesh_only_asset")[0]
+        cmds.select(clear=True)
+        root = cmds.joint(name="root_jnt")
+        child = cmds.joint(name="child_jnt", position=(1.0, 0.0, 0.0))
+        cmds.skinCluster(root, child, mesh, toSelectedBones=True)
+        path = self.get_temp_filename("mesh_only_asset.fbx")
+
+        fbx_exporter.export_selected([mesh], path)
+        cmds.file(new=True, force=True)
+        mel.eval('FBXImport -f "{}";'.format(path.replace("\\", "/")))
+
+        self.assertTrue(cmds.objExists("root_jnt"))
+        self.assertTrue(cmds.objExists("child_jnt"))
+        clusters = cmds.ls(cmds.listHistory("mesh_only_asset"), type="skinCluster")
+        self.assertEqual(1, len(clusters))
+
     def test_failed_export_preserves_existing_target_and_selection(self):
         cube = cmds.polyCube(name="asset")[0]
         sentinel = cmds.spaceLocator(name="selection_sentinel")[0]
@@ -114,3 +132,30 @@ class FbxExporterTests(TestCase):
 
         self.assertFalse(os.path.exists(path))
         self.assertEqual([sentinel], cmds.ls(selection=True))
+
+    def test_ambiguous_influence_name_rejects_before_file_write(self):
+        """skin rootを推測して不完全FBXを書かない。"""
+        mesh = cmds.polyCube(name="asset")[0]
+        path = self.get_temp_filename("ambiguous.fbx")
+        original_ls = fbx_exporter.cmds.ls
+
+        def ambiguous_ls(*args, **kwargs):
+            if args and args[0] == ["skinCluster1"] and kwargs.get("type") == "skinCluster":
+                return ["skinCluster1"]
+            if args and args[0] == "joint" and kwargs.get("type") == "joint":
+                return ["|first|joint", "|second|joint"]
+            return original_ls(*args, **kwargs)
+
+        with (
+            mock.patch.object(fbx_exporter.cmds, "listHistory", return_value=["skinCluster1"]),
+            mock.patch.object(
+                fbx_exporter.cmds,
+                "ls",
+                side_effect=ambiguous_ls,
+            ),
+            mock.patch.object(fbx_exporter.cmds, "skinCluster", return_value=["joint"]),
+        ):
+            with self.assertRaises(ValueError):
+                fbx_exporter.export_selected([mesh], path)
+
+        self.assertFalse(os.path.exists(path))

@@ -54,6 +54,51 @@ def _nodes(nodes):
     return result
 
 
+def _mesh_shapes(node):
+    """node直下の表示mesh shapeをロングパスで返す。"""
+    matches = cmds.ls(node, long=True) or []
+    if len(matches) != 1:
+        return []
+    node = matches[0]
+    if cmds.nodeType(node) == "mesh":
+        shapes = [node]
+    elif cmds.objectType(node, isAType="transform"):
+        shapes = cmds.listRelatives(node, shapes=True, fullPath=True, noIntermediate=True, type="mesh") or []
+    else:
+        shapes = []
+    return [shape for shape in shapes if not cmds.getAttr(shape + ".intermediateObject")]
+
+
+def _top_joint(joint):
+    """influence jointから最上位のjoint parentへ辿る。"""
+    matches = cmds.ls(joint, long=True, type="joint") or []
+    if len(matches) != 1:
+        raise ValueError("FBX export influence jointを一意に解決できません: {}".format(joint))
+    current = matches[0]
+    while True:
+        parents = cmds.listRelatives(current, parent=True, fullPath=True, type="joint") or []
+        if not parents:
+            return current
+        current = parents[0]
+
+
+def _include_skin_roots(nodes):
+    """skinned meshのexportに必要なtop influence jointを追加する。"""
+    result = list(nodes)
+    seen = {(cmds.ls(node, uuid=True) or [None])[0] for node in result}
+    for node in nodes:
+        for shape in _mesh_shapes(node):
+            clusters = cmds.ls(cmds.listHistory(shape, pruneDagObjects=True) or [], type="skinCluster") or []
+            for cluster in clusters:
+                for influence in cmds.skinCluster(cluster, query=True, influence=True) or []:
+                    root = _top_joint(influence)
+                    node_uuid = (cmds.ls(root, uuid=True) or [None])[0]
+                    if node_uuid not in seen:
+                        seen.add(node_uuid)
+                        result.append(root)
+    return result
+
+
 @contextmanager
 def _preserved_fbx_state():
     """FBX settings と Maya selection を成功・失敗に関係なく復元する。"""
@@ -130,7 +175,7 @@ def _export(nodes, target, animation_range=None):
 
 def export_selected(nodes=None, file_path=None):
     """選択 node を静的/スキン FBX として原子的に export する。"""
-    nodes = _nodes(nodes)
+    nodes = _include_skin_roots(_nodes(nodes))
     if file_path is None:
         paths = cmds.fileDialog2(
             fileMode=0,
