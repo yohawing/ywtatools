@@ -1,115 +1,60 @@
-# YWTA(YohaWing Technical Artist) Tools
+# YWTA Tools
 
-個人プロジェクトでよく使うツールや、ツール開発するにあたっての便利なコンポーネントや関数を詰め込んだリポジトリです。
+個人制作で使う DCC 向けテクニカルアーティストツール集です。Maya、Blender、
+Photoshop の各ツールと、複数の DCC から利用するネイティブコアを同じリポジトリで
+管理しています。
 
-# Maya用ツール
+この README はリポジトリ全体のインデックスです。導入方法と機能の詳細は、対象の
+ツールに対応する README を参照してください。
 
-[chadmv/cmt](https://github.com/chadmv/cmt)をベースにしています。
+## ツール一覧
 
-Name Tools、Joint Authoring、Constraints、Control Library、Selection Navigation、
-Skin/Skeleton IO、Pose/Animation Clip、Selection Sets、Scene Audit、Batch Runner、
-FBX Exporter の利用方法と採用境界は
-[Fabricator 機能を参考にした Maya ツール拡充](./docs/fabricator-maya-adoption.md)を参照してください。
+| 対象 | 内容 | ドキュメント |
+| --- | --- | --- |
+| Maya 2024 | リギング、スキニング、アニメーション、メッシュ、入出力、パイプライン支援 | [Maya Tools](./maya/README.md) |
+| Blender 4.4 以降 | Geometry Nodes、Shape Key、AutoRemesher、ボリューム保持スムージング | [Blender Tools](./blender/README.md) |
+| Photoshop 24.4 以降 | PBR / Toon テクスチャ生成・書き出し用 UXP プラグイン | [Photoshop Tools](./photoshop/README.md) |
+| 共有 C++ コア | AutoRemesher と DCC 向け C ABI | [C++ Components](./cpp/README.md) |
+| 共有 Rust コア | ボリューム保持メッシュスムージングと C ABI | [Rust Components](./rust/README.md) |
 
-## インストール方法
+Maya ツールは [chadmv/cmt](https://github.com/chadmv/cmt) をベースに、個人制作向けの
+機能追加と変更を行っています。
 
-`ywtatools.mod`をテキストファイルで開き`./`を解凍先のディレクトリに変更して、`ywtatools.mod`ファイルを`MAYA_MODULE_PATH`が通ったところにコピーしてください。
+## リポジトリ構成
 
-
-## How to build plugin
-
-特定の機能を使う場合は、プラグインのビルドが必要です。プラグインのビルドにはVisual Studioとcmakeが必要です。
-`maya/cpp/build.bat`を実行すると、自動的にpluginがビルドされ、所定のフォルダにプラグインがビルドされます。
-
-## AutoRemesher（自動クアッドリメッシュ）
-
-[huxingyi/autoremesher](https://github.com/huxingyi/autoremesher)（MIT）を組み込んだ自動リトポロジー機能です。初回のみ submodule の取得とビルドが必要です（VS2022 + CMake、Qt は不要）:
-
-```
-git submodule update --init external/autoremesher
-uvx nox -s autoremesher_build   # Blender用DLL (bin/windows/ywta_autoremesher.dll)
-maya\cpp\build.bat              # Mayaプラグイン (autoRemesherNode を含む)
-```
-
-- **Maya**: メッシュを選択して YWTA > Mesh > AutoRemesher Node。`<元名>_remeshed` オブジェクトが生成され、ノードの targetCount / adaptivity / modelType を変更すると再リメッシュされます（元メッシュは非破壊）
-- **Blender**: オブジェクトを選択して Object メニュー > AutoRemesh。実行後は左下のRedoパネル（F9）でパラメータを調整できます
-
-## Preserve Volume Smoothing
-
-Maya / Blenderで共有するRust製メッシュスムージングソルバーです。利用前に
-[Rust toolchain（Cargo）](https://www.rust-lang.org/tools/install) と `uvx` を用意し、
-Windows 11上でリリースDLLをビルドしてください。
-
-```bash
-uvx nox -s mesh_smoothing_build
-uvx nox -s mesh_smoothing_ffi_smoke
+```text
+maya/                 Maya Python モジュール、C++ プラグイン、アイコン
+blender/              Blender アドオンとネイティブ DLL バインディング
+photoshop/            Photoshop UXP プラグイン
+cpp/                  共有 C++ コアと C ABI
+rust/                 共有 Rust クレートと C ABI
+external/             外部ソースの submodule
+tests/                DCC 別・共有コアのテスト
+docs/                 横断的な設計・採用方針
 ```
 
-DLLは `bin/windows/ywta_mesh_smoothing.dll` に生成されます。このファイルはgit管理外です。
-別の場所へ配置する場合は、Maya / Blenderの起動前に
-`YWTA_MESH_SMOOTHING_DLL`へDLLの絶対パスを設定してください。
+各ツール固有の利用方法は、その実装に最も近い README に置きます。ルート README
+には個別機能の操作手順を重複させず、追加・移動されたツールを見つけるための索引だけを
+保ちます。
 
-- **Maya**: モジュールをインストールしてMayaを起動し、メッシュまたは頂点を選択して YWTA > Mesh > Volume Preserving Smoothing、ブラシ操作は YWTA > Mesh > Volume Smooth Brush を選びます
-- **Blender**: アドオンを有効化し、Edit Modeの Vertex メニューから Volume Preserving Smooth を実行します。Volume Smooth Brush は3D Viewport左側のToolbar（Tキー）で選択し、Tool Settingsから Smooth / Volume / Remove Bumps、半径、強度を調整します
+## 開発
 
-通常スムージングは連続マスクと輪郭railに対応します。
+Windows 11 上での開発を前提としています。Python 依存は
+[`requirements.txt`](./requirements.txt)、テスト構成は
+[`tests/README.md`](./tests/README.md) を参照してください。
 
-- **Maya**: Vertex Soft Selectionをそのまま強度として使用します。面選択では選択パネルの内側だけを処理し、hard edge、crease、エッジ選択をrailとして保持します
-- **Blender**: オペレータのVertex Group欄を指定するとグループウェイトをマスクとして使用します。hard edge、seam、crease、Edge Selectモードの選択エッジをrailとして保持します
-- rail chainの内部頂点は輪郭接線方向だけ移動し、端点、分岐、鋭いcornerは固定します
+代表的な検証コマンドは次のとおりです。
 
-Blenderテストはインストール済みの最新版を自動検出します。検出できない場合は
-`BLENDER_EXECUTABLE`へ `blender.exe` の絶対パスを設定してください。
-
-```bash
-uvx nox -s blender_tests
-```
-
-## Dependency
-
-Pythonの依存モジュールはRequirements.txtに記載しています。Mayapyへのインストールは自己責任でおねがいします。
 ```powershell
-& "C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe" -m pip install -r requirements.txt
-```
-# Blender用ツール
-Blender用のツールは、Blenderのアドオンとして実装されています。
-## インストール方法
-Blenderのアドオンとしてインストールするには、Preferences > File Paths > Scripts Directoriesに、`path/to/ywtatools/blender`を追加してください。
-
-# Photoshop用ツール
-
-Photoshop用のツールは UXP Manifest v5 プラグインとして実装します。
-開発環境の準備と UXP Developer Tool からの読み込み方法は
-[photoshop/README.md](./photoshop/README.md) を参照してください。
-
-
-# テストの実行方法
-
-YWTAツールには、Maya環境とBlender環境の両方でテストを実行するための包括的なテストフレームワークが含まれています。
-
-## Maya用テストの実行
-
-### コマンドラインから実行
-
-以下のコマンドを実行して、Maya 2024でテストを実行します。
-
-```bash
-python tests/run_maya_tests.py --pattern "test_*.py" --maya 2024
-
+uvx nox -s lint
+uvx nox -s maya_tests -- --type unit --maya 2024
+uvx nox -s blender_tests
+uvx nox -s photoshop_validate
 ```
 
-### Maya内から実行
+開発ルール、対応環境、コミット規律は [`AGENTS.md`](./AGENTS.md) を参照してください。
 
-Maya内でテストを実行するには、YWTA > Utility > Unit Test Runnerからテスト実行用のUIを開いてください。
+## ライセンス
 
-# 開発者向け情報
-
-開発ルール・コーディング規約・コミット規律などは [AGENTS.md](./AGENTS.md) を参照してください。
-Lintは以下のコマンドで実行できます。
-
-```bash
-ruff check .
-```
-
-
-Humanikの半自動マッピングを作ってみたい。
+このリポジトリのライセンスは [`LICENSE`](./LICENSE) を参照してください。外部コードや
+submodule には、それぞれのライセンスが適用されます。
