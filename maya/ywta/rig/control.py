@@ -154,16 +154,28 @@ def import_new_curves(file_path=None, tag_as_controller=False):
     :return: The new curve transforms
     """
     controls = load_curves(file_path)
-    transforms = []
     mapping = {}
+    reserved = set()
     for curve in controls:
         if curve.transform not in mapping:
-            mapping[curve.transform] = _get_new_transform_name(curve.transform)
-        transform = mapping[curve.transform]
-        curve.create(transform, tag_as_controller)
-        if transform not in transforms:
-            transforms.append(transform)
-    return transforms
+            name = curve.transform
+            suffix = 1
+            while cmds.objExists(name) or name in reserved:
+                name = "{}{}".format(curve.transform, suffix)
+                suffix += 1
+            mapping[curve.transform] = name
+            reserved.add(name)
+
+    def create():
+        transforms = []
+        for curve in controls:
+            transform = mapping[curve.transform]
+            curve.create(transform, tag_as_controller)
+            if transform not in transforms:
+                transforms.append(transform)
+        return transforms
+
+    return _run_curve_creation("Import New Control Curves", create)
 
 
 def import_curves(file_path=None, tag_as_controller=False):
@@ -175,12 +187,15 @@ def import_curves(file_path=None, tag_as_controller=False):
     """
     controls = load_curves(file_path)
 
-    transforms = []
-    for curve in controls:
-        transform = curve.create(curve.transform, tag_as_controller)
-        if transform not in transforms:
-            transforms.append(transform)
-    return transforms
+    def create():
+        transforms = []
+        for curve in controls:
+            transform = curve.create(curve.transform, tag_as_controller)
+            if transform not in transforms:
+                transforms.append(transform)
+        return transforms
+
+    return _run_curve_creation("Import Control Curves", create)
 
 
 def import_curves_on_selected(file_path=None, tag_as_controller=False):
@@ -191,14 +206,17 @@ def import_curves_on_selected(file_path=None, tag_as_controller=False):
     :return: The new curve transform
     """
     controls = load_curves(file_path)
-    selected_transforms = cmds.ls(sl=True)
+    selected_transforms = cmds.ls(selection=True, long=True, type="transform") or []
     if not selected_transforms:
         return
 
-    for transform in selected_transforms:
-        for curve in controls:
-            curve.create(transform, tag_as_controller)
-    return selected_transforms
+    def create():
+        for transform in selected_transforms:
+            for curve in controls:
+                curve.create(transform, tag_as_controller)
+        return selected_transforms
+
+    return _run_curve_creation("Import Curves on Selected", create)
 
 
 def load_curves(file_path=None):
@@ -282,6 +300,28 @@ def _validate_curve_payload(data):
         ):
             continue
         raise ValueError("curve colorが不正です: {}".format(record_index))
+
+
+def _run_curve_creation(chunk_name, callback):
+    """Control curve作成を選択復元付きの単一Undoで実行する。"""
+    selection = cmds.ls(selection=True, long=True) or []
+    undo_utils.require_enabled(chunk_name)
+    cmds.undoInfo(openChunk=True, chunkName="YWTA {}".format(chunk_name))
+    failed = False
+    try:
+        result = callback()
+        if selection:
+            cmds.select(selection, replace=True)
+        else:
+            cmds.select(clear=True)
+    except Exception:
+        failed = True
+        raise
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        if failed:
+            cmds.undo()
+    return result
 
 
 def _get_new_transform_name(base):

@@ -1,6 +1,7 @@
 """Control curve shape差し替えのMaya単体テスト。"""
 
 import json
+from unittest import mock
 
 import maya.cmds as cmds
 
@@ -167,6 +168,11 @@ class ControlSwapTests(TestCase):
         self.assertEqual(["multi_ctrl"], created)
         self.assertEqual(2, len(cmds.listRelatives(created[0], shapes=True, type="nurbsCurve")))
 
+        cmds.undo()
+        self.assertFalse(cmds.objExists("multi_ctrl"))
+        cmds.redo()
+        self.assertEqual(2, len(cmds.listRelatives("multi_ctrl", shapes=True, type="nurbsCurve")))
+
     def test_control_export_rejects_invalid_target_without_replacing_file(self):
         """不正controlの保存失敗で既存library JSONを置換しない。"""
         path = self.get_temp_filename("existing_control.json")
@@ -199,6 +205,31 @@ class ControlSwapTests(TestCase):
 
         self.assertFalse(cmds.objExists("safe_ctrl"))
         self.assertFalse(cmds.objExists("broken_ctrl"))
+
+    def test_control_import_rolls_back_partial_creation(self):
+        """後半shape作成の失敗で先に作ったtransformも残さない。"""
+        target = cmds.circle(name="multi_ctrl", sections=4)[0]
+        extra = cmds.circle(name="extra_ctrl", sections=6)[0]
+        extra_shapes = cmds.listRelatives(extra, shapes=True, fullPath=True)
+        cmds.parent(extra_shapes, target, shape=True, relative=True)
+        cmds.delete(extra)
+        path = self.get_temp_filename("rollback_control.json")
+        control.export_curves([target], path)
+        cmds.delete(target)
+        original_create = control.CurveShape.create
+        call_count = [0]
+
+        def fail_second(curve, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 2:
+                raise RuntimeError("forced create failure")
+            return original_create(curve, *args, **kwargs)
+
+        with mock.patch.object(control.CurveShape, "create", new=fail_second):
+            with self.assertRaises(RuntimeError):
+                control.import_new_curves(path)
+
+        self.assertFalse(cmds.objExists("multi_ctrl"))
 
     def test_combine_control_shapes_preserves_world_shape_and_undo(self):
         """source形状をworld位置のままtargetへ移し、1回でUndoする。"""
