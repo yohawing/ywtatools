@@ -227,6 +227,27 @@ class ClipIoTests(TestCase):
             cmds.keyTangent(target_plug, query=True, time=(20, 20), outWeight=True)[0],
         )
 
+    def test_time_unit_mismatch_is_reported_without_retiming(self):
+        original = cmds.currentUnit(query=True, time=True)
+        try:
+            cmds.currentUnit(time="film")
+            source, data = self._source_clip()
+            cmds.delete(source)
+            target = self._control("target")
+            cmds.currentUnit(time="ntsc")
+
+            result = clip_io.apply(data, nodes=[target], start_time=100)
+
+            self.assertTrue(result["time_unit_mismatch"])
+            self.assertEqual("film", result["source_time_unit"])
+            self.assertEqual("ntsc", result["scene_time_unit"])
+            self.assertEqual(
+                [100.0, 110.0],
+                cmds.keyframe(target, attribute="translateX", query=True, timeChange=True),
+            )
+        finally:
+            cmds.currentUnit(time=original)
+
     def test_driven_channel_is_skipped(self):
         source, data = self._source_clip()
         cmds.delete(source)
