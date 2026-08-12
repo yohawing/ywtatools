@@ -76,6 +76,25 @@ def _same_points(actual, expected, tolerance=POSITION_TOLERANCE):
     )
 
 
+def _combined_topology(shapes):
+    """source topologyをvertex offset付きで単純連結する。"""
+    face_counts = []
+    face_connects = []
+    vertex_offset = 0
+    for shape in shapes:
+        counts, connects = _topology(shape)
+        face_counts.extend(counts)
+        face_connects.extend(index + vertex_offset for index in connects)
+        vertex_offset += om.MFnMesh(skin_io._dag_path(shape)).numVertices
+    return face_counts, face_connects
+
+
+def _topology(shape):
+    """meshのface countsとvertex index列を返す。"""
+    face_counts, face_connects = om.MFnMesh(skin_io._dag_path(shape)).getVertices()
+    return list(face_counts), list(face_connects)
+
+
 def _combined_weights(captures, influences):
     """source sparse weightsを結合先のphysical influence順に展開する。"""
     influence_index = {path: index for index, path in enumerate(influences)}
@@ -93,8 +112,8 @@ def _combined_weights(captures, influences):
 def combine(meshes=None, name="combined_skinned_mesh"):
     """複数skinned meshを正確な頂点ウェイト付きで結合する。
 
-    元meshは変更しない。polyUnite後の頂点順をworld座標で検証し、source頂点の
-    単純連結でない場合は推測せず全操作を取り消す。
+    元meshは変更しない。polyUnite後の頂点順をworld座標とface connectivityで
+    検証し、source頂点の単純連結でない場合は推測せず全操作を取り消す。
 
     Args:
         meshes: mesh transformまたはshapeの列。Noneは現在選択。
@@ -108,6 +127,8 @@ def combine(meshes=None, name="combined_skinned_mesh"):
         raise ValueError("結合先名が既に存在します: {}".format(name))
     sources = _selected_meshes(meshes)
     captures = [skin_io.capture(source) for source in sources]
+    source_shapes = [skin_io._mesh_shape(source) for source in sources]
+    expected_topology = _combined_topology(source_shapes)
     expected_points = []
     influence_paths = []
     seen_influences = set()
@@ -141,6 +162,8 @@ def combine(meshes=None, name="combined_skinned_mesh"):
         actual_points = _world_points(combined_shape)
         if not _same_points(actual_points, expected_points):
             raise RuntimeError("polyUnite後の頂点順がsource順と一致しないため中止しました。")
+        if _topology(combined_shape) != expected_topology:
+            raise RuntimeError("polyUnite後のface connectivityがsource順と一致しないため中止しました。")
 
         cluster = cmds.skinCluster(
             influence_paths,

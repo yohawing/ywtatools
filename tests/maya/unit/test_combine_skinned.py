@@ -78,6 +78,28 @@ class CombineSkinnedTests(TestCase):
             for actual, expected_value in zip(actual_row, expected_row):
                 self.assertAlmostEqual(expected_value, actual)
 
+    def test_connectivity_mismatch_rolls_back_without_changing_sources(self):
+        """座標が一致してもface connectivity不一致なら結合を残さない。"""
+        left_uuid = cmds.ls(self.left, uuid=True)[0]
+        right_uuid = cmds.ls(self.right, uuid=True)[0]
+        cmds.select(self.left, self.right, replace=True)
+        original_topology = combine_skinned._topology
+        calls = 0
+
+        def mismatch_output(shape):
+            nonlocal calls
+            calls += 1
+            return original_topology(shape) if calls <= 2 else ([], [])
+
+        with mock.patch.object(combine_skinned, "_topology", side_effect=mismatch_output):
+            with self.assertRaises(RuntimeError):
+                combine_skinned.combine([self.left, self.right], name="body_mesh")
+
+        self.assertFalse(cmds.objExists("body_mesh"))
+        self.assertEqual(left_uuid, cmds.ls(self.left, uuid=True)[0])
+        self.assertEqual(right_uuid, cmds.ls(self.right, uuid=True)[0])
+        self.assertEqual({self.left, self.right}, set(cmds.ls(selection=True)))
+
     def test_combine_is_single_undoable_action(self):
         cmds.select(self.left, self.right, replace=True)
         result = combine_skinned.combine([self.left, self.right], name="body_mesh")
