@@ -102,6 +102,7 @@ Skinned Mesh Combineは実行時のjoint・mesh評価姿勢を新しいskinClust
 - Animation ClipのPlace / Replace / Insert適用モード
 - file dialogなしで再利用できるユーザー単位のTemporary Animation Clip
 - 実キーがないclip開始・終了へ評価値anchorを補い、Load Optionsで個別除外可能
+- 除外後にanchorしか残らないchannelはReplaceでも既存keyを消さない完全なno-op
 - ModeとSelected-onlyを任意組合せで保存・実行できるClip Option UI
 - Insert時は解決・適用可能なcontrolだけの後続キーをclip占有フレーム数ぶん移動
 - animCurve は現在フレームへ key を設定し、非keyable、constraint、計算node駆動属性は上書きしない

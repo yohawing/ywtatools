@@ -155,7 +155,7 @@ class ClipIoTests(TestCase):
         )
 
     def test_disabling_only_synthetic_anchors_does_not_create_curve(self):
-        """実keyがないchannelでanchorを無効化しても空curveを編集しない。"""
+        """実keyがないchannelでanchorを無効化しても既存curveを編集しない。"""
         source = self._control("source")
         cmds.setKeyframe(source, attribute="translateX", time=5, value=5.0)
         data = clip_io.capture([source], start=1, end=10)
@@ -163,18 +163,26 @@ class ClipIoTests(TestCase):
         channel["keys"] = [key for key in channel["keys"] if "synthetic_boundary" in key]
         cmds.delete(source)
         target = self._control("target")
+        cmds.setKeyframe(target, attribute="translateX", time=25, value=9.0)
 
-        result = clip_io.apply(
-            data,
-            nodes=[target],
-            start_time=20,
-            mode="place",
-            apply_start_anchor=False,
-            apply_end_anchor=False,
-        )
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            result = clip_io.apply(
+                data,
+                nodes=[target],
+                start_time=20,
+                mode="replace",
+                apply_start_anchor=False,
+                apply_end_anchor=False,
+            )
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
 
         self.assertEqual(0, result["applied_keys"])
-        self.assertEqual([], cmds.keyframe(target, attribute="translateX", query=True, timeChange=True) or [])
+        self.assertEqual(0, result["applied_channels"])
+        self.assertEqual("anchors_disabled", result["skipped"][0]["reason"])
+        self.assertEqual([25.0], cmds.keyframe(target, attribute="translateX", query=True, timeChange=True))
+        self.assertEqual(9.0, cmds.getAttr(target + ".translateX", time=25))
 
     def test_insert_shifts_all_keys_on_resolved_control_and_is_undoable(self):
         source, data = self._source_clip()

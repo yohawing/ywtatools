@@ -426,6 +426,16 @@ def _weighted_tangent_conflict(plug, channel, mode, start_time, end_time):
     return mode != "replace" or any(time < start_time or time > end_time for time in times)
 
 
+def _keys_to_apply(channel, apply_start_anchor, apply_end_anchor):
+    """anchor設定を反映して実際に適用するkeyだけを返す。"""
+    return [
+        key
+        for key in channel["keys"]
+        if not (key.get("synthetic_boundary") == "start" and not apply_start_anchor)
+        and not (key.get("synthetic_boundary") == "end" and not apply_end_anchor)
+    ]
+
+
 def apply(
     data,
     nodes=None,
@@ -480,12 +490,12 @@ def apply(
             if incoming and not all(cmds.nodeType(source.split(".", 1)[0]).startswith("animCurve") for source in incoming):
                 skipped.append({"address": address, "attribute": attribute, "reason": "driven"})
                 continue
+            keys = _keys_to_apply(channel, apply_start_anchor, apply_end_anchor)
+            if not keys:
+                skipped.append({"address": address, "attribute": attribute, "reason": "anchors_disabled"})
+                continue
             if channel["type"] == "enum":
-                for key in channel["keys"]:
-                    if key.get("synthetic_boundary") == "start" and not apply_start_anchor:
-                        continue
-                    if key.get("synthetic_boundary") == "end" and not apply_end_anchor:
-                        continue
+                for key in keys:
                     if "enum_label" in key:
                         pose_io._enum_index(plug, key["enum_label"])
                     else:
@@ -543,12 +553,7 @@ def apply(
         for plug, channel in operations:
             if mode == "replace":
                 cmds.cutKey(plug, time=(start_time, end_time), clear=True)
-            keys = [
-                key
-                for key in channel["keys"]
-                if not (key.get("synthetic_boundary") == "start" and not apply_start_anchor)
-                and not (key.get("synthetic_boundary") == "end" and not apply_end_anchor)
-            ]
+            keys = _keys_to_apply(channel, apply_start_anchor, apply_end_anchor)
             for key in keys:
                 time = start_time + key["time"]
                 value = (
