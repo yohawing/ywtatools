@@ -43,7 +43,10 @@ def _validate_label(label):
     """user-facing label を検証・正規化する。"""
     if not isinstance(label, str) or not label.strip():
         raise ValueError("selection set label が空です。")
-    return label.strip()
+    label = label.strip()
+    if any(ord(character) < 32 or ord(character) == 127 for character in label):
+        raise ValueError("selection set label に制御文字は使用できません。")
+    return label
 
 
 def _resolve_members(nodes=None):

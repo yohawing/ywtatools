@@ -35,6 +35,22 @@ class SelectionSetsTests(TestCase):
         with self.assertRaises(ValueError):
             selection_sets.create_selection_set("hands", [hand])
 
+    def test_control_character_label_is_rejected_before_creation_or_import(self):
+        """一覧UIを複数行に壊すlabelでobjectSetを作成しない。"""
+        hand = self._control("character", "hand_ctrl")
+
+        with self.assertRaises(ValueError):
+            selection_sets.create_selection_set("Hands\nFeet", [hand])
+
+        node = selection_sets.create_selection_set("Hands", [hand])
+        data = selection_sets.capture([node])
+        data["sets"][0]["label"] = "Hands\nFeet"
+        cmds.delete(node)
+        with self.assertRaises(ValueError):
+            selection_sets.apply(data)
+
+        self.assertFalse(selection_sets.list_selection_sets())
+
     def test_import_label_is_trimmed_before_conflict_check(self):
         """外部labelの周辺空白で既存set衝突を回避できない。"""
         hand = self._control("character", "hand_ctrl")
