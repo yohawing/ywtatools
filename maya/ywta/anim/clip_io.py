@@ -61,14 +61,15 @@ def _capture_channel(node, attribute, start, end):
     for time, value, in_tangent, out_tangent in zip(times, values, in_tangents, out_tangents):
         if not math.isfinite(float(time)) or not math.isfinite(float(value)):
             raise ValueError("非有限の keyframe は保存できません: {}".format(plug))
-        keys.append(
-            {
-                "time": float(time) - start,
-                "value": float(value),
-                "in_tangent": in_tangent,
-                "out_tangent": out_tangent,
-            }
-        )
+        key = {
+            "time": float(time) - start,
+            "value": float(value),
+            "in_tangent": in_tangent,
+            "out_tangent": out_tangent,
+        }
+        if attr_type == "enum":
+            key["enum_label"] = pose_io._enum_label(plug, value)
+        keys.append(key)
     return {"name": attribute, "type": attr_type, "keys": keys}
 
 
@@ -156,6 +157,12 @@ def _validate(data):
                     raise ValueError("key が不正です: {}.{}".format(address, name))
                 time = _finite_number(key.get("time"), "key time")
                 _finite_number(key.get("value"), "key value")
+                if (
+                    attr_type == "enum"
+                    and "enum_label" in key
+                    and (not isinstance(key["enum_label"], str) or not key["enum_label"])
+                ):
+                    raise ValueError("enum labelが不正です: {}.{}".format(address, name))
                 if time < 0.0 or time > duration or (previous_time is not None and time <= previous_time):
                     raise ValueError("key time の範囲または順序が不正です: {}.{}".format(address, name))
                 previous_time = time
@@ -281,7 +288,12 @@ def apply(data, nodes=None, start_time=None, replace=True, mode=None):
                 cmds.cutKey(plug, time=(start_time, end_time), clear=True)
             for key in channel["keys"]:
                 time = start_time + key["time"]
-                cmds.setKeyframe(plug, time=time, value=key["value"])
+                value = (
+                    pose_io._enum_index(plug, key["enum_label"])
+                    if channel["type"] == "enum" and "enum_label" in key
+                    else key["value"]
+                )
+                cmds.setKeyframe(plug, time=time, value=value)
                 cmds.keyTangent(
                     plug,
                     edit=True,

@@ -127,6 +127,64 @@ class ClipIoTests(TestCase):
         self.assertEqual([5.0], cmds.keyframe(target_hand, attribute="translateX", query=True, timeChange=True))
         self.assertIsNone(cmds.keyframe(target_foot, attribute="translateX", query=True, timeChange=True))
 
+    def test_enum_keys_resolve_by_label_on_reordered_target(self):
+        source = self._control("source")
+        cmds.addAttr(
+            source,
+            longName="space",
+            attributeType="enum",
+            enumName="World=1:Chest=5",
+            keyable=True,
+        )
+        cmds.setKeyframe(source, attribute="space", time=1, value=1)
+        cmds.setKeyframe(source, attribute="space", time=2, value=5)
+        data = clip_io.capture([source], start=1, end=2)
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.addAttr(
+            target,
+            longName="space",
+            attributeType="enum",
+            enumName="Chest=2:World=7",
+            keyable=True,
+        )
+
+        clip_io.apply(data, nodes=[target], start_time=10)
+
+        self.assertEqual(
+            [7.0, 2.0],
+            cmds.keyframe(target, attribute="space", query=True, valueChange=True),
+        )
+
+    def test_legacy_enum_keys_without_labels_use_numeric_values(self):
+        source = self._control("source")
+        cmds.addAttr(
+            source,
+            longName="space",
+            attributeType="enum",
+            enumName="World=1:Chest=5",
+            keyable=True,
+        )
+        cmds.setKeyframe(source, attribute="space", time=1, value=5)
+        data = clip_io.capture([source], start=1, end=1)
+        del data["controls"][0]["channels"][0]["keys"][0]["enum_label"]
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.addAttr(
+            target,
+            longName="space",
+            attributeType="enum",
+            enumName="World=1:Chest=5",
+            keyable=True,
+        )
+
+        clip_io.apply(data, nodes=[target], start_time=10)
+
+        self.assertEqual(
+            [5.0],
+            cmds.keyframe(target, attribute="space", query=True, valueChange=True),
+        )
+
     def test_driven_channel_is_skipped(self):
         source, data = self._source_clip()
         cmds.delete(source)

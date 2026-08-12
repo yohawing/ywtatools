@@ -239,6 +239,22 @@ def _enum_index(plug, label):
     raise ValueError("enum label がありません: {} = {}".format(plug, label))
 
 
+def _enum_label(plug, value):
+    """enum indexから表示名を解決する。"""
+    labels = cmds.attributeQuery(plug.rsplit(".", 1)[-1], node=plug.rsplit(".", 1)[0], listEnum=True)
+    current_index = -1
+    for item in labels[0].split(":") if labels else []:
+        if "=" in item:
+            item_label, explicit_index = item.rsplit("=", 1)
+            current_index = int(explicit_index)
+        else:
+            item_label = item
+            current_index += 1
+        if current_index == int(round(value)):
+            return item_label
+    raise ValueError("enum indexに表示名がありません: {} = {}".format(plug, value))
+
+
 def _blended_value(current, saved, attr_type, blend):
     """属性型に応じた blend 値を返す。"""
     if attr_type in INTEGER_TYPES:
