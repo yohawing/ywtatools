@@ -46,6 +46,19 @@ class SelectionSetsTests(TestCase):
 
         self.assertEqual([node], selection_sets.list_selection_sets())
 
+    def test_empty_portable_address_is_rejected_before_creation(self):
+        """prefixだけのmember addressから空setを作成しない。"""
+        hand = self._control("source", "hand_ctrl")
+        node = selection_sets.create_selection_set("Hands", [hand])
+        data = copy.deepcopy(selection_sets.capture([node]))
+        data["sets"][0]["members"][0] = "name:"
+        cmds.delete(node)
+
+        with self.assertRaises(ValueError):
+            selection_sets.apply(data)
+
+        self.assertFalse(selection_sets.list_selection_sets())
+
     def test_create_is_single_undoable_action(self):
         hand = self._control("character", "hand_ctrl")
 

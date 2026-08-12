@@ -161,7 +161,7 @@ def _validate(data):
             raise ValueError("selection set members がありません: {}".format(label))
         seen = set()
         for address in addresses:
-            if not isinstance(address, str) or not address.startswith(("id:", "name:")) or address in seen:
+            if not pose_io.is_control_address(address) or address in seen:
                 raise ValueError("control address が不正または重複しています: {}".format(address))
             seen.add(address)
     return data

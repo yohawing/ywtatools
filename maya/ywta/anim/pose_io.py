@@ -92,6 +92,14 @@ def control_address(node):
     return _address(node)
 
 
+def is_control_address(address):
+    """portable control addressがprefixと非空値を持つか判定する。"""
+    if not isinstance(address, str):
+        return False
+    prefix, separator, value = address.partition(":")
+    return bool(separator and prefix in {"id", "name"} and value.strip())
+
+
 def set_pose_id(node, pose_id):
     """コントロールへ rig 間で安定した Pose ID を設定する。"""
     if not isinstance(pose_id, str) or not pose_id.strip():
@@ -187,10 +195,10 @@ def _validate(data):
         raise ValueError("controls がありません。")
     addresses = set()
     for control in controls:
-        if not isinstance(control, dict) or not isinstance(control.get("address"), str):
+        if not isinstance(control, dict) or not is_control_address(control.get("address")):
             raise ValueError("control address が不正です。")
         address = control["address"]
-        if not address.startswith(("id:", "name:")) or address in addresses:
+        if address in addresses:
             raise ValueError("control address が不正または重複しています: {}".format(address))
         addresses.add(address)
         attributes = control.get("attributes")

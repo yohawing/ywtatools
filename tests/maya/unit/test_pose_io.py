@@ -135,6 +135,15 @@ class PoseIoTests(TestCase):
         with self.assertRaises(ValueError):
             pose_io.apply(data)
 
+    def test_empty_portable_address_is_rejected(self):
+        """prefixだけのPose addressをtarget missingとして扱わない。"""
+        source = self._control("source")
+        data = copy.deepcopy(pose_io.capture([source]))
+        data["controls"][0]["address"] = "name:   "
+
+        with self.assertRaises(ValueError):
+            pose_io.apply(data)
+
     def test_save_and_read_round_trip(self):
         source = self._control("source")
         cmds.setAttr(source + ".translateY", 6.0)

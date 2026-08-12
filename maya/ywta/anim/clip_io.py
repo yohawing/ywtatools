@@ -234,10 +234,10 @@ def _validate(data):
         raise ValueError("controls がありません。")
     addresses = set()
     for control in controls:
-        if not isinstance(control, dict) or not isinstance(control.get("address"), str):
+        if not isinstance(control, dict) or not pose_io.is_control_address(control.get("address")):
             raise ValueError("control address が不正です。")
         address = control["address"]
-        if not address.startswith(("id:", "name:")) or address in addresses:
+        if address in addresses:
             raise ValueError("control address が不正または重複しています: {}".format(address))
         addresses.add(address)
         channels = control.get("channels")

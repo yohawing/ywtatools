@@ -329,6 +329,15 @@ class ClipIoTests(TestCase):
 
         self.assertIsNone(cmds.keyframe(target, attribute="translateX", query=True, timeChange=True))
 
+    def test_empty_portable_address_is_rejected(self):
+        """prefixだけのClip addressをtarget missingとして扱わない。"""
+        _source, data = self._source_clip()
+        invalid = copy.deepcopy(data)
+        invalid["controls"][0]["address"] = "id:"
+
+        with self.assertRaises(ValueError):
+            clip_io.apply(invalid, start_time=1)
+
     def test_invalid_mode_fails_before_edit(self):
         source, data = self._source_clip()
         target = self._control("target")
