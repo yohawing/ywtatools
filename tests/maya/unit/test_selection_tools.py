@@ -1,5 +1,7 @@
 """Rig Selection NavigationのMaya単体テスト。"""
 
+from unittest import mock
+
 import maya.cmds as cmds
 
 from ywta.rig import selection_tools
@@ -115,3 +117,24 @@ class SelectionToolsTests(TestCase):
             selection_tools.snap_to_last([first, locked, target])
 
         self.assertEqual(0.0, cmds.getAttr(first + ".translateX"))
+
+    def test_snap_rejects_referenced_source_and_non_transform(self):
+        """参照sourceへのeditとshape入力を移動開始前に拒否する。"""
+        referenced = cmds.createNode("transform", name="referenced")
+        target = cmds.createNode("transform", name="target")
+        mesh = cmds.polyCube(name="mesh")[0]
+        shape = cmds.listRelatives(mesh, shapes=True, fullPath=True)[0]
+        original_reference_query = selection_tools.cmds.referenceQuery
+
+        def reference_query(node, **kwargs):
+            if kwargs.get("isNodeReferenced") and node == "|referenced":
+                return True
+            return original_reference_query(node, **kwargs)
+
+        with mock.patch.object(selection_tools.cmds, "referenceQuery", side_effect=reference_query):
+            with self.assertRaises(ValueError):
+                selection_tools.snap_to_last([referenced, target])
+        with self.assertRaises(ValueError):
+            selection_tools.snap_to_last([shape, target])
+
+        self.assertEqual([0.0, 0.0, 0.0], cmds.xform(referenced, query=True, worldSpace=True, translation=True))

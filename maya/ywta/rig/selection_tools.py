@@ -124,11 +124,16 @@ def snap_to_last(nodes=None):
     transforms = _unique_nodes(nodes)
     if len(transforms) < 2:
         raise ValueError("移動元と最後のtargetを含むtransformを2つ以上選択してください。")
+    invalid = [node for node in transforms if not cmds.objectType(node, isAType="transform")]
+    if invalid:
+        raise ValueError("Snap対象はtransformにしてください: {}".format(", ".join(invalid)))
     sources = transforms[:-1]
     target = transforms[-1]
     if any(target in (cmds.listRelatives(source, allDescendents=True, fullPath=True) or []) for source in sources):
         raise ValueError("targetのancestorは移動元にできません。")
     for source in sources:
+        if cmds.referenceQuery(source, isNodeReferenced=True):
+            raise ValueError("参照transformは移動できません: {}".format(source))
         blocked = [axis for axis in "XYZ" if not cmds.getAttr("{}.translate{}".format(source, axis), settable=True)]
         if blocked:
             raise ValueError("translateが編集できません: {} ({})".format(source, ", ".join(blocked)))
