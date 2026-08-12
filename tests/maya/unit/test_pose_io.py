@@ -184,6 +184,17 @@ class PoseIoTests(TestCase):
         self.assertEqual("driven", skipped[0]["reason"])
         self.assertAlmostEqual(2.0, cmds.getAttr(target + ".translateX"))
 
+    def test_computed_channel_is_not_captured(self):
+        source = self._control("source")
+        driver = cmds.createNode("multiplyDivide")
+        cmds.setAttr(driver + ".input1X", 3.0)
+        cmds.connectAttr(driver + ".outputX", source + ".translateX")
+
+        data = pose_io.capture([source])
+
+        attributes = data["controls"][0]["attributes"]
+        self.assertNotIn("translateX", [attribute["name"] for attribute in attributes])
+
     def test_enum_explicit_indices_are_resolved_by_label(self):
         source = self._control("source")
         cmds.addAttr(

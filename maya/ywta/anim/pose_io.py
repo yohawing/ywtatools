@@ -109,6 +109,9 @@ def _capture_attribute(node, attribute):
     plug = "{}.{}".format(node, attribute)
     if cmds.getAttr(plug, lock=True):
         return None
+    incoming = cmds.listConnections(plug, source=True, destination=False, plugs=True) or []
+    if incoming and not all(cmds.nodeType(source.split(".", 1)[0]).startswith("animCurve") for source in incoming):
+        return None
     attr_type = cmds.getAttr(plug, type=True)
     if attr_type == "enum":
         return {"name": attribute, "type": attr_type, "value": cmds.getAttr(plug, asString=True)}
