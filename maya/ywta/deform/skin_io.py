@@ -13,6 +13,8 @@ import maya.api.OpenMaya as om
 import maya.api.OpenMayaAnim as oma
 import maya.cmds as cmds
 
+from ywta.deform import skin_weight_command
+
 
 FORMAT = "ywta.skin_weights"
 VERSION = 1
@@ -339,10 +341,11 @@ def _write_weights(shape, cluster, influences, data):
             physical_index = physical_indices[saved_index]
             dense[vertex_index * len(physical_paths) + physical_index] = float(value) / total
 
-    fn_skin.setWeights(
-        _dag_path(shape),
-        _vertex_component(vertex_count),
-        om.MIntArray(range(len(physical_paths))),
+    skin_weight_command.execute(
+        cluster,
+        shape,
+        range(vertex_count),
+        range(len(physical_paths)),
         dense,
         normalize=True,
     )
@@ -364,10 +367,11 @@ def _normalize_influence_subset(shape, cluster, influences):
             raise RuntimeError("転送後の頂点 {} に有効な influence weight がありません。".format(vertex_index))
         for index in included:
             dense[offset + index] = float(weights[offset + index]) / total
-    fn_skin.setWeights(
-        _dag_path(shape),
-        component,
-        om.MIntArray(range(influence_count)),
+    skin_weight_command.execute(
+        cluster,
+        shape,
+        range(vertex_count),
+        range(influence_count),
         dense,
         normalize=True,
     )

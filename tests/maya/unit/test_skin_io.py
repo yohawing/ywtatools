@@ -39,12 +39,21 @@ class SkinIoTests(TestCase):
                 vertex,
                 transformValue=((self.joint_a, 1.0), (self.joint_b, 0.0)),
             )
+        modified = skin_io.capture(self.mesh)["weights"]
 
         skin_io.apply(self.mesh, data)
 
         restored = skin_io.capture(self.mesh)
         for expected_row, actual_row in zip(data["weights"], restored["weights"]):
             self.assertEqual([entry[0] for entry in expected_row], [entry[0] for entry in actual_row])
+            for expected, actual in zip(expected_row, actual_row):
+                self.assertAlmostEqual(expected[1], actual[1], places=6)
+
+        cmds.undo()
+        self.assertEqual(modified, skin_io.capture(self.mesh)["weights"])
+        cmds.redo()
+        redone = skin_io.capture(self.mesh)["weights"]
+        for expected_row, actual_row in zip(data["weights"], redone):
             for expected, actual in zip(expected_row, actual_row):
                 self.assertAlmostEqual(expected[1], actual[1], places=6)
 
@@ -69,6 +78,13 @@ class SkinIoTests(TestCase):
         self.assertTrue(cmds.objExists(cluster))
         restored = skin_io.capture(target)
         self.assertEqual(data["weights"], restored["weights"])
+
+        cmds.undo()
+        target_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
+        self.assertIsNone(skin_io._skin_cluster(target_shape))
+        cmds.redo()
+        redone = skin_io.capture(target)
+        self.assertEqual(data["weights"], redone["weights"])
 
     def test_apply_zeros_existing_extra_influence(self):
         data = skin_io.capture(self.mesh)
@@ -150,3 +166,12 @@ class SkinIoTests(TestCase):
         vertices = cmds.ls(target + ".vtx[*]", flatten=True)
         extra_weights = [cmds.skinPercent(cluster, vertex, query=True, transform=extra) for vertex in vertices]
         self.assertTrue(all(abs(value) < 1.0e-8 for value in extra_weights))
+
+        cmds.undo()
+        self.assertEqual([extra], cmds.skinCluster(cluster, query=True, influence=True))
+        restored_extra = [cmds.skinPercent(cluster, vertex, query=True, transform=extra) for vertex in vertices]
+        self.assertTrue(all(abs(value - 1.0) < 1.0e-8 for value in restored_extra))
+
+        cmds.redo()
+        redone_extra = [cmds.skinPercent(cluster, vertex, query=True, transform=extra) for vertex in vertices]
+        self.assertTrue(all(abs(value) < 1.0e-8 for value in redone_extra))
