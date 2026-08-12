@@ -86,6 +86,45 @@ class InfluenceCleanupTests(TestCase):
         self.assertEqual("locked", result["protected"][0]["reason"])
         self.assertIn(self.unused, cmds.skinCluster(self.cluster, query=True, influence=True))
 
+    def test_explicit_locked_removal_preserves_other_cluster_state(self):
+        """保護解除時も別clusterのweightとjoint-global lockを変更しない。"""
+        source_mesh = cmds.polyPlane(name="source_cloth")[0]
+        source_cluster = cmds.skinCluster(
+            self.unused,
+            source_mesh,
+            toSelectedBones=True,
+        )[0]
+        source_weights = cmds.skinPercent(
+            source_cluster,
+            source_mesh + ".vtx[0]",
+            query=True,
+            value=True,
+        )
+        cmds.setAttr(self.unused + ".lockInfluenceWeights", True)
+
+        result = influence_cleanup.remove_unused_influences(
+            self.mesh,
+            protect_locked=False,
+        )
+
+        self.assertEqual(1, len(result["removed"]))
+        self.assertTrue(cmds.getAttr(self.unused + ".lockInfluenceWeights"))
+        self.assertEqual(
+            source_weights,
+            cmds.skinPercent(
+                source_cluster,
+                source_mesh + ".vtx[0]",
+                query=True,
+                value=True,
+            ),
+        )
+        cmds.undo()
+        self.assertTrue(cmds.getAttr(self.unused + ".lockInfluenceWeights"))
+        self.assertIn(
+            self.unused,
+            cmds.skinCluster(self.cluster, query=True, influence=True),
+        )
+
     def test_threshold_controls_small_weight_candidate(self):
         vertex = cmds.ls(self.mesh + ".vtx[*]", flatten=True)[0]
         cmds.skinPercent(
