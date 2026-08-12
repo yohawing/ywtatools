@@ -13,6 +13,8 @@ import maya.cmds as cmds
 FORMAT = "ywta.pose"
 VERSION = 1
 POSE_ID_ATTRIBUTE = "ywtaPoseId"
+BLEND_OPTION = "ywtaPoseLoadBlend"
+SELECTED_ONLY_OPTION = "ywtaPoseLoadSelectedOnly"
 NUMERIC_TYPES = {
     "double",
     "doubleAngle",
@@ -24,6 +26,27 @@ NUMERIC_TYPES = {
     "bool",
 }
 INTEGER_TYPES = {"long", "short", "byte"}
+
+
+def get_load_settings():
+    """optionVarから検証済みPose適用設定を取得する。"""
+    blend = cmds.optionVar(query=BLEND_OPTION) if cmds.optionVar(exists=BLEND_OPTION) else 1.0
+    selected_only = bool(cmds.optionVar(query=SELECTED_ONLY_OPTION)) if cmds.optionVar(exists=SELECTED_ONLY_OPTION) else False
+    if not isinstance(blend, (int, float)) or isinstance(blend, bool) or not math.isfinite(blend) or not 0.0 <= blend <= 1.0:
+        blend = 1.0
+    return float(blend), selected_only
+
+
+def set_load_settings(blend, selected_only):
+    """検証済みPose適用設定をoptionVarへ保存する。"""
+    if not isinstance(blend, (int, float)) or isinstance(blend, bool) or not math.isfinite(blend) or not 0.0 <= blend <= 1.0:
+        raise ValueError("blendは0.0以上1.0以下の有限値にしてください。")
+    if not isinstance(selected_only, bool):
+        raise ValueError("selected_onlyはboolにしてください。")
+    blend = float(blend)
+    cmds.optionVar(floatValue=(BLEND_OPTION, blend))
+    cmds.optionVar(intValue=(SELECTED_ONLY_OPTION, int(selected_only)))
+    return blend, selected_only
 
 
 def _long_nodes(nodes=None):
@@ -369,3 +392,43 @@ def load_pose(selected_only=False, blend=1.0):
     if result["unit_mismatches"]:
         cmds.warning("Pose unit mismatch {}; raw値で適用しました。".format(", ".join(result["unit_mismatches"])))
     return result
+
+
+def load_pose_with_settings():
+    """保存済みBlend/Selected-only設定でPoseファイルを適用する。"""
+    blend, selected_only = get_load_settings()
+    return load_pose(selected_only=selected_only, blend=blend)
+
+
+def show_load_options():
+    """PoseのBlendとSelected-onlyを設定して適用するUIを表示する。"""
+    window = "ywtaPoseLoadOptionsWindow"
+    if cmds.window(window, exists=True):
+        cmds.deleteUI(window)
+    blend, selected_only = get_load_settings()
+    cmds.window(window, title="YWTA Load Pose", sizeable=False)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=8, width=360)
+    blend_field = cmds.floatSliderGrp(
+        label="Blend",
+        field=True,
+        minValue=0.0,
+        maxValue=1.0,
+        fieldMinValue=0.0,
+        fieldMaxValue=1.0,
+        value=blend,
+    )
+    selected_field = cmds.checkBox(
+        label="Apply to selected controls only",
+        value=selected_only,
+    )
+
+    def apply_options(*_args):
+        set_load_settings(
+            cmds.floatSliderGrp(blend_field, query=True, value=True),
+            cmds.checkBox(selected_field, query=True, value=True),
+        )
+        return load_pose_with_settings()
+
+    cmds.button(label="Load Pose...", command=apply_options)
+    cmds.showWindow(window)
+    return window

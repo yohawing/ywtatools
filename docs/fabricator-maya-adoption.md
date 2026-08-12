@@ -53,6 +53,7 @@ Skin JSON は geometry と weight を含むため、大きいメッシュでは�
 - namespace を除いた control 名による別キャラクターへの適用
 - `ywtaPoseId` string 属性による改名に強い明示アドレス
 - blend、選択 control 限定適用、開始フレーム offset、範囲内キー置換
+- PoseのBlend / Selected-onlyを保存・実行できるMaya Option UI
 - Animation ClipのPlace / Replace / Insert適用モード
 - Insert時は解決・適用可能なcontrolだけの後続キーをclip占有フレーム数ぶん移動
 - animCurve は現在フレームへ key を設定し、constraint や計算node駆動属性は上書きしない

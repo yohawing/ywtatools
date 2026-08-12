@@ -11,6 +11,11 @@ from ywta.test import TestCase
 class PoseIoTests(TestCase):
     """namespace 可搬 pose の主要 contract を検証する。"""
 
+    def setUp(self):
+        for option in (pose_io.BLEND_OPTION, pose_io.SELECTED_ONLY_OPTION):
+            if cmds.optionVar(exists=option):
+                cmds.optionVar(remove=option)
+
     def _control(self, namespace, name="hand_ctrl"):
         if namespace and not cmds.namespace(exists=namespace):
             cmds.namespace(add=namespace)
@@ -176,3 +181,15 @@ class PoseIoTests(TestCase):
         pose_io.apply(data)
 
         self.assertEqual(5, cmds.getAttr(target + ".mode"))
+
+    def test_load_settings_round_trip_and_invalid_blend_falls_back(self):
+        self.assertEqual((1.0, False), pose_io.get_load_settings())
+        self.assertEqual((0.25, True), pose_io.set_load_settings(0.25, True))
+        self.assertEqual((0.25, True), pose_io.get_load_settings())
+
+        cmds.optionVar(floatValue=(pose_io.BLEND_OPTION, 2.0))
+
+        self.assertEqual((1.0, True), pose_io.get_load_settings())
+
+    def test_load_options_window_builds(self):
+        self.assertEqual("ywtaPoseLoadOptionsWindow", pose_io.show_load_options())

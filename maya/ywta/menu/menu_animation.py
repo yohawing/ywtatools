@@ -32,17 +32,24 @@ def create_animation_menu(parent_menu):
         command="import ywta.anim.pose_io as pose_io; pose_io.save_selected()",
         annotation="選択コントロールのポーズをnamespace可搬JSONへ保存します",
     )
-    cmds.menuItem(
+    load_pose_item = cmds.menuItem(
         parent=animation_menu,
         label="Load Pose",
-        command="import ywta.anim.pose_io as pose_io; pose_io.load_pose()",
-        annotation="ポーズをscene内の一意に一致するコントロールへ適用します",
+        command="import ywta.anim.pose_io as pose_io; pose_io.load_pose_with_settings()",
+        annotation="保存済みBlend/Selected-only設定でポーズを適用します",
+    )
+    cmds.menuItem(
+        parent=animation_menu,
+        insertAfter=load_pose_item,
+        optionBox=True,
+        command="import ywta.anim.pose_io as pose_io; pose_io.show_load_options()",
+        annotation="PoseのBlendと選択control限定を設定します",
     )
     cmds.menuItem(
         parent=animation_menu,
         label="Load Pose to Selected",
-        command="import ywta.anim.pose_io as pose_io; pose_io.load_pose(selected_only=True)",
-        annotation="ポーズを現在選択中のコントロールだけへ適用します",
+        command="import ywta.anim.pose_io as pose_io; pose_io.load_pose(selected_only=True, blend=pose_io.get_load_settings()[0])",
+        annotation="保存済みBlendで現在選択中のコントロールだけへ適用します",
     )
 
     cmds.menuItem(parent=animation_menu, divider=True, dividerLabel="Animation Clip")
