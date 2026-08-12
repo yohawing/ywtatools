@@ -232,6 +232,24 @@ class SkinIoTests(TestCase):
         after = cmds.skinPercent(self.cluster, self.mesh + ".vtx[0]", query=True, value=True)
         self.assertEqual(before, after)
 
+    def test_invalid_influence_identity_and_oversized_weight_are_rejected(self):
+        """曖昧なidentityと1超weightを外部JSONから受け入れない。"""
+        data = skin_io.capture(self.mesh)
+        target = cmds.duplicate(self.mesh, name="target")[0]
+        cmds.delete(target, constructionHistory=True)
+        invalid_identity = copy.deepcopy(data)
+        invalid_identity["influences"][0]["name"] = " "
+        with self.assertRaises(ValueError):
+            skin_io.apply(target, invalid_identity)
+
+        oversized = copy.deepcopy(data)
+        oversized["weights"][0][0][1] = 1.1
+        with self.assertRaises(ValueError):
+            skin_io.apply(target, oversized)
+
+        target_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
+        self.assertIsNone(skin_io._skin_cluster(target_shape))
+
     def test_missing_influence_is_rejected(self):
         data = skin_io.capture(self.mesh)
         cmds.delete(self.joint_b)

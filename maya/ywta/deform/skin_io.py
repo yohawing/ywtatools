@@ -343,6 +343,10 @@ def _validate_data(data):
             not isinstance(influence, dict)
             or not isinstance(influence.get("name"), str)
             or not isinstance(influence.get("path"), str)
+            or not influence["name"]
+            or influence["name"] != influence["name"].strip()
+            or not influence["path"]
+            or influence["path"] != influence["path"].strip()
         ):
             raise ValueError("influence が不正です。")
         key = (influence.get("path"), influence["name"])
@@ -365,7 +369,13 @@ def _validate_data(data):
             index, value = entry
             if not isinstance(index, int) or isinstance(index, bool) or index < 0 or index >= influence_count or index in seen:
                 raise ValueError("頂点 {} の influence index が不正です。".format(vertex_index))
-            if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value < 0:
+            if (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(value)
+                or value < 0
+                or value > 1.0
+            ):
                 raise ValueError("頂点 {} のウェイト値が不正です。".format(vertex_index))
             seen.add(index)
             total += value
