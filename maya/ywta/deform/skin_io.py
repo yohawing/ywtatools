@@ -789,12 +789,12 @@ def load_temp_selected(transfer_mode=False, surface_association=None):
     selected = cmds.ls(selection=True, long=True) or []
     if len(selected) != 1:
         raise ValueError("一時ウェイトの適用先メッシュを1つ選択してください。")
-    if transfer_mode and surface_association is None:
-        surface_association = get_transfer_settings()
+    if surface_association is None:
+        surface_association = get_transfer_settings() if transfer_mode else SURFACE_ASSOCIATIONS[0]
     return load_temp(
         selected[0],
         transfer_mode=transfer_mode,
-        surface_association=surface_association or SURFACE_ASSOCIATIONS[0],
+        surface_association=surface_association,
     )
 
 
@@ -811,10 +811,11 @@ def load_selected_transfer(surface_association=None):
     )
     if not paths:
         return None
+    association = get_transfer_settings() if surface_association is None else surface_association
     return load_transfer(
         selected[0],
         paths[0],
-        surface_association=surface_association or get_transfer_settings(),
+        surface_association=association,
     )
 
 

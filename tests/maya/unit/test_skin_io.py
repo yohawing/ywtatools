@@ -294,6 +294,19 @@ class SkinIoTests(TestCase):
         self.assertEqual("skinCluster", result)
         load_transfer.assert_called_once_with("|" + self.mesh, path, surface_association="rayCast")
 
+    def test_selected_transfer_preserves_explicit_invalid_association(self):
+        """明示した不正値を保存設定へ暗黙fallbackしない。"""
+        path = self.get_temp_filename("invalid_configured_transfer.json")
+        cmds.select(self.mesh, replace=True)
+
+        with (
+            mock.patch.object(skin_io.cmds, "fileDialog2", return_value=[path]),
+            mock.patch.object(skin_io, "load_transfer", return_value="sentinel") as load_transfer,
+        ):
+            skin_io.load_selected_transfer(surface_association="")
+
+        load_transfer.assert_called_once_with("|" + self.mesh, path, surface_association="")
+
     def test_transfer_requires_saved_geometry_before_edit(self):
         data = skin_io.capture(self.mesh)
         del data["mesh"]["geometry"]
@@ -301,6 +314,17 @@ class SkinIoTests(TestCase):
 
         with self.assertRaises(ValueError):
             skin_io.transfer(target, data)
+
+        target_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
+        self.assertIsNone(skin_io._skin_cluster(target_shape))
+
+    def test_transfer_rejects_unknown_association_before_edit(self):
+        """不正なsurface associationでtargetへskinClusterを作らない。"""
+        data = skin_io.capture(self.mesh)
+        target = cmds.polyPlane(name="retopo", subdivisionsX=2)[0]
+
+        with self.assertRaises(ValueError):
+            skin_io.transfer(target, data, surface_association="")
 
         target_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
         self.assertIsNone(skin_io._skin_cluster(target_shape))
