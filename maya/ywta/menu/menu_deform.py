@@ -21,6 +21,22 @@ def create_deform_menu(parent_menu):
     # スキニング関連
     cmds.menuItem(parent=deform_menu, divider=True, dividerLabel="Skinning")
 
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Save Skin Weights",
+        command="import ywta.deform.skin_io as skin_io; skin_io.save_selected()",
+        image="exportSmoothSkin.png",
+        annotation="選択メッシュのスキンウェイトを検証可能なJSONへ保存します",
+    )
+
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Load Skin Weights (Same Topology)",
+        command="import ywta.deform.skin_io as skin_io; skin_io.load_selected()",
+        image="smoothSkin.png",
+        annotation="同一トポロジーの選択メッシュへスキンウェイトを復元します",
+    )
+
     transfer_shape_menu_item = cmds.menuItem(
         parent=deform_menu,
         label="Transfer Shape",
