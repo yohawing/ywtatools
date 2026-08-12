@@ -133,6 +133,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - Control Combineは子transformを持つsource・参照nodeを編集前拒否し、単一Undo / 失敗rollback
 - Control CreatorのRGB色変更を複数shapeへ適用し、単一Undo / 失敗rollback
 - Edit CVs / Combine / Set ColorはControl Creatorウィンドウから直接実行可能
+- 複数shape controlを1つのtransformとして原子的JSON保存・再作成
 - 事前検証と単一Undo / Redo
 
 ### Scene Audit

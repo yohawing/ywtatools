@@ -63,6 +63,7 @@ import math
 import os
 import logging
 import webbrowser
+import tempfile
 
 import maya.cmds as cmds
 import maya.api.OpenMaya as OpenMaya
@@ -91,9 +92,28 @@ def export_curves(controls=None, file_path=None):
     if controls is None:
         controls = cmds.ls(sl=True)
     data = get_curve_data(controls)
-    with open(file_path, "w") as fh:
-        json.dump(data, fh, indent=4, cls=CurveShapeEncoder)
-        logger.info("Exported controls to {}".format(file_path))
+    target = os.path.abspath(file_path)
+    directory = os.path.dirname(target)
+    if not os.path.isdir(directory):
+        raise ValueError("保存先directoryがありません: {}".format(directory))
+    handle = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        newline="\n",
+        prefix=".ywta_control_",
+        suffix=".json",
+        dir=directory,
+        delete=False,
+    )
+    temporary = handle.name
+    try:
+        with handle:
+            json.dump(data, handle, ensure_ascii=False, indent=4, cls=CurveShapeEncoder)
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+    logger.info("Exported controls to {}".format(target))
     return data
 
 
@@ -105,9 +125,24 @@ def get_curve_data(controls=None):
     """
     if controls is None:
         controls = cmds.ls(sl=True)
-    data = [CurveShape(transform=control) for control in controls]
-    # Prune empty curves
-    data = [x for x in data if x.cvs]
+    data = []
+    seen = set()
+    for control in controls or []:
+        matches = cmds.ls(control, long=True, type="transform") or []
+        if len(matches) != 1:
+            raise ValueError("controlを一意に解決できません: {}".format(control))
+        transform = matches[0]
+        node_uuid = (cmds.ls(transform, uuid=True) or [None])[0]
+        if node_uuid in seen:
+            continue
+        seen.add(node_uuid)
+        shapes = _curve_shapes(transform)
+        if not shapes:
+            raise ValueError("NURBS curve shapeがありません: {}".format(transform))
+        for shape in shapes:
+            curve = _curve_data_from_shape(shape)
+            curve.transform = transform.rsplit("|", 1)[-1]
+            data.append(curve)
     return data
 
 
@@ -120,9 +155,14 @@ def import_new_curves(file_path=None, tag_as_controller=False):
     """
     controls = load_curves(file_path)
     transforms = []
+    mapping = {}
     for curve in controls:
-        transform = _get_new_transform_name(curve.transform)
-        transforms.append(curve.create(transform, tag_as_controller))
+        if curve.transform not in mapping:
+            mapping[curve.transform] = _get_new_transform_name(curve.transform)
+        transform = mapping[curve.transform]
+        curve.create(transform, tag_as_controller)
+        if transform not in transforms:
+            transforms.append(transform)
     return transforms
 
 
@@ -135,7 +175,11 @@ def import_curves(file_path=None, tag_as_controller=False):
     """
     controls = load_curves(file_path)
 
-    transforms = [curve.create(curve.transform, tag_as_controller) for curve in controls]
+    transforms = []
+    for curve in controls:
+        transform = curve.create(curve.transform, tag_as_controller)
+        if transform not in transforms:
+            transforms.append(transform)
     return transforms
 
 
@@ -168,7 +212,7 @@ def load_curves(file_path=None):
         if not file_path:
             return
 
-    with open(file_path, "r") as fh:
+    with open(file_path, "r", encoding="utf-8") as fh:
         data = json.load(fh)
     logger.info("Loaded controls {}".format(file_path))
     curves = [CurveShape(**control) for control in data]
@@ -210,24 +254,13 @@ class CurveShape(object):
         """
         shape = shortcuts.get_shape(transform)
         if shape and cmds.nodeType(shape) == "nurbsCurve":
-            create_attr = "{}.create".format(shape)
-            connection = cmds.listConnections(create_attr, plugs=True, d=False)
-            if connection:
-                cmds.disconnectAttr(connection[0], create_attr)
+            curve = _curve_data_from_shape(shape)
             self.transform = transform
-            self.cvs = cmds.getAttr("{}.cv[*]".format(shape))
-            self.degree = cmds.getAttr("{}.degree".format(shape))
-            self.form = cmds.getAttr("{}.form".format(shape))
-            self.knots = get_knots(shape)
-            if cmds.getAttr("{}.overrideEnabled".format(shape)):
-                if cmds.getAttr("{}.overrideRGBColors".format(shape)):
-                    self.color = cmds.getAttr("{}.overrideColorRGB".format(shape))[0]
-                else:
-                    self.color = cmds.getAttr("{}.overrideColor".format(shape))
-            else:
-                self.color = None
-            if connection:
-                cmds.connectAttr(connection[0], create_attr)
+            self.cvs = curve.cvs
+            self.degree = curve.degree
+            self.form = curve.form
+            self.knots = curve.knots
+            self.color = curve.color
 
     def create(self, transform=None, as_controller=True):
         """Create a curve.
@@ -434,11 +467,25 @@ def _mirrored_control_name(source):
 
 def _curve_data_from_shape(shape):
     """1つのNURBS curve shapeをCurveShapeデータへ変換する。"""
+    function = OpenMaya.MFnNurbsCurve(_dag_path(shape))
+    degree = function.degree
+    form = cmds.getAttr(shape + ".form")
+    points = function.cvPositions(OpenMaya.MSpace.kObject)
+    cvs = [(point.x, point.y, point.z) for point in points]
+    if form == 2:
+        cvs = cvs[:-degree]
+    color = None
+    if cmds.getAttr(shape + ".overrideEnabled"):
+        if cmds.getAttr(shape + ".overrideRGBColors"):
+            color = cmds.getAttr(shape + ".overrideColorRGB")[0]
+        else:
+            color = cmds.getAttr(shape + ".overrideColor")
     return CurveShape(
-        cvs=cmds.getAttr(shape + ".cv[*]"),
-        degree=cmds.getAttr(shape + ".degree"),
-        form=cmds.getAttr(shape + ".form"),
-        knots=get_knots(shape),
+        cvs=cvs,
+        degree=degree,
+        form=form,
+        knots=list(function.knots()),
+        color=color,
     )
 
 
@@ -791,13 +838,8 @@ def get_knots(curve):
     :param curve: Curve to query.
     :return: A list of knot values that can be passed into the curve creation command.
     """
-    curve = shortcuts.get_shape(curve)
-    info = cmds.createNode("curveInfo")
-    cmds.connectAttr("{0}.worldSpace".format(curve), "{0}.inputCurve".format(info))
-    knots = cmds.getAttr("{0}.knots[*]".format(info))
-    knots = [int(x) for x in knots]
-    cmds.delete(info)
-    return knots
+    shape = shortcuts.get_shape(curve)
+    return list(OpenMaya.MFnNurbsCurve(_dag_path(shape)).knots())
 
 
 def documentation():

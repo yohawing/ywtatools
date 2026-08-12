@@ -148,6 +148,35 @@ class ControlSwapTests(TestCase):
 
         self.assertFalse(cmds.getAttr(shape + ".overrideEnabled"))
 
+    def test_multi_shape_control_library_round_trip(self):
+        """複数shapeを1つのtransformとしてJSON保存・新規作成する。"""
+        target = cmds.circle(name="multi_ctrl", sections=4)[0]
+        extra = cmds.circle(name="extra_ctrl", sections=6)[0]
+        extra_shapes = cmds.listRelatives(extra, shapes=True, fullPath=True)
+        cmds.parent(extra_shapes, target, shape=True, relative=True)
+        cmds.delete(extra)
+        path = self.get_temp_filename("multi_control.json")
+
+        data = control.export_curves([target], path)
+        cmds.delete(target)
+        created = control.import_new_curves(path)
+
+        self.assertEqual(2, len(data))
+        self.assertEqual(["multi_ctrl"], created)
+        self.assertEqual(2, len(cmds.listRelatives(created[0], shapes=True, type="nurbsCurve")))
+
+    def test_control_export_rejects_invalid_target_without_replacing_file(self):
+        """不正controlの保存失敗で既存library JSONを置換しない。"""
+        path = self.get_temp_filename("existing_control.json")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("sentinel")
+
+        with self.assertRaises(ValueError):
+            control.export_curves(["missing_ctrl"], path)
+
+        with open(path, "r", encoding="utf-8") as handle:
+            self.assertEqual("sentinel", handle.read())
+
     def test_combine_control_shapes_preserves_world_shape_and_undo(self):
         """source形状をworld位置のままtargetへ移し、1回でUndoする。"""
         source = cmds.curve(name="source_ctrl", degree=1, point=[(0, 0, 0), (1, 2, 0), (2, 0, 1)])
