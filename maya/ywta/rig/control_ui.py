@@ -51,6 +51,7 @@ from ywta.rig.control import (
     rotate_components,
     CONTROLS_DIRECTORY,
     export_shape_to_library,
+    delete_library_shapes,
     rename_library_shape,
     mirror_curve,
     import_curve_files_on_selected,
@@ -316,10 +317,7 @@ class ControlWindow(SingletonWindowMixin, MayaQWidgetBaseMixin, QMainWindow):
                 QMessageBox.Yes | QMessageBox.No,
             )
             if button == QMessageBox.Yes:
-                for item in items:
-                    text = item.text()
-                    control_file = os.path.join(CONTROLS_DIRECTORY, "{0}.json".format(text))
-                    os.remove(control_file)
+                delete_library_shapes([item.text() for item in items])
                 self.populate_controls()
 
     def rename_selected(self):

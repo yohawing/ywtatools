@@ -313,6 +313,46 @@ class ControlSwapTests(TestCase):
         with open(target, "rb") as handle:
             self.assertEqual(target_before, handle.read())
 
+    def test_library_delete_removes_only_validated_entry(self):
+        """有効なlibrary JSONを検証してから削除する。"""
+        target = cmds.circle(name="control")[0]
+        directory = os.path.dirname(self.get_temp_filename("library_marker.tmp"))
+        path = control.export_shape_to_library([target], "obsolete", directory=directory)
+
+        result = control.delete_library_shape("obsolete", directory=directory)
+
+        self.assertEqual(path, result)
+        self.assertFalse(os.path.exists(path))
+
+    def test_library_delete_rejects_traversal_and_malformed_json(self):
+        """library外pathと壊れたentryを削除しない。"""
+        directory = os.path.dirname(self.get_temp_filename("library_marker.tmp"))
+        malformed = os.path.join(directory, "malformed.json")
+        with open(malformed, "w", encoding="utf-8") as handle:
+            handle.write("not-json")
+
+        with self.assertRaises(ValueError):
+            control.delete_library_shape("../outside", directory=directory)
+        with self.assertRaises(ValueError):
+            control.delete_library_shape("malformed", directory=directory)
+
+        self.assertTrue(os.path.exists(malformed))
+
+    def test_library_multi_delete_preflights_every_entry(self):
+        """後半entryが壊れていても前半の有効entryを削除しない。"""
+        target = cmds.circle(name="control")[0]
+        directory = os.path.dirname(self.get_temp_filename("library_marker.tmp"))
+        valid = control.export_shape_to_library([target], "valid", directory=directory)
+        malformed = os.path.join(directory, "malformed.json")
+        with open(malformed, "w", encoding="utf-8") as handle:
+            handle.write("not-json")
+
+        with self.assertRaises(ValueError):
+            control.delete_library_shapes(["valid", "malformed"], directory=directory)
+
+        self.assertTrue(os.path.exists(valid))
+        self.assertTrue(os.path.exists(malformed))
+
     def test_multiple_library_files_build_as_distinct_controls(self):
         """同じ内部名を持つ複数entryも別transformとして1回で作成する。"""
         first = self._line([(0, 0, 0), (1, 0, 0)])

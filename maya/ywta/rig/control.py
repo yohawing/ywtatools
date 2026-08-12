@@ -216,6 +216,45 @@ def rename_library_shape(old_name, new_name, directory=CONTROLS_DIRECTORY):
     return target
 
 
+def _validated_library_path(name, directory):
+    """library名とJSONを検証して削除可能な絶対pathを返す。"""
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", name.strip()):
+        raise ValueError("library名は英数字、underscore、hyphenだけにしてください。")
+    target = os.path.abspath(os.path.join(directory, name.strip() + ".json"))
+    if os.path.dirname(target) != directory or not os.path.isfile(target):
+        raise ValueError("Control library entryがありません: {}".format(name.strip()))
+    load_curves(target)
+    return target
+
+
+def delete_library_shapes(names, directory=CONTROLS_DIRECTORY):
+    """全entryを事前検証してからControl library JSONを削除する。
+
+    Args:
+        names: 削除するlibrary名列。
+        directory: Control library directory。
+
+    Returns:
+        削除したJSONの絶対path列。
+    """
+    if isinstance(names, (str, bytes)) or not isinstance(names, (list, tuple)) or not names:
+        raise ValueError("削除するlibrary名を1つ以上指定してください。")
+    directory = os.path.abspath(directory)
+    if not os.path.isdir(directory):
+        raise ValueError("control library directoryがありません: {}".format(directory))
+    targets = [_validated_library_path(name, directory) for name in names]
+    if len(set(os.path.normcase(target) for target in targets)) != len(targets):
+        raise ValueError("同じControl library entryを複数回削除できません。")
+    for target in targets:
+        os.remove(target)
+    return targets
+
+
+def delete_library_shape(name, directory=CONTROLS_DIRECTORY):
+    """検証済みControl library JSONを1件削除する。"""
+    return delete_library_shapes([name], directory=directory)[0]
+
+
 def get_curve_data(controls=None):
     """Get the serializable data of the given controls.
 
