@@ -66,6 +66,12 @@ def create_deform_menu(parent_menu):
     )
     cmds.menuItem(
         parent=deform_menu,
+        label="Smooth Selected Skin Weights",
+        command="import ywta.deform.skin_smooth as skin_smooth; skin_smooth.smooth_selected()",
+        annotation="選択componentを隣接頂点平均へ50%で1回smoothingします",
+    )
+    cmds.menuItem(
+        parent=deform_menu,
         label="Remove Unused Skin Influences",
         command="import ywta.deform.influence_cleanup as cleanup; cleanup.remove_unused_selected()",
         annotation="全出力meshで未使用のunlocked influenceだけを単一Undoで削除します",
