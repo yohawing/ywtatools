@@ -24,7 +24,7 @@ import maya.cmds as cmds
 
 # Import from core modules instead of deprecated shortcuts
 from ywta.core.ui_utils import SingletonWindowMixin
-from ywta.rig import create_joint, joint_insert, joint_mirror
+from ywta.rig import create_joint, joint_insert, joint_mirror, joint_orient
 
 logger = logging.getLogger(__name__)
 
@@ -361,10 +361,12 @@ class JointEditToolsWindow(SingletonWindowMixin):
             zero_orient(joints)
 
     def _align_with_child(self, *args):
-        """Align selected joints with their children."""
-        joints = self._get_selected_joints()
-        if joints:
-            align_with_child(joints)
+        """選択joint階層を安全に子方向へorientする。"""
+        try:
+            joint_orient.orient_selected(include_descendants=self._get_recursive_setting())
+        except Exception as error:
+            logger.error(f"Failed to orient joints to children: {error}")
+            cmds.warning(f"Failed to orient joints to children: {error}")
 
     def _orient_to_world(self, *args):
         """Orient selected joints to world coordinates."""
@@ -736,34 +738,15 @@ def mirror_joint_attributes(joint: str, word1: str = "Left", word2: str = "Right
 
 
 def align_with_child(joints: List[str]):
-    """Align joints with their child joints.
+    """従来APIから安全な静的joint orientを実行する。
 
     Args:
-        joints: List of joints to align
+        joints: orientするjoint列。
+
+    Returns:
+        orientしたjointのロングパス。
     """
-    for joint in joints:
-        try:
-            children = _unparent_children(joint)
-            if children:
-                # Create aim constraint to align with first child
-                constraint = cmds.aimConstraint(
-                    children[0],
-                    joint,
-                    aim=(1, 0, 0),
-                    upVector=(0, 1, 0),
-                    worldUpType="objectrotation",
-                    worldUpVector=(0, 1, 0),
-                    worldUpObject=children[0],
-                )
-                cmds.delete(constraint)
-                cmds.makeIdentity(joint, apply=True)
-
-            _reparent_children(joint, children)
-        except Exception as e:
-            logger.warning(f"Failed to align joint {joint} with child: {e}")
-
-    if joints:
-        cmds.select(joints)
+    return joint_orient.orient_to_children(joints)
 
 
 def zero_orient(joints: List[str]):

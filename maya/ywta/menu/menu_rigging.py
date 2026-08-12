@@ -60,6 +60,13 @@ def create_rigging_menu(parent_menu):
         annotation="未skinの隣接親子joint間へ指定数を均等挿入します",
     )
 
+    cmds.menuItem(
+        parent=rig_menu,
+        label="Orient Selected Joints to Children",
+        command="import ywta.rig.joint_orient as joint_orient; joint_orient.orient_selected()",
+        annotation="未リグの選択joint階層を+X軸で子方向へ静的orientします",
+    )
+
     create_menu = cmds.menuItem(
         parent=rig_menu,
         subMenu=True,

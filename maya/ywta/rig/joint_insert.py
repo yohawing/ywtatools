@@ -59,7 +59,7 @@ def _planned_names(parent, count, pattern):
     return names
 
 
-def _rig_dependencies(joints):
+def rig_dependencies(joints):
     """階層変更を拒否するskin / constraint / IK依存を返す。"""
     joint_ids = {(cmds.ls(joint, uuid=True) or [None])[0] for joint in joints}
     reasons = []
@@ -101,7 +101,7 @@ def insert_joints(parent, child, count=1, name_pattern="insert_##_jnt"):
     referenced = [joint for joint in (parent, child) if cmds.referenceQuery(joint, isNodeReferenced=True)]
     if referenced:
         raise ValueError("参照jointには挿入できません: {}".format(", ".join(referenced)))
-    dependencies = _rig_dependencies((parent, child))
+    dependencies = rig_dependencies((parent, child))
     if dependencies:
         raise ValueError("skin/constraint/IK接続済みjointには挿入できません: {}".format(", ".join(dependencies)))
     names = _planned_names(parent, count, name_pattern)
