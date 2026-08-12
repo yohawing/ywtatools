@@ -154,6 +154,28 @@ class ClipIoTests(TestCase):
             cmds.keyframe(target, attribute="translateX", query=True, timeChange=True),
         )
 
+    def test_disabling_only_synthetic_anchors_does_not_create_curve(self):
+        """実keyがないchannelでanchorを無効化しても空curveを編集しない。"""
+        source = self._control("source")
+        cmds.setKeyframe(source, attribute="translateX", time=5, value=5.0)
+        data = clip_io.capture([source], start=1, end=10)
+        channel = data["controls"][0]["channels"][0]
+        channel["keys"] = [key for key in channel["keys"] if "synthetic_boundary" in key]
+        cmds.delete(source)
+        target = self._control("target")
+
+        result = clip_io.apply(
+            data,
+            nodes=[target],
+            start_time=20,
+            mode="place",
+            apply_start_anchor=False,
+            apply_end_anchor=False,
+        )
+
+        self.assertEqual(0, result["applied_keys"])
+        self.assertEqual([], cmds.keyframe(target, attribute="translateX", query=True, timeChange=True) or [])
+
     def test_insert_shifts_all_keys_on_resolved_control_and_is_undoable(self):
         source, data = self._source_clip()
         cmds.delete(source)
