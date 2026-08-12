@@ -166,6 +166,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - Control JSON Importはmulti-shapeを単一Undoで作成し、途中失敗時rollback
 - Library Saveは複数controlのworld形状を1 entryへbakeし、既存名の上書きを明示確認
 - Library RenameはJSON schemaを再検証して内部名も更新し、既存entryへの上書きを拒否
+- Build at Originはviewport選択を無視して選択library shapeをworld原点へ新規作成
 - 事前検証と単一Undo / Redo
 
 ### Scene Audit

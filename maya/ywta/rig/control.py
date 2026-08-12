@@ -252,23 +252,39 @@ def import_new_curves(file_path=None, tag_as_controller=False):
     :param tag_as_controller: True to tag the curve transform as a controller
     :return: The new curve transforms
     """
-    controls = load_curves(file_path)
+    if file_path is None:
+        file_path = shortcuts.get_open_file_name("*.json", "ywta.control")
+        if not file_path:
+            return None
+    return import_new_curve_files([file_path], tag_as_controller=tag_as_controller)
+
+
+def import_new_curve_files(file_paths, tag_as_controller=False):
+    """複数Control JSONを事前検証し、原点へ1回のUndoで新規作成する。"""
+    if isinstance(file_paths, (str, bytes)) or not file_paths:
+        raise ValueError("Control JSON pathを1つ以上指定してください。")
+    records = []
+    for file_index, file_path in enumerate(file_paths):
+        controls = load_curves(file_path)
+        for curve in controls:
+            records.append(((file_index, curve.transform), curve))
+
     mapping = {}
     reserved = set()
-    for curve in controls:
-        if curve.transform not in mapping:
+    for key, curve in records:
+        if key not in mapping:
             name = curve.transform
             suffix = 1
             while cmds.objExists(name) or name in reserved:
                 name = "{}{}".format(curve.transform, suffix)
                 suffix += 1
-            mapping[curve.transform] = name
+            mapping[key] = name
             reserved.add(name)
 
     def create():
         transforms = []
-        for curve in controls:
-            transform = mapping[curve.transform]
+        for key, curve in records:
+            transform = mapping[key]
             curve.create(transform, tag_as_controller)
             if transform not in transforms:
                 transforms.append(transform)

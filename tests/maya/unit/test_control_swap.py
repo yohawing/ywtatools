@@ -313,6 +313,39 @@ class ControlSwapTests(TestCase):
         with open(target, "rb") as handle:
             self.assertEqual(target_before, handle.read())
 
+    def test_multiple_library_files_build_as_distinct_controls(self):
+        """同じ内部名を持つ複数entryも別transformとして1回で作成する。"""
+        first = self._line([(0, 0, 0), (1, 0, 0)])
+        second = self._line([(0, 0, 0), (0, 1, 0)])
+        first.transform = "shape"
+        second.transform = "shape"
+        first_path = self.get_temp_filename("first_control.json")
+        second_path = self.get_temp_filename("second_control.json")
+        control._write_curve_data([first], first_path)
+        control._write_curve_data([second], second_path)
+
+        created = control.import_new_curve_files([first_path, second_path])
+
+        self.assertEqual(["shape", "shape1"], created)
+        self.assertTrue(all(cmds.objExists(node) for node in created))
+        cmds.undo()
+        self.assertFalse(any(cmds.objExists(node) for node in created))
+
+    def test_multiple_library_files_validate_before_creating(self):
+        """後続JSONが壊れていれば先行entryも作成しない。"""
+        curve = self._line([(0, 0, 0), (1, 0, 0)])
+        curve.transform = "would_create"
+        valid_path = self.get_temp_filename("valid_control.json")
+        invalid_path = self.get_temp_filename("invalid_control.json")
+        control._write_curve_data([curve], valid_path)
+        with open(invalid_path, "w", encoding="utf-8") as handle:
+            json.dump([{"transform": "broken"}], handle)
+
+        with self.assertRaises(ValueError):
+            control.import_new_curve_files([valid_path, invalid_path])
+
+        self.assertFalse(cmds.objExists("would_create"))
+
     def test_combine_control_shapes_preserves_world_shape_and_undo(self):
         """source形状をworld位置のままtargetへ移し、1回でUndoする。"""
         source = cmds.curve(name="source_ctrl", degree=1, point=[(0, 0, 0), (1, 2, 0), (2, 0, 1)])
