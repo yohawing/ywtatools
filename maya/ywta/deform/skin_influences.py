@@ -108,12 +108,9 @@ def add_influences(meshes, influences, lock_weights=False):
                 edit=True,
                 addInfluence=influence,
                 weight=0.0,
-                lockWeights=lock_weights,
+                lockWeights=lock_weights or original_locks[influence],
             )
             added.append({"cluster": cluster, "influence": influence})
-        for influence in influences:
-            if original_locks[influence] and cmds.attributeQuery("lockInfluenceWeights", node=influence, exists=True):
-                cmds.setAttr("{}.lockInfluenceWeights".format(influence), True)
     except Exception:
         failed = True
         raise
