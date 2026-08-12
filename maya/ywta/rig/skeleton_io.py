@@ -179,6 +179,34 @@ def _validate_channel_state(state, label):
         raise ValueError("{}が不正です。".format(label))
 
 
+def _enum_indices(definition, label):
+    """Maya enum定義を検証し、利用可能なindex集合を返す。"""
+    if not isinstance(definition, str) or not definition:
+        raise ValueError("{} enum定義が不正です。".format(label))
+    indices = set()
+    labels = set()
+    current = -1
+    for field in definition.split(":"):
+        if not field:
+            raise ValueError("{} enum定義が不正です。".format(label))
+        if "=" in field:
+            field_label, explicit = field.rsplit("=", 1)
+            if not field_label or not explicit:
+                raise ValueError("{} enum定義が不正です。".format(label))
+            try:
+                current = int(explicit)
+            except ValueError as error:
+                raise ValueError("{} enum定義が不正です。".format(label)) from error
+        else:
+            field_label = field
+            current += 1
+        if field_label in labels or current in indices:
+            raise ValueError("{} enum定義が重複しています。".format(label))
+        labels.add(field_label)
+        indices.add(current)
+    return indices
+
+
 def _validate_user_attributes(records, joint_name):
     """version 3のuser-defined静的属性recordを完全検証する。"""
     if not isinstance(records, list):
@@ -222,8 +250,10 @@ def _validate_user_attributes(records, joint_name):
                 valid = False
         if not valid:
             raise ValueError("{}.{} valueが不正です。".format(joint_name, name))
-        if attribute_type == "enum" and (not isinstance(record["enum_name"], str) or not record["enum_name"]):
-            raise ValueError("{}.{} enum定義が不正です。".format(joint_name, name))
+        if attribute_type == "enum":
+            label = "{}.{}".format(joint_name, name)
+            if value not in _enum_indices(record["enum_name"], label):
+                raise ValueError("{} enum値が定義外です: {}".format(label, value))
         if attribute_type == "double3":
             children = record["children"]
             if not isinstance(children, list) or len(children) != 3:

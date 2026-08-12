@@ -114,6 +114,7 @@ thumbnail capture、カテゴリ検索、mirrored pose はまだありません�
 - joint label、rotation limit、keyable/channel box/lock状態のround-trip
 - metadata / user attribute追加後のversion 3出力と、既存version 1 / 2 JSONの後方互換読込
 - 数値、bool、enum、string、double3のuser-defined静的属性とchannel状態をround-trip
+- enum定義の空欄/重複indexと定義外値をnamespace作成前に拒否
 - 選択jointのtop jointから保存し、file dialogなしで再利用できるユーザー単位のTemporary Skeleton Clipboard
 - world姿勢を維持してrotateをjointOrientへ統合する明示importモード
 - world位置・回転を維持してjoint scaleを1へbakeするClean Joint TRS import

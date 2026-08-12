@@ -143,6 +143,25 @@ class SkeletonIoTests(TestCase):
 
         self.assertFalse(cmds.namespace(exists="invalid_import"))
 
+    def test_invalid_enum_definition_and_value_fail_before_namespace_creation(self):
+        """壊れたenumをjoint作成やaddAttrより前に拒否する。"""
+        root, child = self._skeleton()
+        cmds.addAttr(child, longName="space", attributeType="enum", enumName="World=1:Chest=5")
+        cmds.setAttr(child + ".space", 5)
+        data = skeleton_io.capture(root)
+        cmds.delete(root)
+
+        invalid_definition = copy.deepcopy(data)
+        invalid_definition["joints"][1]["user_attributes"][0]["enum_name"] = "World=1:Broken=1"
+        with self.assertRaises(ValueError):
+            skeleton_io.create(invalid_definition, namespace="invalid_enum")
+
+        data["joints"][1]["user_attributes"][0]["value"] = 3
+        with self.assertRaises(ValueError):
+            skeleton_io.create(data, namespace="invalid_enum")
+
+        self.assertFalse(cmds.namespace(exists="invalid_enum"))
+
     def test_create_namespace_is_absolute_from_current_namespace(self):
         root, _child = self._skeleton("source")
         data = skeleton_io.capture(root)
