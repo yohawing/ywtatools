@@ -292,6 +292,10 @@ Undo の共通 contract が完成するまで追加しません。
 - hung childはscene単位の既定10分timeoutで終了し、error記録後に次sceneを継続
 - scene list、script、Save 設定を versioned `QSettings` state に保存
 
+入力scriptはPython sandboxではなく、各sceneを開いた`mayapy`内で実行されます。信頼できる
+scriptだけを使用してください。Saveを無効にしても、script自身がfileやsceneを変更する権限は
+制限されません。
+
 汎用 `Export` checkbox は追加していません。FBX / USD、対象 root、出力先、命名規則が
 未定義のままでは安全な動作を決められないためです。FBX は次の専用 Exporter を使用します。
 
