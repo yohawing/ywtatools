@@ -933,6 +933,8 @@ def set_control_color(rgb, transforms=None):
         if node_uuid in seen:
             continue
         seen.add(node_uuid)
+        if cmds.referenceQuery(target, isNodeReferenced=True):
+            raise ValueError("参照controlの表示色は変更できません: {}".format(target))
         target_shapes = _curve_shapes(target)
         if not target_shapes:
             raise ValueError("NURBS curve shapeがありません: {}".format(target))
@@ -1099,6 +1101,8 @@ def swap_curve_shapes(transforms, curves):
         if node_uuid in seen:
             continue
         seen.add(node_uuid)
+        if cmds.referenceQuery(target, isNodeReferenced=True):
+            raise ValueError("参照controlのshapeは差し替えできません: {}".format(target))
         old_shapes = _curve_shapes(target)
         if not old_shapes:
             raise ValueError("NURBS curve shapeがありません: {}".format(target))

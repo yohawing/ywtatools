@@ -152,6 +152,27 @@ class ControlSwapTests(TestCase):
 
         self.assertFalse(cmds.getAttr(shape + ".overrideEnabled"))
 
+    def test_referenced_control_mutations_reject_before_edit(self):
+        """参照controlへ色・shapeのreference editを作らない。"""
+        target = cmds.circle(name="referenced_ctrl")[0]
+        shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
+        curve = self._line([(0, 0, 0), (2, 0, 0)])
+        original_reference_query = control.cmds.referenceQuery
+
+        def reference_query(node, **kwargs):
+            if kwargs.get("isNodeReferenced") and node == "|referenced_ctrl":
+                return True
+            return original_reference_query(node, **kwargs)
+
+        with mock.patch.object(control.cmds, "referenceQuery", side_effect=reference_query):
+            with self.assertRaises(ValueError):
+                control.set_control_color((0.1, 0.2, 0.3), target)
+            with self.assertRaises(ValueError):
+                control.swap_curve_shapes(target, [curve])
+
+        self.assertFalse(cmds.getAttr(shape + ".overrideEnabled"))
+        self.assertTrue(cmds.objExists(shape))
+
     def test_shape_edit_apis_accept_single_control_string(self):
         """色変更・CV選択・shape swapで単一文字列を1nodeとして扱う。"""
         target = cmds.circle(name="single_ctrl", sections=4)[0]
