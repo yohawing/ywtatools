@@ -143,11 +143,19 @@ def insert_joints(parent, child, count=1, name_pattern="insert_##_jnt"):
 
 
 def insert_selected(count=1, name_pattern="insert_##_jnt"):
-    """選択順の親、子joint間へjointを挿入する。"""
+    """選択した隣接2 jointから親子を判定してjointを挿入する。"""
     selected = cmds.ls(selection=True, long=True, type="joint") or []
     if len(selected) != 2:
-        raise ValueError("隣接する親joint、子jointの順に2つ選択してください。")
-    return insert_joints(selected[0], selected[1], count=count, name_pattern=name_pattern)
+        raise ValueError("隣接するjointを2つ選択してください。")
+    first_parent = cmds.listRelatives(selected[0], parent=True, fullPath=True, type="joint") or []
+    second_parent = cmds.listRelatives(selected[1], parent=True, fullPath=True, type="joint") or []
+    if second_parent == [selected[0]]:
+        parent, child = selected
+    elif first_parent == [selected[1]]:
+        child, parent = selected
+    else:
+        raise ValueError("選択jointは直接の親子ではありません。")
+    return insert_joints(parent, child, count=count, name_pattern=name_pattern)
 
 
 def show_options():

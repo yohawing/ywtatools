@@ -121,6 +121,14 @@ class JointInsertTests(TestCase):
         self.assertEqual(["|character:parent_jnt|character:insert_01_jnt"], created)
         self.assertFalse(cmds.objExists(":working:character:insert_01_jnt"))
 
+    def test_selected_entry_accepts_reverse_child_parent_order(self):
+        parent, child = self._chain()
+        cmds.select(child, parent, replace=True)
+
+        created = joint_insert.insert_selected()
+
+        self.assertEqual(["|parent_jnt|insert_01_jnt"], created)
+
     def test_second_insert_failure_rolls_back_first_insert(self):
         parent, child = self._chain()
         original_insert = joint_insert.cmds.insertJoint

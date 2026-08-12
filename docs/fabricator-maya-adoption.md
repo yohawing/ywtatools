@@ -132,7 +132,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 
 メニュー: `YWTA > Rigging > Insert Joints Between Selected...`
 
-- 隣接する親joint、子joint間へ1～99個をworld位置で均等挿入
+- 選択順に依存せず、隣接する親子joint間へ1～99個をworld位置で均等挿入
 - namespaceを親から継承し、`#`桁数による連番名を作成前検証
 - 子jointのworld matrixを維持し、挿入・再parent・選択を単一Undo / Redo
 - 分岐joint、参照joint、skinCluster / constraint / IK接続済みjointは編集前拒否
