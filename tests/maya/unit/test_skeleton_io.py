@@ -188,6 +188,19 @@ class SkeletonIoTests(TestCase):
 
         self.assertFalse(cmds.namespace(exists="valid"))
 
+    def test_maya_sanitized_joint_name_fails_before_namespace_creation(self):
+        """Mayaが自動変換する外部joint名をimport開始前に拒否する。"""
+        root, _child = self._skeleton()
+        data = skeleton_io.capture(root)
+
+        for invalid_name in ("bad name", "1joint", "joint#", "joint-name"):
+            invalid = copy.deepcopy(data)
+            invalid["joints"][0]["name"] = invalid_name
+            with self.assertRaises(ValueError):
+                skeleton_io.create(invalid, namespace="invalid_name")
+
+        self.assertFalse(cmds.namespace(exists="invalid_name"))
+
     def test_existing_root_collision_is_rejected_before_edit(self):
         root, _child = self._skeleton()
         data = skeleton_io.capture(root)

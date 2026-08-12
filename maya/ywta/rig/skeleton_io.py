@@ -299,7 +299,7 @@ def _validate(data):
             raise ValueError("joint {} が不正です。".format(index))
         name = joint.get("name")
         parent = joint.get("parent")
-        if not isinstance(name, str) or not name or "|" in name or ":" in name:
+        if not isinstance(name, str) or not name or "|" in name or ":" in name or cmds.namespace(validateName=name) != name:
             raise ValueError("joint {} の name が不正です。".format(index))
         if index == 0:
             if parent is not None:

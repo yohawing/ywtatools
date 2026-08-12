@@ -130,7 +130,7 @@ thumbnail capture、カテゴリ検索、mirrored pose はまだありません�
 - 実 Maya namespace への import
 - current namespace に影響されない絶対 namespace 解決
 - linear/angle unitとup axis不一致を既定で編集前拒否（APIで明示許可可能）
-- import 前の schema / parent / sibling name / 数値検証
+- import前のschema / parent / sibling name / Mayaが自動変換する不正名 / 数値検証
 - 既存 root と衝突する場合は scene を変更せず拒否
 
 従来の `ywta.rig.skeleton.dump/load` API は互換性のため残していますが、メニューは
