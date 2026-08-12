@@ -12,6 +12,7 @@ import maya.cmds as cmds
 
 FORMAT = "ywta.skeleton"
 VERSION = 1
+TEMP_SKELETON_FILENAME = "ywta_temp_skeleton.json"
 VECTOR_ATTRIBUTES = (
     "translate",
     "rotate",
@@ -410,6 +411,33 @@ def load(
     )
 
 
+def temp_skeleton_path():
+    """Mayaユーザー用の一時Skeleton JSONパスを返す。"""
+    return os.path.join(cmds.internalVar(userAppDir=True), TEMP_SKELETON_FILENAME)
+
+
+def save_temp(root, file_path=None):
+    """root hierarchyを固定または指定の一時JSONへ保存する。"""
+    return save(root, file_path or temp_skeleton_path())
+
+
+def load_temp(
+    file_path=None,
+    namespace="",
+    allow_scene_mismatch=False,
+    bake_to_joint_orient=False,
+    zero_joint_scales=False,
+):
+    """一時Skeleton JSONを既存の検証済みimport経路で再構築する。"""
+    return load(
+        file_path or temp_skeleton_path(),
+        namespace=namespace,
+        allow_scene_mismatch=allow_scene_mismatch,
+        bake_to_joint_orient=bake_to_joint_orient,
+        zero_joint_scales=zero_joint_scales,
+    )
+
+
 def save_selected():
     """選択 root joint をファイルダイアログで保存する。"""
     selected = cmds.ls(selection=True, type="joint", long=True) or []
@@ -424,6 +452,42 @@ def save_selected():
     if not paths:
         return None
     return save(selected[0], paths[0])
+
+
+def save_temp_selected():
+    """選択root jointをMayaユーザー用の一時JSONへ保存する。"""
+    selected = cmds.ls(selection=True, type="joint", long=True) or []
+    if len(selected) != 1:
+        raise ValueError("一時保存するroot jointを1つ選択してください。")
+    path = save_temp(selected[0])
+    cmds.inViewMessage(
+        statusMessage="Saved temporary skeleton.",
+        position="topCenter",
+        fade=True,
+    )
+    return path
+
+
+def load_temp_dialog(
+    bake_to_joint_orient=False,
+    zero_joint_scales=False,
+):
+    """任意namespaceを指定して一時Skeleton JSONをimportする。"""
+    result = cmds.promptDialog(
+        title="Import Temporary Skeleton",
+        message="Namespace (optional):",
+        button=["Import", "Cancel"],
+        defaultButton="Import",
+        cancelButton="Cancel",
+        dismissString="Cancel",
+    )
+    if result != "Import":
+        return None
+    return load_temp(
+        namespace=cmds.promptDialog(query=True, text=True),
+        bake_to_joint_orient=bake_to_joint_orient,
+        zero_joint_scales=zero_joint_scales,
+    )
 
 
 def load_dialog(bake_to_joint_orient=False, zero_joint_scales=False):

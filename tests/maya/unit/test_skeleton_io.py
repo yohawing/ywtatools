@@ -156,6 +156,20 @@ class SkeletonIoTests(TestCase):
         self.assertEqual(cmds.currentUnit(query=True, angle=True), data["scene"]["angle_unit"])
         self.assertEqual(cmds.upAxis(query=True, axis=True), data["scene"]["up_axis"])
 
+    def test_temporary_skeleton_round_trip_uses_validated_import(self):
+        root, _child = self._skeleton()
+        path = self.get_temp_filename("temporary_skeleton.json")
+        skeleton_io.save_temp(root, file_path=path)
+        cmds.delete(root)
+
+        created = skeleton_io.load_temp(
+            file_path=path,
+            namespace="temporary",
+        )
+
+        self.assertEqual("temporary:root_jnt", created[0].rsplit("|", 1)[-1])
+        self.assertEqual("temporary:spine_jnt", created[1].rsplit("|", 1)[-1])
+
     def test_scene_convention_mismatch_is_rejected_before_edit(self):
         root, _child = self._skeleton()
         data = skeleton_io.capture(root)

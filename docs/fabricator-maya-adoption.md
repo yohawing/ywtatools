@@ -73,6 +73,7 @@ thumbnail capture、カテゴリ検索、mirrored pose はまだありません�
 - joint hierarchy を親 index で保存する versioned JSON
 - translate / rotate / scale / jointOrient / rotateAxis / preferredAngle などの round-trip
 - joint label、rotation limit、keyable/channel box/lock状態のround-trip
+- file dialogなしで再利用できるユーザー単位のTemporary Skeleton Clipboard
 - world姿勢を維持してrotateをjointOrientへ統合する明示importモード
 - world位置・回転を維持してjoint scaleを1へbakeするClean Joint TRS import
 - 実 Maya namespace への import
