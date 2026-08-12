@@ -152,6 +152,7 @@ def _validate(data):
         if not isinstance(entry, dict):
             raise ValueError("selection set entry が不正です。")
         label = _validate_label(entry.get("label"))
+        entry["label"] = label
         if label.casefold() in labels:
             raise ValueError("selection set label が重複しています: {}".format(label))
         labels.add(label.casefold())

@@ -1,5 +1,7 @@
 """Portable Selection Sets の Maya 単体テスト。"""
 
+import copy
+
 import maya.cmds as cmds
 
 from ywta.anim import selection_sets
@@ -31,6 +33,18 @@ class SelectionSetsTests(TestCase):
 
         with self.assertRaises(ValueError):
             selection_sets.create_selection_set("hands", [hand])
+
+    def test_import_label_is_trimmed_before_conflict_check(self):
+        """外部labelの周辺空白で既存set衝突を回避できない。"""
+        hand = self._control("character", "hand_ctrl")
+        node = selection_sets.create_selection_set("Hands", [hand])
+        data = copy.deepcopy(selection_sets.capture([node]))
+        data["sets"][0]["label"] = "  Hands  "
+
+        with self.assertRaises(ValueError):
+            selection_sets.apply(data)
+
+        self.assertEqual([node], selection_sets.list_selection_sets())
 
     def test_create_is_single_undoable_action(self):
         hand = self._control("character", "hand_ctrl")
