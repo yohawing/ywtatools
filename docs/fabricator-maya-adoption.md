@@ -128,6 +128,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - shapeのoverride color、display type、静的visibility値、visibility入力接続を新shapeへ継承
 - 複数shape controlに対応
 - side tokenとnamespaceから反対側controlを解決するworld YZ Shape Mirror
+- 選択control直下の全shape CVを、子controlを巻き込まず編集選択
 - 事前検証と単一Undo / Redo
 
 ### Scene Audit

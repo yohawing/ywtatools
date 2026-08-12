@@ -80,6 +80,36 @@ class ControlSwapTests(TestCase):
         new_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
         self.assertFalse(cmds.getAttr(new_shape + ".visibility"))
 
+    def test_select_control_cvs_uses_direct_multi_shapes_only(self):
+        """対象直下の全shape CVを選択し、子controlは含めない。"""
+        parent = cmds.circle(name="parent_ctrl", sections=4)[0]
+        extra = cmds.circle(name="extra_ctrl", sections=6)[0]
+        child = cmds.circle(name="child_ctrl", sections=8)[0]
+        extra_shapes = cmds.listRelatives(extra, shapes=True, fullPath=True)
+        cmds.parent(extra_shapes, parent, shape=True, relative=True)
+        cmds.delete(extra)
+        cmds.parent(child, parent)
+
+        result = control.select_control_cvs([parent])
+
+        expected = []
+        for shape in cmds.listRelatives(parent, shapes=True, fullPath=True) or []:
+            expected.extend(cmds.ls(shape + ".cv[*]", flatten=True, long=True) or [])
+        self.assertEqual(set(result), set(expected))
+        self.assertEqual(set(cmds.ls(selection=True, flatten=True, long=True) or []), set(expected))
+        self.assertFalse(any("child_ctrl" in component for component in result))
+
+    def test_select_control_cvs_preflights_before_selection_change(self):
+        """curveを持たない対象が混じる場合は現在選択を維持する。"""
+        curve = cmds.circle(name="valid_ctrl")[0]
+        invalid = cmds.createNode("transform", name="invalid_ctrl")
+        cmds.select(curve, replace=True)
+
+        with self.assertRaises(ValueError):
+            control.select_control_cvs([curve, invalid])
+
+        self.assertEqual(cmds.ls(selection=True, long=True), ["|valid_ctrl"])
+
     def test_invalid_target_fails_before_other_control_is_changed(self):
         target, old_shape, _driver = self._target()
         curve = self._line([(0, 0, 0), (1, 0, 0)])

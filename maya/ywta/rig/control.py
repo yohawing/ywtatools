@@ -502,6 +502,41 @@ def _curve_shapes(transform):
     )
 
 
+def select_control_cvs(transforms=None):
+    """選択control直下にある全NURBS curve CVを選択する。
+
+    Args:
+        transforms: 対象transform名。省略時は現在選択を使用する。
+
+    Returns:
+        選択したCV componentの一覧。
+    """
+    if transforms is None:
+        transforms = cmds.ls(selection=True, long=True, type="transform") or []
+
+    components = []
+    seen = set()
+    for transform in transforms or []:
+        matches = cmds.ls(transform, long=True, type="transform") or []
+        if len(matches) != 1:
+            raise ValueError("controlを一意に解決できません: {}".format(transform))
+        target = matches[0]
+        node_uuid = (cmds.ls(target, uuid=True) or [None])[0]
+        if node_uuid in seen:
+            continue
+        seen.add(node_uuid)
+        shapes = _curve_shapes(target)
+        if not shapes:
+            raise ValueError("NURBS curve shapeがありません: {}".format(target))
+        for shape in shapes:
+            components.extend(cmds.ls(shape + ".cv[*]", flatten=True, long=True) or [])
+
+    if not components:
+        raise ValueError("編集するcontrolを1つ以上選択してください。")
+    cmds.select(components, replace=True)
+    return components
+
+
 def _shape_display_state(shape):
     """shape差し替え時に保持する表示状態を取得する。"""
     visibility_sources = cmds.listConnections(shape + ".visibility", source=True, destination=False, plugs=True) or []

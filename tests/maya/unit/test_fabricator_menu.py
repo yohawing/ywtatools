@@ -45,6 +45,7 @@ class FabricatorMenuTests(TestCase):
                 "Load Temporary Skeleton",
                 "Swap Selected Control Shapes",
                 "Mirror Selected Control Shape",
+                "Edit Selected Control CVs",
                 "Select Child Joints",
                 "Select Child Meshes",
                 "Select Influencing Joints",

@@ -207,6 +207,13 @@ def create_rigging_menu(parent_menu):
         annotation="選択した片側control形状をworld YZ反転して反対側controlへ差し替えます",
     )
 
+    cmds.menuItem(
+        parent=rig_menu,
+        label="Edit Selected Control CVs",
+        command="import ywta.rig.control as control; control.select_control_cvs()",
+        annotation="選択control直下にある全NURBS curve CVを編集選択します",
+    )
+
     # HumanIK関連
     cmds.menuItem(parent=rig_menu, divider=True, dividerLabel="HumanIK")
 
