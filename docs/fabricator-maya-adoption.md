@@ -331,6 +331,7 @@ import失敗はskipへ変換せず、検証失敗として扱います。
 ## 意図的に未採用の範囲
 
 - Fabricator 固有の modular rig / component binding / Armature blueprint
+- Fabricator Bridge toolbar / shelf / installerの置換（YWTA既存メニューを正本とする）
 - ML AutoSkin と追加依存の自動インストール
 - AI bridge / assistant
 - Project Setup の engine template
