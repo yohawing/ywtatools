@@ -113,6 +113,13 @@ class PoseIoTests(TestCase):
         self.assertAlmostEqual(2.0, cmds.getAttr(target_a + ".translateX"))
         self.assertAlmostEqual(0.0, cmds.getAttr(target_b + ".translateX"))
 
+    def test_missing_explicit_control_rejects_partial_capture(self):
+        """明示controlの一部欠落を黙って無視しない。"""
+        source = self._control("source")
+
+        with self.assertRaises(ValueError):
+            pose_io.capture([source, "missing_ctrl"])
+
     def test_ambiguous_name_fails_before_edit(self):
         source = self._control("source")
         cmds.setAttr(source + ".translateX", 8.0)

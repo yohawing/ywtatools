@@ -169,6 +169,14 @@ class ClipIoTests(TestCase):
         self.assertEqual([5.0], cmds.keyframe(target_hand, attribute="translateX", query=True, timeChange=True))
         self.assertIsNone(cmds.keyframe(target_foot, attribute="translateX", query=True, timeChange=True))
 
+    def test_missing_explicit_control_rejects_partial_capture(self):
+        """明示controlの一部欠落を黙って無視しない。"""
+        source = self._control("source")
+        cmds.setKeyframe(source, attribute="translateX", time=1, value=2.0)
+
+        with self.assertRaises(ValueError):
+            clip_io.capture([source, "missing_ctrl"], start=1, end=1)
+
     def test_enum_keys_resolve_by_label_on_reordered_target(self):
         source = self._control("source")
         cmds.addAttr(
