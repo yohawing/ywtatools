@@ -126,6 +126,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - 空選択ではworld原点へ作成
 - 最後の選択objectがjointなら、そのjointを明示parentにする
 - 参照jointへのparentを編集前拒否し、作成・parent・選択を単一Undo / Redo
+- `Joint Edit Tools`内の`Add Joint`も入力名を使って同じ選択中心・Undo経路を使用
 - `Create at Selection Center` submenuからNull / Locator / Cube / Sphere / Cylinder / Planeを作成
 - 基本objectも選択全体のworld bounding-box中心、空選択ではworld原点へ単一Undoで作成
 

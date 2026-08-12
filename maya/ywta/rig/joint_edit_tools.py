@@ -24,7 +24,7 @@ import maya.cmds as cmds
 
 # Import from core modules instead of deprecated shortcuts
 from ywta.core.ui_utils import SingletonWindowMixin
-from ywta.rig import joint_insert, joint_mirror
+from ywta.rig import create_joint, joint_insert, joint_mirror
 
 logger = logging.getLogger(__name__)
 
@@ -331,19 +331,13 @@ class JointEditToolsWindow(SingletonWindowMixin):
         """Show the window."""
         cmds.showWindow(self.window)
 
-    def _create_joint(self, joint_name: str):
-        """Create a joint with the specified name.
-
-        Args:
-            joint_name: Name of the joint to create
-        """
+    def _create_joint(self, *_args):
+        """入力名で選択中心へjointを安全に作成する。"""
+        joint_name = ""
         try:
-            if cmds.objExists(joint_name):
-                cmds.warning(f"Joint '{joint_name}' already exists")
-                return
             joint_name = cmds.textField(self.create_joint_field, query=True, text=True)
-            cmds.joint(name=joint_name)
-            logger.info(f"Created joint: {joint_name}")
+            created = create_joint.create_joint_at_selection(name=joint_name)
+            logger.info(f"Created joint: {created}")
         except Exception as e:
             logger.error(f"Failed to create joint '{joint_name}': {e}")
             cmds.warning(f"Failed to create joint '{joint_name}': {e}")

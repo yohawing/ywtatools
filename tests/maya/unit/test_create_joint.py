@@ -1,8 +1,10 @@
 """選択中心joint作成のMaya単体テスト。"""
 
+from unittest import mock
+
 import maya.cmds as cmds
 
-from ywta.rig import create_joint
+from ywta.rig import create_joint, joint_edit_tools
 from ywta.test import TestCase
 
 
@@ -73,3 +75,20 @@ class CreateJointTests(TestCase):
         self.assertEqual(2, len(joints))
         cmds.undo()
         self.assertFalse(any(cmds.objExists(joint) for joint in joints))
+
+    def test_joint_edit_tools_routes_create_through_safe_entry(self):
+        """旧windowのAdd Jointも選択中心とUndoの共通経路を使う。"""
+        window = joint_edit_tools.JointEditToolsWindow.__new__(joint_edit_tools.JointEditToolsWindow)
+        window.create_joint_field = "nameField"
+
+        with (
+            mock.patch.object(joint_edit_tools.cmds, "textField", return_value="helper_jnt"),
+            mock.patch.object(
+                joint_edit_tools.create_joint,
+                "create_joint_at_selection",
+                return_value="|helper_jnt",
+            ) as create_at_selection,
+        ):
+            window._create_joint(False)
+
+        create_at_selection.assert_called_once_with(name="helper_jnt")
