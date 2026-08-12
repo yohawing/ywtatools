@@ -148,13 +148,29 @@ def combine(meshes=None, name="combined_skinned_mesh"):
     duplicates = []
     try:
         for source in sources:
-            duplicates.extend(cmds.duplicate(source, returnRootsOnly=True))
+            duplicate = cmds.duplicate(source, returnRootsOnly=True)[0]
+            child_transforms = [
+                child
+                for child in cmds.listRelatives(
+                    duplicate,
+                    children=True,
+                    fullPath=True,
+                )
+                or []
+                if cmds.objectType(child, isAType="transform")
+            ]
+            if child_transforms:
+                cmds.delete(child_transforms)
+            duplicates.append(duplicate)
         combined = cmds.polyUnite(
             duplicates,
             constructionHistory=False,
             mergeUVSets=True,
             name=_absolute_name(name),
         )[0]
+        stale_duplicates = [duplicate for duplicate in duplicates if cmds.objExists(duplicate)]
+        if stale_duplicates:
+            cmds.delete(stale_duplicates)
         combined = (cmds.ls(combined, long=True) or [combined])[0]
         if combined.rsplit("|", 1)[-1] != name:
             raise RuntimeError("結合先名が競合しています: {} -> {}".format(name, combined))

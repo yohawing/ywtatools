@@ -78,6 +78,37 @@ class CombineSkinnedTests(TestCase):
             for actual, expected_value in zip(actual_row, expected_row):
                 self.assertAlmostEqual(expected_value, actual)
 
+    def test_combine_does_not_duplicate_source_child_transforms(self):
+        """mesh補助階層をsourceへ残し、出力やsceneへ複製しない。"""
+        left_helper = cmds.spaceLocator(name="left_helper")[0]
+        right_helper = cmds.spaceLocator(name="right_helper")[0]
+        cmds.parent(left_helper, self.left)
+        cmds.parent(right_helper, self.right)
+
+        result = combine_skinned.combine(
+            [self.left, self.right],
+            name="body_mesh",
+        )
+
+        self.assertEqual(1, len(cmds.ls("left_helper", long=True)))
+        self.assertEqual(1, len(cmds.ls("right_helper", long=True)))
+        self.assertTrue(cmds.objExists(self.left + "|left_helper"))
+        self.assertTrue(cmds.objExists(self.right + "|right_helper"))
+        descendants = (
+            cmds.listRelatives(
+                result["mesh"],
+                allDescendents=True,
+                fullPath=True,
+            )
+            or []
+        )
+        self.assertTrue(descendants)
+        self.assertTrue(all(cmds.nodeType(node) == "mesh" for node in descendants))
+
+        cmds.undo()
+        self.assertEqual(1, len(cmds.ls("left_helper", long=True)))
+        self.assertEqual(1, len(cmds.ls("right_helper", long=True)))
+
     def test_connectivity_mismatch_rolls_back_without_changing_sources(self):
         """座標が一致してもface connectivity不一致なら結合を残さない。"""
         left_uuid = cmds.ls(self.left, uuid=True)[0]
