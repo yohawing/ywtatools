@@ -163,3 +163,17 @@ class SeparateSkinnedTests(TestCase):
             [piece["mesh"].rsplit("|", 1)[-1] for piece in result["pieces"]],
         )
         self.assertFalse(cmds.objExists(":working:character:body_shell01"))
+
+    def test_unqualified_explicit_base_name_targets_root_namespace(self):
+        source, _left, _right, _shading_groups = self._source()
+        cmds.namespace(add="working")
+        cmds.namespace(set="working")
+
+        result = separate_skinned.separate(source, base_name="piece")
+        cmds.namespace(set=":")
+
+        self.assertEqual(
+            ["piece01", "piece02"],
+            [piece["mesh"].rsplit("|", 1)[-1] for piece in result["pieces"]],
+        )
+        self.assertFalse(cmds.objExists(":working:piece01"))

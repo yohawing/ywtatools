@@ -10,8 +10,8 @@ from ywta.deform import skin_weight_command
 
 
 def _absolute_name(name):
-    """namespace付き名をcurrent namespace非依存にする。"""
-    return ":" + name.lstrip(":") if ":" in name else name
+    """出力名をcurrent namespace非依存にする。"""
+    return ":" + name.lstrip(":")
 
 
 def _shell_plans(function):

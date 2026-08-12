@@ -122,3 +122,16 @@ class CombineSkinnedTests(TestCase):
 
         self.assertEqual("character:body_mesh", result["mesh"].rsplit("|", 1)[-1])
         self.assertFalse(cmds.objExists(":working:character:body_mesh"))
+
+    def test_unqualified_output_name_targets_root_namespace(self):
+        cmds.namespace(add="working")
+        cmds.namespace(set="working")
+
+        result = combine_skinned.combine(
+            [self.left, self.right],
+            name="body_mesh",
+        )
+        cmds.namespace(set=":")
+
+        self.assertEqual("body_mesh", result["mesh"].rsplit("|", 1)[-1])
+        self.assertFalse(cmds.objExists(":working:body_mesh"))
