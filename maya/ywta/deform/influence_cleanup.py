@@ -12,6 +12,8 @@ from ywta.deform import skin_io
 
 
 DEFAULT_THRESHOLD = 1.0e-8
+THRESHOLD_OPTION = "ywtaUnusedInfluenceThreshold"
+PROTECT_LOCKED_OPTION = "ywtaUnusedInfluenceProtectLocked"
 
 
 def _threshold(value):
@@ -19,6 +21,27 @@ def _threshold(value):
     if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value < 0.0:
         raise ValueError("threshold は0以上の有限値にしてください。")
     return float(value)
+
+
+def get_settings():
+    """optionVarから検証済みcleanup設定を取得する。"""
+    threshold = cmds.optionVar(query=THRESHOLD_OPTION) if cmds.optionVar(exists=THRESHOLD_OPTION) else DEFAULT_THRESHOLD
+    protect_locked = bool(cmds.optionVar(query=PROTECT_LOCKED_OPTION)) if cmds.optionVar(exists=PROTECT_LOCKED_OPTION) else True
+    try:
+        threshold = _threshold(threshold)
+    except ValueError:
+        threshold = DEFAULT_THRESHOLD
+    return threshold, protect_locked
+
+
+def set_settings(threshold, protect_locked):
+    """検証済みcleanup設定をoptionVarへ保存する。"""
+    threshold = _threshold(threshold)
+    if not isinstance(protect_locked, bool):
+        raise ValueError("protect_locked は bool にしてください。")
+    cmds.optionVar(floatValue=(THRESHOLD_OPTION, threshold))
+    cmds.optionVar(intValue=(PROTECT_LOCKED_OPTION, int(protect_locked)))
+    return threshold, protect_locked
 
 
 def _cluster_geometries(cluster):
@@ -148,9 +171,13 @@ def remove_unused_influences(
     return {"removed": removed, "protected": protected}
 
 
-def remove_unused_selected():
-    """現在選択 mesh の未使用 influence を既定 threshold で削除する。"""
-    result = remove_unused_influences()
+def remove_unused_selected(threshold=None, protect_locked=None):
+    """現在選択meshの未使用influenceを保存済み設定で削除する。"""
+    saved_threshold, saved_protect_locked = get_settings()
+    result = remove_unused_influences(
+        threshold=saved_threshold if threshold is None else threshold,
+        protect_locked=(saved_protect_locked if protect_locked is None else protect_locked),
+    )
     if result["removed"]:
         cmds.inViewMessage(
             statusMessage="Removed {} unused skin influence(s).".format(len(result["removed"])),
@@ -160,3 +187,34 @@ def remove_unused_selected():
     else:
         cmds.warning("未使用 skin influence はありません。")
     return result
+
+
+def show_options():
+    """未使用influence削除のthresholdとlock保護を設定するUIを表示する。"""
+    window = "ywtaUnusedInfluenceOptionsWindow"
+    if cmds.window(window, exists=True):
+        cmds.deleteUI(window)
+    threshold, protect_locked = get_settings()
+    cmds.window(window, title="YWTA Remove Unused Influences", sizeable=False)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=8, width=390)
+    threshold_field = cmds.floatFieldGrp(
+        label="Max Weight Threshold",
+        numberOfFields=1,
+        value1=threshold,
+        precision=10,
+    )
+    protect_field = cmds.checkBox(
+        label="Protect locked influences",
+        value=protect_locked,
+    )
+
+    def apply_options(*_args):
+        values = set_settings(
+            cmds.floatFieldGrp(threshold_field, query=True, value1=True),
+            cmds.checkBox(protect_field, query=True, value=True),
+        )
+        return remove_unused_selected(*values)
+
+    cmds.button(label="Remove Unused", command=apply_options)
+    cmds.showWindow(window)
+    return window

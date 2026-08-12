@@ -10,6 +10,12 @@ class InfluenceCleanupTests(TestCase):
     """全geometry走査、lock保護、Undoを検証する。"""
 
     def setUp(self):
+        for option in (
+            influence_cleanup.THRESHOLD_OPTION,
+            influence_cleanup.PROTECT_LOCKED_OPTION,
+        ):
+            if cmds.optionVar(exists=option):
+                cmds.optionVar(remove=option)
         self.mesh = cmds.polyPlane(name="cloth")[0]
         cmds.select(clear=True)
         self.root = cmds.joint(name="root_jnt", position=(-1.0, 0.0, 0.0))
@@ -92,3 +98,24 @@ class InfluenceCleanupTests(TestCase):
             influence_cleanup.remove_unused_influences([self.mesh], threshold=-1.0)
 
         self.assertEqual(before, cmds.skinCluster(self.cluster, query=True, influence=True))
+
+    def test_settings_round_trip_and_invalid_threshold_falls_back(self):
+        self.assertEqual(
+            (influence_cleanup.DEFAULT_THRESHOLD, True),
+            influence_cleanup.get_settings(),
+        )
+        self.assertEqual((0.001, False), influence_cleanup.set_settings(0.001, False))
+        self.assertEqual((0.001, False), influence_cleanup.get_settings())
+
+        cmds.optionVar(floatValue=(influence_cleanup.THRESHOLD_OPTION, -1.0))
+
+        self.assertEqual(
+            (influence_cleanup.DEFAULT_THRESHOLD, False),
+            influence_cleanup.get_settings(),
+        )
+
+    def test_options_window_builds(self):
+        self.assertEqual(
+            "ywtaUnusedInfluenceOptionsWindow",
+            influence_cleanup.show_options(),
+        )
