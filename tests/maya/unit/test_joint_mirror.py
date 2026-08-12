@@ -86,6 +86,23 @@ class JointMirrorTests(TestCase):
 
         self.assertEqual(before, cmds.ls(type="joint", long=True))
 
+    def test_non_joint_child_fails_before_undo_requirement(self):
+        """mirrorJointが補助DAG nodeを複製する前に階層を拒否する。"""
+        root, _child = self._chain()
+        helper = cmds.spaceLocator(name="attachment")[0]
+        cmds.parent(helper, root)
+        before = cmds.ls(long=True)
+
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            with self.assertRaises(ValueError):
+                joint_mirror.mirror_hierarchy(root)
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+        self.assertEqual(before, cmds.ls(long=True))
+        self.assertFalse(cmds.objExists("R_arm_jnt"))
+
     def test_mid_rename_failure_rolls_back_created_hierarchy(self):
         root, _child = self._chain()
         original_rename = cmds.rename

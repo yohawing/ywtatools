@@ -79,6 +79,10 @@ def _hierarchy(root):
 def plan(root):
     """sceneを変更せずmirror元と予定名を完全検証する。"""
     root = _joint_path(root)
+    descendants = cmds.listRelatives(root, allDescendents=True, fullPath=True) or []
+    invalid = [node for node in descendants if cmds.nodeType(node) != "joint"]
+    if invalid:
+        raise ValueError("joint以外の子DAG nodeを含む階層はmirrorできません: {}".format(", ".join(invalid)))
     sources = _hierarchy(root)
     targets = [mirrored_name(source) for source in sources]
     if len(set(targets)) != len(targets):
