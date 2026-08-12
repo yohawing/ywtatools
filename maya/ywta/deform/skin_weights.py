@@ -207,7 +207,10 @@ def _set_uniform_weights(shape, indices, data, chunk_name):
 def paste_vertex_weights(vertices=None, data=None, clipboard_file=None):
     """clipboard ウェイトを選択頂点群へ貼り付ける。"""
     if data is None:
-        data = _CLIPBOARD if _CLIPBOARD is not None else read_clipboard(clipboard_file)
+        source = os.path.abspath(clipboard_file or clipboard_path())
+        data = read_clipboard(source) if os.path.isfile(source) else _CLIPBOARD
+        if data is None:
+            raise ValueError("先にコピー元vertexのウェイトをコピーしてください。")
     shape, indices = _selected_vertex_indices(vertices)
     return _set_uniform_weights(shape, indices, data, "YWTA Paste Vertex Weights")
 

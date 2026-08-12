@@ -108,3 +108,17 @@ class SkinWeightsTests(TestCase):
             )
 
         self.assertEqual(before, self._weights(self.vertices[3]))
+
+    def test_disk_clipboard_wins_over_stale_process_cache(self):
+        path = self.get_temp_filename("shared_weight_clipboard.json")
+        stale = skin_weights.capture_vertex_weights(self.vertices[0])
+        current = skin_weights.capture_vertex_weights(self.vertices[3])
+        skin_weights._CLIPBOARD = stale
+        skin_weights.write_clipboard(current, file_path=path)
+
+        skin_weights.paste_vertex_weights(
+            [self.vertices[1]],
+            clipboard_file=path,
+        )
+
+        self.assertEqual(current["weights"], self._weights(self.vertices[1]))
