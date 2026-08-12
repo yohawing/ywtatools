@@ -60,6 +60,22 @@ class SkinInfluenceTests(TestCase):
         self.assertTrue(cmds.getAttr(self.extra + ".lockInfluenceWeights"))
         self.assertIn(self.extra, self._influences())
 
+    def test_undo_explicit_lock_restores_existing_joint_global_state(self):
+        """追加Undoで別skinClusterが共有するjoint-global lockも元へ戻す。"""
+        source_mesh = cmds.polyPlane(name="source_cloth")[0]
+        cmds.skinCluster(self.extra, source_mesh, toSelectedBones=True)
+        cmds.setAttr(self.extra + ".lockInfluenceWeights", False)
+
+        skin_influences.add_influences(
+            self.mesh,
+            self.extra,
+            lock_weights=True,
+        )
+        cmds.undo()
+
+        self.assertFalse(cmds.getAttr(self.extra + ".lockInfluenceWeights"))
+        self.assertNotIn(self.extra, self._influences())
+
     def test_remove_unused_is_one_undo(self):
         skin_influences.add_influences([self.mesh], [self.extra])
         cmds.flushUndo()
