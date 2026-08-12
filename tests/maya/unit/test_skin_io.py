@@ -60,6 +60,23 @@ class SkinIoTests(TestCase):
             for expected, actual in zip(expected_row, actual_row):
                 self.assertAlmostEqual(expected[1], actual[1], places=6)
 
+    def test_direct_apply_rejects_locked_influence_without_weight_change(self):
+        """locked influenceがあるtargetへ部分的なbulk writeを行わない。"""
+        data = skin_io.capture(self.mesh)
+        vertex = self.mesh + ".vtx[0]"
+        cmds.skinPercent(
+            self.cluster,
+            vertex,
+            transformValue=((self.joint_a, 0.25), (self.joint_b, 0.75)),
+        )
+        before = skin_io.capture(self.mesh)["weights"]
+        cmds.setAttr(self.joint_b + ".lockInfluenceWeights", True)
+
+        with self.assertRaises(ValueError):
+            skin_io.apply(self.mesh, data)
+
+        self.assertEqual(before, skin_io.capture(self.mesh)["weights"])
+
     def test_save_and_read_round_trip(self):
         path = self.get_temp_filename("weights.json")
 
@@ -339,6 +356,19 @@ class SkinIoTests(TestCase):
 
         target_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
         self.assertIsNone(skin_io._skin_cluster(target_shape))
+
+    def test_transfer_locked_influence_rolls_back_new_target_cluster(self):
+        """locked拒否時にtarget clusterや一時source meshを残さない。"""
+        data = skin_io.capture(self.mesh)
+        target = cmds.polyPlane(name="retopo", subdivisionsX=2)[0]
+        cmds.setAttr(self.joint_a + ".lockInfluenceWeights", True)
+
+        with self.assertRaises(ValueError):
+            skin_io.transfer(target, data)
+
+        target_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
+        self.assertIsNone(skin_io._skin_cluster(target_shape))
+        self.assertFalse(cmds.ls("__ywtaSkinTransferSource*", type="transform"))
 
     def test_transfer_zeros_existing_extra_influence(self):
         data = skin_io.capture(self.mesh)

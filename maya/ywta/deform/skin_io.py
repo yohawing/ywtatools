@@ -439,6 +439,23 @@ def _ensure_skin_cluster(shape, influences):
     return cluster
 
 
+def _require_unlocked_nodes(influences):
+    """指定influence jointのlockをscene編集前に検証する。"""
+    locked = []
+    for influence in influences:
+        plug = influence + ".lockInfluenceWeights"
+        if cmds.objExists(plug) and cmds.getAttr(plug):
+            locked.append(influence)
+    if locked:
+        raise ValueError("locked influenceがあるためSkin IOを適用できません: {}".format(", ".join(locked)))
+
+
+def _require_unlocked_influences(cluster):
+    """target skinClusterの全influence lockを検証する。"""
+    fn_skin = oma.MFnSkinCluster(_depend_node(cluster))
+    _require_unlocked_nodes([path.fullPathName() for path in fn_skin.influenceObjects()])
+
+
 def _restore_selection(selection):
     """存在する元selectionを復元し、全欠落時はclearする。"""
     valid = [item for item in selection if cmds.objExists(item)]
@@ -526,6 +543,7 @@ def apply(mesh, data):
     shape = _mesh_shape(mesh)
     _ensure_topology(shape, data["mesh"]["topology"])
     influences = _resolve_influences(data["influences"])
+    _require_unlocked_nodes(influences)
     original_selection = cmds.ls(selection=True, long=True) or []
 
     undo_utils.require_enabled("Skin IO Load")
@@ -533,6 +551,7 @@ def apply(mesh, data):
     failed = False
     try:
         cluster = _ensure_skin_cluster(shape, influences)
+        _require_unlocked_influences(cluster)
         _write_weights(shape, cluster, influences, data)
     except Exception:
         failed = True
@@ -565,6 +584,7 @@ def apply_subset(mesh, data, vertex_indices):
         data["mesh"]["topology"]["vertex_count"],
     )
     influences = _resolve_influences(data["influences"])
+    _require_unlocked_nodes(influences)
     if _skin_cluster(shape) is None:
         raise ValueError("部分適用には既存skinClusterが必要です: {}".format(shape))
     original_selection = cmds.ls(selection=True, long=True) or []
@@ -574,6 +594,7 @@ def apply_subset(mesh, data, vertex_indices):
     failed = False
     try:
         cluster = _ensure_skin_cluster(shape, influences)
+        _require_unlocked_influences(cluster)
         _write_weights(
             shape,
             cluster,
@@ -662,6 +683,7 @@ def transfer(mesh, data, surface_association="closestPoint"):
     _ensure_transfer_convention(data)
     target_shape = _mesh_shape(mesh)
     influences = _resolve_influences(data["influences"])
+    _require_unlocked_nodes(influences)
     original_selection = cmds.ls(selection=True, long=True) or []
 
     undo_utils.require_enabled("Skin IO Transfer")
@@ -669,10 +691,11 @@ def transfer(mesh, data, surface_association="closestPoint"):
     failed = False
     temporary = None
     try:
+        target_cluster = _ensure_skin_cluster(target_shape, influences)
+        _require_unlocked_influences(target_cluster)
         temporary, source_shape = _create_transfer_source(geometry)
         source_cluster = _ensure_skin_cluster(source_shape, influences)
         _write_weights(source_shape, source_cluster, influences, data)
-        target_cluster = _ensure_skin_cluster(target_shape, influences)
         cmds.copySkinWeights(
             sourceSkin=source_cluster,
             destinationSkin=target_cluster,

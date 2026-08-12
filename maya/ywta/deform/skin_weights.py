@@ -210,6 +210,7 @@ def _set_uniform_weight_groups(groups, data, chunk_name):
     """検証済みclipboardウェイトを複数meshへ単一Undoで設定する。"""
     data = _validate_weights(data)
     influences = skin_io._resolve_influences(data["influences"])
+    skin_io._require_unlocked_nodes(influences)
     original_selection = cmds.ls(selection=True, long=True, flatten=True) or []
     undo_utils.require_enabled(chunk_name)
     cmds.undoInfo(openChunk=True, chunkName=chunk_name)
