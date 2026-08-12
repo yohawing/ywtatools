@@ -101,8 +101,6 @@ def rename_nodes(nodes, names):
     source_ids = set()
     for node, name in zip(long_nodes, names):
         _validate_leaf(name)
-        if cmds.referenceQuery(node, isNodeReferenced=True):
-            raise ValueError("参照nodeはrenameできません: {}".format(node))
         source_namespace = _split_leaf(node)[0]
         name = name.lstrip(":")
         if ":" not in name:
@@ -126,6 +124,13 @@ def rename_nodes(nodes, names):
 
     if all(record["name"] == _resolve_uuid(record["uuid"]).rsplit("|", 1)[-1] for record in records):
         return [_resolve_uuid(record["uuid"]) for record in records]
+    referenced = [
+        _resolve_uuid(record["uuid"])
+        for record in records
+        if cmds.referenceQuery(_resolve_uuid(record["uuid"]), isNodeReferenced=True)
+    ]
+    if referenced:
+        raise ValueError("参照nodeはrenameできません: {}".format(", ".join(referenced)))
 
     undo_utils.require_enabled("Name Tools")
     cmds.undoInfo(openChunk=True, chunkName="YWTA Name Tools")

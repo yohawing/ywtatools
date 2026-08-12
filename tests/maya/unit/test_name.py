@@ -181,6 +181,25 @@ class NameToolsTests(TestCase):
         self.assertTrue(cmds.objExists("referenced"))
         self.assertFalse(cmds.objExists("new_local"))
 
+    def test_referenced_noop_does_not_require_undo(self):
+        """参照nodeでも名前が変わらない操作はread-only結果を返す。"""
+        referenced = cmds.createNode("transform", name="referenced")
+        original_reference_query = name_tools.cmds.referenceQuery
+
+        def reference_query(node, **kwargs):
+            if kwargs.get("isNodeReferenced") and node == "|referenced":
+                return True
+            return original_reference_query(node, **kwargs)
+
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            with mock.patch.object(name_tools.cmds, "referenceQuery", side_effect=reference_query):
+                result = name_tools.find_replace("missing", "other", [referenced])
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+        self.assertEqual(["|referenced"], result)
+
     def test_select_by_name_unions_patterns_without_duplicates(self):
         left = cmds.createNode("transform", name="arm_L_jnt")
         right = cmds.createNode("transform", name="arm_R_jnt")
