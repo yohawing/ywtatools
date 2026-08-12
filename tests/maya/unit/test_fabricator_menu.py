@@ -1,5 +1,8 @@
 """Fabricator参考Maya機能のメニュー到達性テスト。"""
 
+import ast
+import importlib
+
 from unittest import mock
 
 import maya.cmds as cmds
@@ -15,6 +18,70 @@ from ywta.test import TestCase
 class FabricatorMenuTests(TestCase):
     """主要機能のmenu labelとPython command構文を固定する。"""
 
+    ADOPTION_MODULES = {
+        "ywta.anim.clip_io",
+        "ywta.anim.pose_io",
+        "ywta.anim.selection_sets",
+        "ywta.deform.combine_skinned",
+        "ywta.deform.influence_cleanup",
+        "ywta.deform.separate_skinned",
+        "ywta.deform.skin_influences",
+        "ywta.deform.skin_io",
+        "ywta.deform.skin_mirror",
+        "ywta.deform.skin_smooth",
+        "ywta.deform.skin_weights",
+        "ywta.io.fbx_exporter",
+        "ywta.name",
+        "ywta.pipeline.batch_runner",
+        "ywta.rig.constraint_tools",
+        "ywta.rig.control",
+        "ywta.rig.create_joint",
+        "ywta.rig.create_object",
+        "ywta.rig.joint_duplicate",
+        "ywta.rig.joint_insert",
+        "ywta.rig.joint_mirror",
+        "ywta.rig.joint_orient",
+        "ywta.rig.joint_size",
+        "ywta.rig.selection_tools",
+        "ywta.rig.skeleton_io",
+        "ywta.utility.scene_audit",
+    }
+
+    @staticmethod
+    def _resolve_reference(node, namespace):
+        """AST上の名前参照を、呼び出さずに解決する。"""
+        if isinstance(node, ast.Name):
+            return namespace[node.id]
+        if isinstance(node, ast.Attribute):
+            return getattr(FabricatorMenuTests._resolve_reference(node.value, namespace), node.attr)
+        raise TypeError("解決できないmenu command参照です: {}".format(ast.dump(node)))
+
+    @classmethod
+    def _assert_command_targets_exist(cls, command):
+        """menu commandのimport先と呼び出し対象が存在することを確認する。"""
+        tree = ast.parse(command, filename="<YWTA Menu Command>", mode="exec")
+        namespace = {}
+        for statement in tree.body:
+            if not isinstance(statement, ast.Import):
+                continue
+            for imported in statement.names:
+                if imported.name not in cls.ADOPTION_MODULES:
+                    continue
+                module = importlib.import_module(imported.name)
+                if imported.asname:
+                    namespace[imported.asname] = module
+                else:
+                    namespace[imported.name.split(".")[0]] = importlib.import_module(imported.name.split(".")[0])
+        for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call)):
+            root = call.func
+            while isinstance(root, ast.Attribute):
+                root = root.value
+            if not isinstance(root, ast.Name) or root.id not in namespace:
+                continue
+            target = cls._resolve_reference(call.func, namespace)
+            if not callable(target):
+                raise TypeError("menu commandの呼び出し対象がcallableではありません: {}".format(command))
+
     @staticmethod
     def _build(builder):
         calls = []
@@ -28,7 +95,7 @@ class FabricatorMenuTests(TestCase):
         labels = {call.get("label") for call in calls if call.get("label")}
         commands = [call["command"] for call in calls if isinstance(call.get("command"), str)]
         for command in commands:
-            compile(command, "<YWTA Menu Command>", "exec")
+            FabricatorMenuTests._assert_command_targets_exist(command)
         return labels
 
     def test_rigging_adoption_entries_are_reachable(self):
@@ -166,4 +233,4 @@ class FabricatorMenuTests(TestCase):
         )
         for call in calls:
             if isinstance(call.get("command"), str):
-                compile(call["command"], "<YWTA Menu Command>", "exec")
+                self._assert_command_targets_exist(call["command"])
