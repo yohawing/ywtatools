@@ -15,12 +15,13 @@ from ywta.test import TestCase
 class BatchRunnerTests(TestCase):
     """scene ごとの mayapy 隔離と失敗継続を検証する。"""
 
-    def _scene(self, name):
-        path = self.get_temp_filename(name + ".ma")
+    def _scene(self, name, extension=".ma"):
+        path = self.get_temp_filename(name + extension)
         cmds.file(new=True, force=True)
         cmds.createNode("transform", name="asset")
         cmds.file(rename=path)
-        cmds.file(save=True, type="mayaAscii", force=True)
+        file_type = "mayaAscii" if extension == ".ma" else "mayaBinary"
+        cmds.file(save=True, type=file_type, force=True)
         return path
 
     def test_batch_runs_each_scene_in_fresh_process_and_saves(self):
@@ -42,6 +43,24 @@ cmds.setAttr('asset.batchValue', 42)
             self.assertEqual(42, cmds.getAttr("asset.batchValue"))
             leftovers = [name for name in os.listdir(os.path.dirname(scene)) if name.startswith(".ywta_batch_scene_")]
             self.assertFalse(leftovers)
+
+    def test_batch_saves_maya_binary_atomically(self):
+        """Maya Binaryも同じ拡張子の一時sceneから原子的に置換する。"""
+        scene = self._scene("binary", extension=".mb")
+        script = "cmds.addAttr('asset', longName='batchBinary', attributeType='bool')"
+
+        results = batch_runner.run_batch(
+            [scene],
+            script=script,
+            save=True,
+            mayapy_path=sys.executable,
+        )
+
+        self.assertEqual("ok", results[0]["report"]["status"])
+        cmds.file(scene, open=True, force=True)
+        self.assertTrue(cmds.objExists("asset.batchBinary"))
+        leftovers = [name for name in os.listdir(os.path.dirname(scene)) if name.startswith(".ywta_batch_scene_")]
+        self.assertFalse(leftovers)
 
     def test_batch_continues_after_scene_failure(self):
         bad = self._scene("bad")
