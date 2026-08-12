@@ -214,6 +214,13 @@ def create_rigging_menu(parent_menu):
         annotation="選択control直下にある全NURBS curve CVを編集選択します",
     )
 
+    cmds.menuItem(
+        parent=rig_menu,
+        label="Combine Selected Control Shapes",
+        command="import ywta.rig.control as control; control.combine_control_shapes()",
+        annotation="最後のcontrolへworld形状を維持して結合し、他の選択controlを削除します",
+    )
+
     # HumanIK関連
     cmds.menuItem(parent=rig_menu, divider=True, dividerLabel="HumanIK")
 

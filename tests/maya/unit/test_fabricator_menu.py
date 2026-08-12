@@ -46,6 +46,7 @@ class FabricatorMenuTests(TestCase):
                 "Swap Selected Control Shapes",
                 "Mirror Selected Control Shape",
                 "Edit Selected Control CVs",
+                "Combine Selected Control Shapes",
                 "Select Child Joints",
                 "Select Child Meshes",
                 "Select Influencing Joints",

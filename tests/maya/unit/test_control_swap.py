@@ -110,6 +110,57 @@ class ControlSwapTests(TestCase):
 
         self.assertEqual(cmds.ls(selection=True, long=True), ["|valid_ctrl"])
 
+    def test_combine_control_shapes_preserves_world_shape_and_undo(self):
+        """source形状をworld位置のままtargetへ移し、1回でUndoする。"""
+        source = cmds.curve(name="source_ctrl", degree=1, point=[(0, 0, 0), (1, 2, 0), (2, 0, 1)])
+        target = cmds.circle(name="target_ctrl", degree=1, sections=4)[0]
+        cmds.setAttr(source + ".translate", 3.0, 1.0, -2.0)
+        cmds.setAttr(source + ".rotate", 10.0, 20.0, -15.0)
+        cmds.setAttr(target + ".translate", -4.0, 2.0, 1.0)
+        cmds.setAttr(target + ".rotate", -5.0, 30.0, 8.0)
+        source_shape = cmds.listRelatives(source, shapes=True, fullPath=True)[0]
+        expected = [
+            cmds.pointPosition("{}.cv[{}]".format(source_shape, index), world=True)
+            for index in range(cmds.getAttr(source_shape + ".controlPoints", size=True))
+        ]
+        target_uuid = cmds.ls(target, uuid=True)[0]
+
+        result = control.combine_control_shapes([source, target])
+
+        self.assertEqual("|target_ctrl", result)
+        self.assertFalse(cmds.objExists(source))
+        self.assertEqual(target_uuid, cmds.ls(target, uuid=True)[0])
+        shapes = cmds.listRelatives(target, shapes=True, fullPath=True, type="nurbsCurve")
+        self.assertEqual(2, len(shapes))
+        combined_shape = next(shape for shape in shapes if cmds.getAttr(shape + ".controlPoints", size=True) == 3)
+        actual = [cmds.pointPosition("{}.cv[{}]".format(combined_shape, index), world=True) for index in range(3)]
+        for expected_point, actual_point in zip(expected, actual):
+            for expected_value, actual_value in zip(expected_point, actual_point):
+                self.assertAlmostEqual(expected_value, actual_value)
+
+        cmds.undo()
+        self.assertTrue(cmds.objExists(source))
+        self.assertEqual(1, len(cmds.listRelatives(target, shapes=True, type="nurbsCurve")))
+        cmds.redo()
+        self.assertFalse(cmds.objExists(source))
+        self.assertEqual(2, len(cmds.listRelatives(target, shapes=True, type="nurbsCurve")))
+
+    def test_combine_control_shapes_rejects_source_with_child(self):
+        """source削除で子階層も消える選択を編集前に拒否する。"""
+        parent = cmds.circle(name="parent_ctrl")[0]
+        child = cmds.circle(name="child_ctrl")[0]
+        cmds.parent(child, parent)
+        target = cmds.circle(name="target_ctrl")[0]
+        cmds.select(parent, target, replace=True)
+
+        with self.assertRaises(ValueError):
+            control.combine_control_shapes([parent, target])
+
+        self.assertTrue(cmds.objExists(parent))
+        self.assertTrue(cmds.objExists(child))
+        self.assertTrue(cmds.objExists(target))
+        self.assertEqual(cmds.ls(selection=True, long=True), ["|parent_ctrl", "|target_ctrl"])
+
     def test_invalid_target_fails_before_other_control_is_changed(self):
         target, old_shape, _driver = self._target()
         curve = self._line([(0, 0, 0), (1, 0, 0)])

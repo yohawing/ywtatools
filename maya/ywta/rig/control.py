@@ -537,6 +537,81 @@ def select_control_cvs(transforms=None):
     return components
 
 
+def combine_control_shapes(transforms=None):
+    """複数controlを最後のtransformへworld形状を維持して結合する。
+
+    最後以外のsource transformは削除する。親子関係にある選択や参照nodeは、
+    targetや未選択の子階層を誤って削除しないよう編集前に拒否する。
+
+    Args:
+        transforms: 選択順のcontrol transform名。省略時は現在選択を使用する。
+
+    Returns:
+        結合先controlのロングパス。
+    """
+    if transforms is None:
+        transforms = cmds.ls(selection=True, long=True, type="transform") or []
+
+    resolved = []
+    seen = set()
+    for transform in transforms or []:
+        matches = cmds.ls(transform, long=True, type="transform") or []
+        if len(matches) != 1:
+            raise ValueError("controlを一意に解決できません: {}".format(transform))
+        target = matches[0]
+        node_uuid = (cmds.ls(target, uuid=True) or [None])[0]
+        if node_uuid in seen:
+            raise ValueError("同じcontrolを複数回指定できません: {}".format(target))
+        seen.add(node_uuid)
+        resolved.append(target)
+    if len(resolved) < 2:
+        raise ValueError("結合するcontrolを2つ以上選択してください。")
+
+    for index, transform in enumerate(resolved):
+        if cmds.referenceQuery(transform, isNodeReferenced=True):
+            raise ValueError("参照controlは結合できません: {}".format(transform))
+        if not _curve_shapes(transform):
+            raise ValueError("NURBS curve shapeがありません: {}".format(transform))
+        descendants = set(cmds.listRelatives(transform, allDescendents=True, fullPath=True, type="transform") or [])
+        if index < len(resolved) - 1 and descendants:
+            raise ValueError("子transformを持つsource controlは結合できません: {}".format(transform))
+
+    destination = resolved[-1]
+    destination_inverse = _dag_path(destination).inclusiveMatrixInverse()
+    plans = []
+    for source in resolved[:-1]:
+        source_matrix = _dag_path(source).inclusiveMatrix()
+        for shape in _curve_shapes(source):
+            curve = _curve_data_from_shape(shape)
+            world_points = [OpenMaya.MPoint(*point) * source_matrix for point in curve.cvs]
+            local_points = [point * destination_inverse for point in world_points]
+            curve.cvs = [(point.x, point.y, point.z) for point in local_points]
+            plans.append((curve, _shape_display_state(shape)))
+
+    undo_utils.require_enabled("Combine Control Shapes")
+    cmds.undoInfo(openChunk=True, chunkName="YWTA Combine Control Shapes")
+    failed = False
+    try:
+        for curve, state in plans:
+            before = set(_curve_shapes(destination))
+            curve.create(destination, as_controller=False)
+            created = [shape for shape in _curve_shapes(destination) if shape not in before]
+            if len(created) != 1:
+                raise RuntimeError("curve shapeを一意に作成できません: {}".format(destination))
+            _apply_shape_display_state(created[0], state)
+        cmds.delete(resolved[:-1])
+        destination = (cmds.ls(destination, long=True, type="transform") or [destination])[0]
+        cmds.select(destination, replace=True)
+    except Exception:
+        failed = True
+        raise
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        if failed:
+            cmds.undo()
+    return destination
+
+
 def _shape_display_state(shape):
     """shape差し替え時に保持する表示状態を取得する。"""
     visibility_sources = cmds.listConnections(shape + ".visibility", source=True, destination=False, plugs=True) or []
