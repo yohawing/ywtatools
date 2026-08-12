@@ -457,6 +457,41 @@ class ControlSwapTests(TestCase):
             for expected_value, actual_value in zip(expected_point, actual_point):
                 self.assertAlmostEqual(expected_value, actual_value)
 
+    def test_smart_mirror_preserves_all_source_shapes(self):
+        """Multi-shape controlの全curveをworld YZ反転する。"""
+        source = cmds.circle(name="L_multi_ctrl", degree=1, sections=4)[0]
+        extra = cmds.curve(name="extra", degree=1, point=[(0, 0, 0), (0, 2, 1), (0, 0, 2)])
+        extra_shape = cmds.listRelatives(extra, shapes=True, fullPath=True)[0]
+        cmds.parent(extra_shape, source, relative=True, shape=True)
+        cmds.delete(extra)
+        target = cmds.circle(name="R_multi_ctrl", degree=1, sections=4)[0]
+        cmds.setAttr(source + ".translate", 2.0, 1.0, -3.0)
+        cmds.setAttr(target + ".translate", -4.0, 2.0, 1.0)
+        expected = []
+        for shape in cmds.listRelatives(source, shapes=True, fullPath=True, type="nurbsCurve"):
+            expected.append(
+                [
+                    (-point[0], point[1], point[2])
+                    for point in (
+                        cmds.pointPosition("{}.cv[{}]".format(shape, index), world=True)
+                        for index in range(cmds.getAttr(shape + ".controlPoints", size=True))
+                    )
+                ]
+            )
+
+        control.mirror_control_shapes(source)
+
+        target_shapes = cmds.listRelatives(target, shapes=True, fullPath=True, type="nurbsCurve")
+        self.assertEqual(2, len(target_shapes))
+        for shape, expected_points in zip(target_shapes, expected):
+            actual_points = [
+                cmds.pointPosition("{}.cv[{}]".format(shape, index), world=True)
+                for index in range(cmds.getAttr(shape + ".controlPoints", size=True))
+            ]
+            for expected_point, actual_point in zip(expected_points, actual_points):
+                for expected_value, actual_value in zip(expected_point, actual_point):
+                    self.assertAlmostEqual(expected_value, actual_value)
+
     def test_smart_mirror_rejects_missing_side_token_before_edit(self):
         source = cmds.circle(name="center_ctrl")[0]
         target = cmds.circle(name="target_ctrl")[0]
