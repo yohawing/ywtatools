@@ -236,6 +236,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - 複数skinCluster・複数output geometryを重複なしで処理
 - Python APIは単一node文字列とnode列の両方を同じ契約で処理
 - 最後に選択したtargetのworld pivotへ複数transformを位置だけ単一UndoでSnap
+- 親子sourceが混在してもDAG親から順に移動し、入力順に依存せず全sourceをtargetへ一致
 - Snap sourceはtransform派生に限定し、参照sourceへのreference editを編集前拒否
 
 ### Control Shape Swap
