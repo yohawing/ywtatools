@@ -58,6 +58,23 @@ cmds.setAttr('asset.completed', True)
         cmds.file(good, open=True, force=True)
         self.assertTrue(cmds.getAttr("asset.completed"))
 
+    def test_save_rejects_script_that_renames_current_scene(self):
+        """Save checkboxで入力scene以外を暗黙保存しない。"""
+        scene = self._scene("source")
+        redirected = self.get_temp_filename("redirected.ma")
+        script = "cmds.file(rename={!r})".format(redirected)
+
+        results = batch_runner.run_batch(
+            [scene],
+            script=script,
+            save=True,
+            mayapy_path=sys.executable,
+        )
+
+        self.assertEqual("error", results[0]["report"]["status"])
+        self.assertIn("scene path", results[0]["report"]["error"])
+        self.assertFalse(os.path.exists(redirected))
+
     def test_validate_scenes_deduplicates_case_insensitively(self):
         scene = self._scene("single")
 

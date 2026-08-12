@@ -57,6 +57,9 @@ def run(payload_path, report_path):
             exec(compile(script, "<ywta-batch-script>", "exec"), scope, scope)
             report["stages"].append("script_ok")
         if save:
+            current_scene = cmds.file(query=True, sceneName=True)
+            if os.path.normcase(os.path.abspath(current_scene)) != os.path.normcase(os.path.abspath(scene)):
+                raise RuntimeError("script実行後のscene pathが入力sceneと一致しません: {}".format(current_scene))
             print("[batch] SAVE {}".format(scene), flush=True)
             cmds.file(save=True, force=True)
             report["stages"].append("saved")
