@@ -134,6 +134,7 @@ deprecatedなlive mirror networkは採用していません。既存rigのDG接�
 - Control CreatorのRGB色変更を複数shapeへ適用し、単一Undo / 失敗rollback
 - Edit CVs / Combine / Set ColorはControl Creatorウィンドウから直接実行可能
 - 複数shape controlを1つのtransformとして原子的JSON保存・再作成
+- 外部Control JSONの全curve schema / CV / knot / colorを作成前検証
 - 事前検証と単一Undo / Redo
 
 ### Scene Audit

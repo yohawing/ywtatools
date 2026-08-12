@@ -214,9 +214,74 @@ def load_curves(file_path=None):
 
     with open(file_path, "r", encoding="utf-8") as fh:
         data = json.load(fh)
+    _validate_curve_payload(data)
     logger.info("Loaded controls {}".format(file_path))
     curves = [CurveShape(**control) for control in data]
     return curves
+
+
+def _validate_curve_payload(data):
+    """Control JSON全体をscene編集前に検証する。"""
+    if not isinstance(data, list) or not data:
+        raise ValueError("Control JSONは1件以上のcurve配列にしてください。")
+    required = {"transform", "cvs", "degree", "form", "knots", "color"}
+    for record_index, record in enumerate(data):
+        if not isinstance(record, dict) or set(record) != required:
+            raise ValueError("curve recordの項目が不正です: {}".format(record_index))
+        transform = record["transform"]
+        if not isinstance(transform, str) or not transform.strip() or "|" in transform:
+            raise ValueError("curve transform名が不正です: {}".format(record_index))
+        degree = record["degree"]
+        form = record["form"]
+        if not isinstance(degree, int) or isinstance(degree, bool) or degree < 1:
+            raise ValueError("curve degreeが不正です: {}".format(record_index))
+        if not isinstance(form, int) or isinstance(form, bool) or form not in {0, 1, 2}:
+            raise ValueError("curve formが不正です: {}".format(record_index))
+        cvs = record["cvs"]
+        if not isinstance(cvs, list) or len(cvs) < degree + 1:
+            raise ValueError("curve CV数が不足しています: {}".format(record_index))
+        for point in cvs:
+            if (
+                not isinstance(point, (list, tuple))
+                or len(point) != 3
+                or any(
+                    not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(float(value))
+                    for value in point
+                )
+            ):
+                raise ValueError("curve CVが不正です: {}".format(record_index))
+        knots = record["knots"]
+        expected_knots = len(cvs) + degree - 1
+        if form == 2:
+            expected_knots += degree
+        if (
+            not isinstance(knots, list)
+            or len(knots) != expected_knots
+            or any(
+                not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(float(value))
+                for value in knots
+            )
+            or any(float(left) > float(right) for left, right in zip(knots, knots[1:]))
+        ):
+            raise ValueError("curve knot列が不正です: {}".format(record_index))
+        color = record["color"]
+        if color is None:
+            continue
+        if isinstance(color, int) and not isinstance(color, bool) and 0 <= color <= 31:
+            continue
+        if (
+            isinstance(color, (list, tuple))
+            and len(color) == 3
+            and all(
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and math.isfinite(float(value))
+                and 0.0 <= float(value) <= 1.0
+                for value in color
+            )
+        ):
+            continue
+        raise ValueError("curve colorが不正です: {}".format(record_index))
 
 
 def _get_new_transform_name(base):

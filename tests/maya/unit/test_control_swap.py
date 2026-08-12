@@ -1,5 +1,7 @@
 """Control curve shape差し替えのMaya単体テスト。"""
 
+import json
+
 import maya.cmds as cmds
 
 from ywta.rig import control
@@ -176,6 +178,27 @@ class ControlSwapTests(TestCase):
 
         with open(path, "r", encoding="utf-8") as handle:
             self.assertEqual("sentinel", handle.read())
+
+    def test_invalid_control_record_is_rejected_before_import(self):
+        """後半recordが壊れたJSONからtransformを部分作成しない。"""
+        path = self.get_temp_filename("invalid_control.json")
+        valid = {
+            "transform": "safe_ctrl",
+            "cvs": [[0, 0, 0], [1, 0, 0]],
+            "degree": 1,
+            "form": 0,
+            "knots": [0, 1],
+            "color": None,
+        }
+        invalid = dict(valid, transform="broken_ctrl", knots=[1, 0])
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump([valid, invalid], handle)
+
+        with self.assertRaises(ValueError):
+            control.import_new_curves(path)
+
+        self.assertFalse(cmds.objExists("safe_ctrl"))
+        self.assertFalse(cmds.objExists("broken_ctrl"))
 
     def test_combine_control_shapes_preserves_world_shape_and_undo(self):
         """source形状をworld位置のままtargetへ移し、1回でUndoする。"""
