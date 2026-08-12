@@ -330,6 +330,11 @@ Temporary Clipboardを読み書きしません。`mayapy`へ必要な許可済�
 [tests/README.md](../tests/README.md)を参照してください。依存欠落によるtest moduleの
 import失敗はskipへ変換せず、検証失敗として扱います。
 
+メニューcommandのimport先・呼び出し対象と、`maya.cmds`ベースのOption/Utility UIは
+単体テストで構築確認します。`Control Creator`と`Batch Runner`のQtトップレベルwindowは、
+standalone/offscreenを実Maya GUIの代替証拠にせず、Maya 2024 GUI上のsmoke確認を
+リリース前に別途行ってください。
+
 ## 意図的に未採用の範囲
 
 - Fabricator 固有の modular rig / component binding / Armature blueprint
