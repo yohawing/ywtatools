@@ -55,6 +55,40 @@ class TestJointSizeTools(unittest.TestCase):
         # 他のジョイントは変更されていないかチェック
         self.assertAlmostEqual(cmds.getAttr(f"{self.other_root}.radius"), 0.5, places=3)
 
+    def test_set_joint_size_is_single_undoable_action(self):
+        """階層全体のradius変更を1回でUndo/Redoする。"""
+        cmds.select(self.root_joint)
+
+        joint_size.set_joint_size_hierarchy(2.0, selected_only=True)
+        cmds.undo()
+
+        for joint in [self.root_joint, self.child1, self.child2]:
+            self.assertAlmostEqual(0.5, cmds.getAttr(joint + ".radius"), places=3)
+        cmds.redo()
+        for joint in [self.root_joint, self.child1, self.child2]:
+            self.assertAlmostEqual(2.0, cmds.getAttr(joint + ".radius"), places=3)
+
+    def test_locked_descendant_rejects_before_edit(self):
+        """変更不能な子が混じる場合はrootも変更しない。"""
+        cmds.setAttr(self.child2 + ".radius", lock=True)
+        cmds.select(self.root_joint)
+
+        with self.assertRaises(ValueError):
+            joint_size.set_joint_size_hierarchy(2.0, selected_only=True)
+
+        self.assertAlmostEqual(0.5, cmds.getAttr(self.root_joint + ".radius"), places=3)
+        self.assertAlmostEqual(0.5, cmds.getAttr(self.child1 + ".radius"), places=3)
+
+    def test_invalid_size_rejects_before_edit(self):
+        """非正値・非有限値をradiusへ渡さない。"""
+        cmds.select(self.root_joint)
+
+        for value in (0.0, -1.0, float("nan"), True):
+            with self.assertRaises(ValueError):
+                joint_size.set_joint_size_hierarchy(value, selected_only=True)
+
+        self.assertAlmostEqual(0.5, cmds.getAttr(self.root_joint + ".radius"), places=3)
+
     def test_set_joint_size_hierarchy_all(self):
         """全ジョイントのサイズ設定テスト"""
         # 全ジョイントのサイズを設定

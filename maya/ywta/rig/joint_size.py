@@ -4,49 +4,79 @@ Joint Size Tools
 ジョイントのサイズを一括で設定するためのツール
 """
 
-import maya.cmds as cmds
+import math
 from typing import Optional
 
+import maya.cmds as cmds
 
-def set_joint_size_hierarchy(joint_size: float = 1.0, selected_only: bool = True) -> None:
+from ywta.core import undo_utils
+
+
+def _target_joints(selected_only):
+    """対象jointを階層順・重複なしのロングパスで返す。"""
+    if selected_only:
+        selected = cmds.ls(selection=True, type="joint", long=True) or []
+        if not selected:
+            return []
+        joints = []
+        for joint in selected:
+            joints.append(joint)
+            joints.extend(cmds.listRelatives(joint, allDescendents=True, type="joint", fullPath=True) or [])
+    else:
+        joints = cmds.ls(type="joint", long=True) or []
+    return list(dict.fromkeys(joints))
+
+
+def _validate_targets(joints):
+    """radius変更不能なjointがあれば編集前に拒否する。"""
+    for joint in joints:
+        plug = joint + ".radius"
+        if cmds.referenceQuery(joint, isNodeReferenced=True):
+            raise ValueError("参照jointのradiusは変更できません: {}".format(joint))
+        if cmds.getAttr(plug, lock=True):
+            raise ValueError("radiusがlockされています: {}".format(joint))
+        incoming = cmds.listConnections(plug, source=True, destination=False, plugs=True) or []
+        if incoming:
+            raise ValueError("radiusに入力接続があります: {}".format(joint))
+
+
+def set_joint_size_hierarchy(joint_size: float = 1.0, selected_only: bool = True):
     """選択されたジョイントとその階層下のジョイントサイズを一括設定
 
     Args:
         joint_size: 設定するジョイントサイズ
         selected_only: Trueの場合は選択されたジョイントのみ、Falseの場合は全ジョイント
     """
-    if selected_only:
-        selected = cmds.ls(selection=True, type="joint")
-        if not selected:
-            cmds.warning("ジョイントが選択されていません。")
-            return
-
-        # 選択されたジョイントとその階層下のジョイントを取得
-        joints_to_process = []
-        for joint in selected:
-            joints_to_process.append(joint)
-            # 階層下のジョイントを取得
-            children = cmds.listRelatives(joint, allDescendents=True, type="joint") or []
-            joints_to_process.extend(children)
-    else:
-        # シーン内の全ジョイントを取得
-        joints_to_process = cmds.ls(type="joint")
-
+    if (
+        not isinstance(joint_size, (int, float))
+        or isinstance(joint_size, bool)
+        or not math.isfinite(joint_size)
+        or joint_size <= 0.0
+    ):
+        raise ValueError("joint sizeは0より大きい有限値にしてください。")
+    if not isinstance(selected_only, bool):
+        raise ValueError("selected_onlyはboolで指定してください。")
+    joints_to_process = _target_joints(selected_only)
     if not joints_to_process:
-        cmds.warning("処理対象のジョイントが見つかりません。")
-        return
+        cmds.warning("ジョイントが選択されていません。" if selected_only else "処理対象のジョイントが見つかりません。")
+        return []
+    _validate_targets(joints_to_process)
 
-    # 重複を除去
-    joints_to_process = list(set(joints_to_process))
-
-    # ジョイントサイズを設定
-    for joint in joints_to_process:
-        try:
-            cmds.setAttr(f"{joint}.radius", joint_size)
-        except Exception as e:
-            cmds.warning(f"ジョイント '{joint}' のサイズ設定に失敗しました: {str(e)}")
-
-    print(f"{len(joints_to_process)}個のジョイントのサイズを{joint_size}に設定しました。")
+    undo_utils.require_enabled("Set Joint Size")
+    cmds.undoInfo(openChunk=True, chunkName="YWTA Set Joint Size")
+    failed = False
+    try:
+        for joint in joints_to_process:
+            cmds.setAttr(joint + ".radius", float(joint_size))
+    except Exception:
+        failed = True
+        raise
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        if failed:
+            cmds.undo()
+    print("{}個のジョイントのサイズを{}に設定しました。".format(len(joints_to_process), joint_size))
+    return joints_to_process
 
 
 def get_joint_size_from_selection() -> Optional[float]:
@@ -61,7 +91,7 @@ def get_joint_size_from_selection() -> Optional[float]:
 
     try:
         return cmds.getAttr(f"{selected[0]}.radius")
-    except:
+    except (RuntimeError, ValueError):
         return None
 
 
@@ -82,14 +112,13 @@ def show_joint_size_ui():
     )
 
     # メインレイアウト
-    # main_layout = cmds.columnLayout(adjustableColumn=True, margin=10)
-    main_layout = cmds.columnLayout(adjustableColumn=True)
+    cmds.columnLayout(adjustableColumn=True)
     # タイトル
     cmds.text(label="Joint Size Hierarchy Tool", font="boldLabelFont")
     cmds.separator(height=10)
 
     # サイズ設定
-    size_layout = cmds.rowLayout(numberOfColumns=2, columnWidth2=(100, 150))
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(100, 150))
     cmds.text(label="Joint Size:")
     size_field = cmds.floatField(value=1.0, precision=3, minValue=0.001, maxValue=100.0)
     cmds.setParent("..")
@@ -106,7 +135,7 @@ def show_joint_size_ui():
     cmds.separator(height=10)
 
     # 実行ボタン
-    button_layout = cmds.rowLayout(numberOfColumns=2, columnWidth2=(140, 140))
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(140, 140))
 
     cmds.button(
         label="Set Selected Hierarchy",
