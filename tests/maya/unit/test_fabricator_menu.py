@@ -37,6 +37,7 @@ class FabricatorMenuTests(TestCase):
         self.assertTrue(
             {
                 "Name Tools",
+                "Create Joint",
                 "Mirror Joint Hierarchy (Static YZ)",
                 "Export Skeleton",
                 "Import Skeleton",

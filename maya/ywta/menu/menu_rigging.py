@@ -49,7 +49,7 @@ def create_rigging_menu(parent_menu):
         label="Create Joint",
         command="import ywta.rig.create_joint as cj; cj.create_joint_from_selected_component()",
         image="joint.png",
-        annotation="選択されたコンポーネントからジョイントを作成します",
+        annotation="選択全体の中心、空選択では原点へjointを単一Undoで作成します",
     )
 
     cmds.menuItem(

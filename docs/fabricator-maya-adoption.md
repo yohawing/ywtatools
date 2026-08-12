@@ -112,6 +112,15 @@ thumbnail capture、カテゴリ検索、mirrored pose はまだありません�
 deprecatedなlive mirror networkは採用していません。既存rigのDG接続と競合せず、
 明示的に独立したjoint hierarchyを作る操作に限定しています。
 
+### Create Joint
+
+メニュー: `YWTA > Rigging > Create Joint`
+
+- object / component選択全体のworld bounding-box中心へjointを1つ作成
+- 空選択ではworld原点へ作成
+- 最後の選択objectがjointなら、そのjointを明示parentにする
+- 参照jointへのparentを編集前拒否し、作成・parent・選択を単一Undo / Redo
+
 ### Selection Navigation
 
 メニュー: `YWTA > Rigging > Selection Navigation`
