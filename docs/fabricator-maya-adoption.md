@@ -42,6 +42,7 @@ Fabricator 本体は Business Source License 1.1、YWTA は MIT License です�
 - Maya再起動後も使える永続Weight Clipboard、複数mesh/頂点への単一Undo Paste、複数頂点平均のCopyとその場Average
 - Weight Paste / Averageはlocked influenceを検出して曖昧な再配分を編集前拒否
 - 選択jointをウェイト0で追加、選択した未使用・unlocked influenceだけを安全に削除
+- influence追加/削除APIは単一mesh/joint文字列とnode列の両方に対応
 - world YZ面で方向を明示する+X→-X / -X→+X Skin Weight Mirror
 - Skin Weight Mirrorはlocked influenceを編集前拒否し、単一Undo / Redo
 - 選択componentの隣接頂点平均による局所Smooth（複数mesh、locked influence対応）

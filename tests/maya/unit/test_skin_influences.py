@@ -32,6 +32,13 @@ class SkinInfluenceTests(TestCase):
         cmds.undo()
         self.assertNotIn(self.extra, self._influences())
 
+    def test_add_accepts_single_mesh_and_joint_strings(self):
+        """公開APIの単一文字列を文字単位に分解しない。"""
+        result = skin_influences.add_influences(self.mesh, self.extra)
+
+        self.assertEqual(1, len(result["added"]))
+        self.assertIn(self.extra, self._influences())
+
     def test_remove_unused_is_one_undo(self):
         skin_influences.add_influences([self.mesh], [self.extra])
         cmds.flushUndo()

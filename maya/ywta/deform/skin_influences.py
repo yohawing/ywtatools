@@ -12,6 +12,8 @@ from ywta.core import undo_utils
 
 def _unique_nodes(nodes, node_type):
     """指定型のnodeを一意なロングパスへ解決する。"""
+    if isinstance(nodes, str):
+        nodes = [nodes]
     if not nodes:
         raise ValueError("{}を1つ以上指定してください。".format(node_type))
     result = []
@@ -29,6 +31,8 @@ def _unique_nodes(nodes, node_type):
 
 def _clusters(meshes):
     """指定mesh群のskinClusterを重複なしで返す。"""
+    if isinstance(meshes, str):
+        meshes = [meshes]
     if not meshes:
         raise ValueError("スキンされたmeshを1つ以上指定してください。")
     result = []
