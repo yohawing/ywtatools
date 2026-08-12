@@ -42,6 +42,18 @@ class SelectionSetsTests(TestCase):
         self.assertTrue(cmds.objExists(node))
         self.assertEqual([node], selection_sets.list_selection_sets())
 
+    def test_delete_is_undoable(self):
+        """削除したselection setを1回のUndoで復元できる。"""
+        hand = self._control("character", "hand_ctrl")
+        node = selection_sets.create_selection_set("Hands", [hand])
+
+        selection_sets.delete_selection_set(node)
+        self.assertFalse(cmds.objExists(node))
+        cmds.undo()
+        self.assertTrue(cmds.objExists(node))
+        cmds.redo()
+        self.assertFalse(cmds.objExists(node))
+
     def test_sets_apply_across_namespace(self):
         source_hand = self._control("source", "hand_ctrl")
         source_foot = self._control("source", "foot_ctrl")

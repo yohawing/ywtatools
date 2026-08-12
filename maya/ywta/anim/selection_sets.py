@@ -105,6 +105,7 @@ def delete_selection_set(selection_set):
     matches = cmds.ls(selection_set, type="objectSet") or []
     if len(matches) != 1 or not _is_selection_set(matches[0]):
         raise ValueError("YWTA selection set ではありません: {}".format(selection_set))
+    undo_utils.require_enabled("Delete Selection Set")
     cmds.delete(matches[0])
 
 
