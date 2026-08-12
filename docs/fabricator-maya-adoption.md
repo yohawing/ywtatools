@@ -68,6 +68,7 @@ thumbnail capture、カテゴリ検索、mirrored pose はまだありません�
 
 - joint hierarchy を親 index で保存する versioned JSON
 - translate / rotate / scale / jointOrient / rotateAxis / preferredAngle などの round-trip
+- world姿勢を維持してrotateをjointOrientへ統合する明示importモード
 - 実 Maya namespace への import
 - current namespace に影響されない絶対 namespace 解決
 - linear/angle unitとup axis不一致を既定で編集前拒否（APIで明示許可可能）

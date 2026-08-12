@@ -117,3 +117,36 @@ class SkeletonIoTests(TestCase):
         created = skeleton_io.create(data, allow_scene_mismatch=True)
 
         self.assertEqual(2, len(created))
+
+    def test_bake_to_joint_orient_zeros_rotate_and_preserves_world_matrix(self):
+        root, child = self._skeleton()
+        cmds.setAttr(root + ".rotate", 15.0, -8.0, 22.0)
+        cmds.setAttr(child + ".rotate", 9.0, 11.0, -14.0)
+        cmds.setAttr(root + ".rotateOrder", 5)
+        cmds.setAttr(child + ".rotateOrder", 3)
+        expected = {
+            joint.rsplit("|", 1)[-1]: cmds.xform(joint, query=True, worldSpace=True, matrix=True)
+            for joint in cmds.ls(root, child, long=True)
+        }
+        data = skeleton_io.capture(root)
+        cmds.delete(root)
+
+        created = skeleton_io.create(data, bake_to_joint_orient=True)
+
+        for joint in created:
+            self.assertEqual((0.0, 0.0, 0.0), cmds.getAttr(joint + ".rotate")[0])
+            actual = cmds.xform(joint, query=True, worldSpace=True, matrix=True)
+            leaf = joint.rsplit("|", 1)[-1]
+            for expected_value, actual_value in zip(expected[leaf], actual):
+                self.assertAlmostEqual(expected_value, actual_value)
+
+    def test_import_is_single_undoable_action(self):
+        root, _child = self._skeleton()
+        data = skeleton_io.capture(root)
+        cmds.delete(root)
+
+        created = skeleton_io.create(data)
+        root_uuid = cmds.ls(created[0], uuid=True)[0]
+        cmds.undo()
+
+        self.assertFalse(cmds.ls(root_uuid, uuid=True))

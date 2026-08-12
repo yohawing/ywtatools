@@ -244,11 +244,18 @@ def _scene_convention_mismatches(data):
     return [key for key in current if saved[key] != current[key]]
 
 
-def create(data, namespace="", allow_scene_mismatch=False):
+def create(
+    data,
+    namespace="",
+    allow_scene_mismatch=False,
+    bake_to_joint_orient=False,
+):
     """検証済み hierarchy を衝突拒否・一括 Undo で作成する。"""
     data = _validate(data)
     if not isinstance(allow_scene_mismatch, bool):
         raise ValueError("allow_scene_mismatchはboolにしてください。")
+    if not isinstance(bake_to_joint_orient, bool):
+        raise ValueError("bake_to_joint_orientはboolにしてください。")
     mismatches = _scene_convention_mismatches(data)
     if mismatches and not allow_scene_mismatch:
         raise ValueError("Skeleton scene conventionが一致しません: {}".format(", ".join(mismatches)))
@@ -274,6 +281,16 @@ def create(data, namespace="", allow_scene_mismatch=False):
                 raise RuntimeError("joint 名が競合しています: {} -> {}".format(name, joint))
             _set_attributes(joint, item["attributes"])
             created.append((cmds.ls(joint, long=True) or [joint])[0])
+        if bake_to_joint_orient:
+            for joint in created:
+                cmds.makeIdentity(
+                    joint,
+                    apply=True,
+                    translate=False,
+                    rotate=True,
+                    scale=False,
+                )
+        cmds.select(created[0], replace=True)
     except Exception:
         failed = True
         raise
@@ -281,16 +298,21 @@ def create(data, namespace="", allow_scene_mismatch=False):
         cmds.undoInfo(closeChunk=True)
         if failed:
             cmds.undo()
-    cmds.select(created[0], replace=True)
     return created
 
 
-def load(file_path, namespace="", allow_scene_mismatch=False):
+def load(
+    file_path,
+    namespace="",
+    allow_scene_mismatch=False,
+    bake_to_joint_orient=False,
+):
     """Skeleton JSON を読み込み scene に作成する。"""
     return create(
         read(file_path),
         namespace=namespace,
         allow_scene_mismatch=allow_scene_mismatch,
+        bake_to_joint_orient=bake_to_joint_orient,
     )
 
 
@@ -310,7 +332,7 @@ def save_selected():
     return save(selected[0], paths[0])
 
 
-def load_dialog():
+def load_dialog(bake_to_joint_orient=False):
     """ファイルと任意 namespace をダイアログで指定して import する。"""
     paths = cmds.fileDialog2(
         fileMode=1,
@@ -331,4 +353,8 @@ def load_dialog():
     if result != "Import":
         return None
     namespace = cmds.promptDialog(query=True, text=True)
-    return load(paths[0], namespace=namespace)
+    return load(
+        paths[0],
+        namespace=namespace,
+        bake_to_joint_orient=bake_to_joint_orient,
+    )

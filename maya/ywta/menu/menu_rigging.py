@@ -78,6 +78,14 @@ def create_rigging_menu(parent_menu):
         annotation="versioned JSONから衝突を拒否してスケルトンをインポートします",
     )
 
+    cmds.menuItem(
+        parent=rig_menu,
+        label="Import Skeleton (Bake Rotate to Joint Orient)",
+        command="import ywta.rig.skeleton_io as skeleton_io; skeleton_io.load_dialog(bake_to_joint_orient=True)",
+        image="kinJoint.png",
+        annotation="world姿勢を維持してrotateをjointOrientへ統合してインポートします",
+    )
+
     item = cmds.menuItem(
         parent=rig_menu,
         label="Connect Twist Joint",
