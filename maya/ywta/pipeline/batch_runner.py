@@ -84,6 +84,27 @@ def validate_script(script):
     return script
 
 
+def validate_state(raw):
+    """QSettingsのJSONをUIへ適用可能な保存状態へ検証する。"""
+    try:
+        state = json.loads(raw) if isinstance(raw, str) and raw else {}
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(state, dict) or state.get("version") != STATE_VERSION:
+        return None
+    scenes = state.get("scenes")
+    script = state.get("script")
+    save = state.get("save")
+    if (
+        not isinstance(scenes, list)
+        or any(not isinstance(scene, str) for scene in scenes)
+        or not isinstance(script, str)
+        or not isinstance(save, bool)
+    ):
+        return None
+    return {"version": STATE_VERSION, "scenes": scenes, "script": script, "save": save}
+
+
 def resolve_mayapy():
     """現在の Maya または環境から mayapy executable を解決する。"""
     executable = Path(sys.executable)
@@ -355,17 +376,13 @@ class BatchRunnerWindow(QMainWindow):
 
     def _restore_state(self):
         raw = self._settings.value("state", "")
-        try:
-            state = json.loads(raw) if raw else {}
-        except (TypeError, ValueError):
-            state = {}
-        if state.get("version") != STATE_VERSION:
+        state = validate_state(raw)
+        if state is None:
             return
-        for scene in state.get("scenes", []):
-            if isinstance(scene, str):
-                self.scene_list.addItem(scene)
-        self.script_edit.setPlainText(state.get("script", ""))
-        self.save_checkbox.setChecked(bool(state.get("save", False)))
+        for scene in state["scenes"]:
+            self.scene_list.addItem(scene)
+        self.script_edit.setPlainText(state["script"])
+        self.save_checkbox.setChecked(state["save"])
 
     def closeEvent(self, event):
         """window close 時に versioned state を保存する。"""

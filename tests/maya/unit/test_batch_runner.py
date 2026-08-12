@@ -65,6 +65,33 @@ cmds.setAttr('asset.completed', True)
 
         self.assertEqual([os.path.abspath(scene)], result)
 
+    def test_saved_ui_state_rejects_wrong_json_types(self):
+        """壊れたQSettings値をUI widgetへ渡さない。"""
+        self.assertIsNone(batch_runner.validate_state("[]"))
+        self.assertIsNone(
+            batch_runner.validate_state(
+                json.dumps(
+                    {
+                        "version": batch_runner.STATE_VERSION,
+                        "scenes": "scene.ma",
+                        "script": 42,
+                        "save": 1,
+                    }
+                )
+            )
+        )
+
+    def test_saved_ui_state_accepts_complete_versioned_payload(self):
+        """正しい保存状態は型を変えず復元する。"""
+        state = {
+            "version": batch_runner.STATE_VERSION,
+            "scenes": ["asset.ma"],
+            "script": "print('ok')",
+            "save": False,
+        }
+
+        self.assertEqual(state, batch_runner.validate_state(json.dumps(state)))
+
     def test_invalid_script_is_rejected_before_process_launch(self):
         scene = self._scene("invalid_script")
 
