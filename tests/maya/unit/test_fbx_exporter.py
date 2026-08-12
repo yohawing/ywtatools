@@ -139,6 +139,25 @@ class FbxExporterTests(TestCase):
 
         self.assertFalse(os.path.exists(path))
 
+    def test_animation_range_prefers_highlight_and_falls_back(self):
+        """time sliderの選択範囲をinclusive rangeへ変換する。"""
+        with (
+            mock.patch.object(fbx_exporter.mel, "eval", return_value="timeControl1"),
+            mock.patch.object(
+                fbx_exporter.cmds,
+                "timeControl",
+                side_effect=lambda _slider, **kwargs: True if kwargs.get("rangeVisible") else [5.0, 11.0],
+            ),
+        ):
+            self.assertEqual((5.0, 10.0), fbx_exporter.animation_range())
+
+        playback = (
+            float(cmds.playbackOptions(query=True, minTime=True)),
+            float(cmds.playbackOptions(query=True, maxTime=True)),
+        )
+        with mock.patch.object(fbx_exporter.mel, "eval", side_effect=RuntimeError("standalone")):
+            self.assertEqual(playback, fbx_exporter.animation_range())
+
     def test_mid_chain_animation_root_fails_before_file_write(self):
         """joint chainの途中だけを完全なanimationとして出力しない。"""
         cmds.select(clear=True)

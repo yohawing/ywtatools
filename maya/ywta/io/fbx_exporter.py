@@ -174,6 +174,26 @@ def _export(nodes, target, animation_range=None):
     return target
 
 
+def animation_range():
+    """time slider highlightを優先し、なければplayback rangeを返す。"""
+    playback = (
+        float(cmds.playbackOptions(query=True, minTime=True)),
+        float(cmds.playbackOptions(query=True, maxTime=True)),
+    )
+    try:
+        slider = mel.eval("$tmp = $gPlayBackSlider;")
+        if not slider or not cmds.timeControl(slider, query=True, rangeVisible=True):
+            return playback
+        values = cmds.timeControl(slider, query=True, rangeArray=True) or []
+        if len(values) != 2:
+            return playback
+        start, end_exclusive = (float(values[0]), float(values[1]))
+        end = end_exclusive - 1.0
+        return (start, end) if math.isfinite(start) and math.isfinite(end) and end >= start else playback
+    except (RuntimeError, TypeError, ValueError):
+        return playback
+
+
 def export_selected(nodes=None, file_path=None):
     """選択 node を静的/スキン FBX として原子的に export する。"""
     nodes = _include_skin_roots(_nodes(nodes))
@@ -203,10 +223,11 @@ def export_animation(root=None, file_path=None, start=None, end=None):
     joint_parents = cmds.listRelatives(roots[0], parent=True, fullPath=True, type="joint") or []
     if joint_parents:
         raise ValueError("animation export には最上位jointを指定してください: {}".format(roots[0]))
+    default_start, default_end = animation_range()
     if start is None:
-        start = cmds.playbackOptions(query=True, minTime=True)
+        start = default_start
     if end is None:
-        end = cmds.playbackOptions(query=True, maxTime=True)
+        end = default_end
     if (
         not isinstance(start, (int, float))
         or isinstance(start, bool)
