@@ -12,6 +12,8 @@ from ywta.core import undo_utils
 def _unique_nodes(nodes, node_type=None):
     """node列をUUIDで重複排除したロング名へ解決する。"""
     source = nodes if nodes is not None else cmds.ls(selection=True, long=True, objectsOnly=True)
+    if isinstance(source, str):
+        source = [source]
     if not source:
         raise ValueError("選択対象を1つ以上指定してください。")
     result = []
@@ -73,6 +75,8 @@ def select_child_meshes(roots=None):
 def select_influencing_joints(meshes=None):
     """選択meshのskinClusterへ登録された全jointを選択する。"""
     source = meshes if meshes is not None else cmds.ls(selection=True, long=True, objectsOnly=True)
+    if isinstance(source, str):
+        source = [source]
     if not source:
         raise ValueError("skinned meshを1つ以上選択してください。")
     result = []

@@ -19,6 +19,15 @@ class SelectionToolsTests(TestCase):
         self.assertEqual(["child_jnt", "grandchild_jnt"], [node.rsplit("|", 1)[-1] for node in result])
         self.assertNotIn(root, result)
 
+    def test_single_root_string_is_not_iterated_as_characters(self):
+        """公開APIは単一node文字列も1要素として扱う。"""
+        root = cmds.joint(name="root_jnt")
+        child = cmds.joint(name="child_jnt")
+
+        result = selection_tools.select_child_joints(root)
+
+        self.assertEqual([child], [node.rsplit("|", 1)[-1] for node in result])
+
     def test_select_child_meshes_skips_intermediate_shapes(self):
         root = cmds.createNode("transform", name="asset_grp")
         mesh = cmds.polyCube(name="body_mesh")[0]
@@ -51,6 +60,19 @@ class SelectionToolsTests(TestCase):
 
         self.assertEqual({"root_jnt", "tip_jnt"}, {node.rsplit("|", 1)[-1] for node in influences})
         self.assertEqual(["cloth"], [node.rsplit("|", 1)[-1] for node in influenced])
+
+    def test_skin_navigation_accepts_single_node_strings(self):
+        """mesh/jointの単一文字列をskin navigationで受け付ける。"""
+        mesh = cmds.polyPlane(name="body_mesh")[0]
+        cmds.select(clear=True)
+        root = cmds.joint(name="root_jnt")
+        cmds.skinCluster(root, mesh, toSelectedBones=True)
+
+        influences = selection_tools.select_influencing_joints(mesh)
+        influenced = selection_tools.select_influenced_meshes(root)
+
+        self.assertEqual([root], [node.rsplit("|", 1)[-1] for node in influences])
+        self.assertEqual([mesh], [node.rsplit("|", 1)[-1] for node in influenced])
 
     def test_unskinned_mesh_fails_without_changing_selection(self):
         mesh = cmds.polyCube(name="plain")[0]
