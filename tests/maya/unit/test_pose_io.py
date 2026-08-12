@@ -145,6 +145,20 @@ class PoseIoTests(TestCase):
 
         self.assertFalse(cmds.objExists(control + "." + pose_io.POSE_ID_ATTRIBUTE))
 
+    def test_pose_id_rejects_control_characters_before_edit_or_capture(self):
+        """Pose IDとportable addressへ改行やDELを保存しない。"""
+        control = self._control("character")
+
+        with self.assertRaises(ValueError):
+            pose_io.set_pose_id(control, "arm\nleft")
+        self.assertFalse(cmds.objExists(control + "." + pose_io.POSE_ID_ATTRIBUTE))
+
+        cmds.addAttr(control, longName=pose_io.POSE_ID_ATTRIBUTE, dataType="string")
+        cmds.setAttr(control + "." + pose_io.POSE_ID_ATTRIBUTE, "arm\x7fleft", type="string")
+        with self.assertRaises(ValueError):
+            pose_io.capture([control])
+        self.assertFalse(pose_io.is_control_address("id:arm\x7fleft"))
+
     def test_pose_id_rejects_referenced_or_locked_control_before_edit(self):
         """参照editやlocked Pose IDへの書込みを作らない。"""
         control = self._control("character")

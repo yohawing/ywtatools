@@ -93,7 +93,10 @@ def _address(node):
     if cmds.objExists(plug) and cmds.getAttr(plug, type=True) == "string":
         value = cmds.getAttr(plug)
         if isinstance(value, str) and value.strip():
-            return "id:" + value.strip()
+            address = "id:" + value.strip()
+            if not is_control_address(address):
+                raise ValueError("Pose ID に制御文字は使用できません: {}".format(node))
+            return address
     return "name:" + _base_name(node)
 
 
@@ -112,13 +115,22 @@ def is_control_address(address):
     if not isinstance(address, str):
         return False
     prefix, separator, value = address.partition(":")
-    return bool(separator and prefix in {"id", "name"} and value and value == value.strip())
+    return bool(
+        separator
+        and prefix in {"id", "name"}
+        and value
+        and value == value.strip()
+        and not any(ord(character) < 32 or ord(character) == 127 for character in value)
+    )
 
 
 def set_pose_id(node, pose_id):
     """コントロールへ rig 間で安定した Pose ID を設定する。"""
     if not isinstance(pose_id, str) or not pose_id.strip():
         raise ValueError("Pose ID が空です。")
+    pose_id = pose_id.strip()
+    if not is_control_address("id:" + pose_id):
+        raise ValueError("Pose ID に制御文字は使用できません。")
     matches = cmds.ls(node, long=True) or []
     if len(matches) != 1:
         raise ValueError("ノードを一意に解決できません: {}".format(node))
@@ -135,7 +147,7 @@ def set_pose_id(node, pose_id):
     try:
         if not cmds.objExists(plug):
             cmds.addAttr(matches[0], longName=POSE_ID_ATTRIBUTE, dataType="string")
-        cmds.setAttr(plug, pose_id.strip(), type="string")
+        cmds.setAttr(plug, pose_id, type="string")
     except Exception:
         failed = True
         raise
