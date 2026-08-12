@@ -146,3 +146,20 @@ class SeparateSkinnedTests(TestCase):
             separate_skinned.separate(source)
 
         self.assertFalse(cmds.objExists("body_shell01"))
+
+    def test_source_namespace_is_preserved_independent_of_current_namespace(self):
+        cmds.namespace(add="character")
+        cmds.namespace(set="character")
+        source, _left, _right, _shading_groups = self._source()
+        cmds.namespace(set=":")
+        cmds.namespace(add="working")
+        cmds.namespace(set="working")
+
+        result = separate_skinned.separate(source)
+        cmds.namespace(set=":")
+
+        self.assertEqual(
+            ["character:body_shell01", "character:body_shell02"],
+            [piece["mesh"].rsplit("|", 1)[-1] for piece in result["pieces"]],
+        )
+        self.assertFalse(cmds.objExists(":working:character:body_shell01"))

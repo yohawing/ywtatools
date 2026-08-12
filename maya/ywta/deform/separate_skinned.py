@@ -9,6 +9,11 @@ from ywta.deform import skin_io
 from ywta.deform import skin_weight_command
 
 
+def _absolute_name(name):
+    """namespace付き名をcurrent namespace非依存にする。"""
+    return ":" + name.lstrip(":") if ":" in name else name
+
+
 def _shell_plans(function):
     """mesh topologyからshellごとのface/vertex mappingを作る。"""
     face_counts, face_connects = function.getVertices()
@@ -225,7 +230,7 @@ def separate(mesh, base_name=None):
     if not isinstance(base_name, str) or not base_name.strip() or "|" in base_name:
         raise ValueError("base_nameは空でないDAG short nameにしてください。")
     names = ["{}{:02d}".format(base_name.strip(), index + 1) for index in range(len(plans))]
-    occupied = [name for name in names if cmds.objExists(name)]
+    occupied = [name for name in names if cmds.objExists(_absolute_name(name))]
     if occupied:
         raise ValueError("出力名が既に存在します: {}".format(", ".join(occupied)))
 
@@ -240,7 +245,7 @@ def separate(mesh, base_name=None):
     pieces = []
     try:
         for name, plan in zip(names, plans):
-            transform = cmds.createNode("transform", name=name)
+            transform = cmds.createNode("transform", name=_absolute_name(name))
             points = [source_points[index] for index in plan["original_vertices"]]
             om.MFnMesh().create(
                 points,
@@ -249,6 +254,8 @@ def separate(mesh, base_name=None):
                 parent=skin_io._depend_node(transform),
             )
             transform = (cmds.ls(transform, long=True, type="transform") or [transform])[0]
+            if transform.rsplit("|", 1)[-1] != name:
+                raise RuntimeError("shell mesh名がMayaに変更されました: {}".format(transform))
             target_shape = skin_io._mesh_shape(transform)
             target_function = om.MFnMesh(skin_io._dag_path(target_shape))
             _copy_uv_sets(output_function, target_function, plan)
