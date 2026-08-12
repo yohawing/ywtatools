@@ -64,6 +64,18 @@ def create_deform_menu(parent_menu):
         command="import ywta.deform.skin_weights as skin_weights; skin_weights.average_vertex_weights()",
         annotation="選択頂点のスキンウェイトを平均して全選択頂点へ適用します",
     )
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Add Selected Skin Influences",
+        command="import ywta.deform.skin_influences as influences; influences.add_selected_influences()",
+        annotation="選択jointを選択meshへ既存ウェイトを変えずweight 0で追加します",
+    )
+    cmds.menuItem(
+        parent=deform_menu,
+        label="Remove Selected Unused Influences",
+        command="import ywta.deform.skin_influences as influences; influences.remove_selected_influences()",
+        annotation="選択jointが未使用かつunlockedの場合だけ選択meshから削除します",
+    )
     smooth_item = cmds.menuItem(
         parent=deform_menu,
         label="Smooth Selected Skin Weights",
