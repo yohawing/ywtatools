@@ -12,7 +12,12 @@ class ClipIoTests(TestCase):
     """namespace 可搬 clip の保存・適用 contract を検証する。"""
 
     def setUp(self):
-        for option in (clip_io.MODE_OPTION, clip_io.SELECTED_ONLY_OPTION):
+        for option in (
+            clip_io.MODE_OPTION,
+            clip_io.SELECTED_ONLY_OPTION,
+            clip_io.START_ANCHOR_OPTION,
+            clip_io.END_ANCHOR_OPTION,
+        ):
             if cmds.optionVar(exists=option):
                 cmds.optionVar(remove=option)
 
@@ -69,6 +74,38 @@ class ClipIoTests(TestCase):
         self.assertEqual("place", result["mode"])
         self.assertEqual(
             [100.0, 105.0, 110.0],
+            cmds.keyframe(target, attribute="translateX", query=True, timeChange=True),
+        )
+
+    def test_capture_adds_optional_synthetic_boundary_anchors(self):
+        source = self._control("source")
+        cmds.setKeyframe(source, attribute="translateX", time=5, value=5.0)
+        data = clip_io.capture([source], start=1, end=10)
+        keys = data["controls"][0]["channels"][0]["keys"]
+
+        self.assertEqual([0.0, 4.0, 9.0], [key["time"] for key in keys])
+        self.assertEqual("start", keys[0]["synthetic_boundary"])
+        self.assertNotIn("synthetic_boundary", keys[1])
+        self.assertEqual("end", keys[2]["synthetic_boundary"])
+
+    def test_synthetic_boundary_anchors_can_be_skipped(self):
+        source = self._control("source")
+        cmds.setKeyframe(source, attribute="translateX", time=5, value=5.0)
+        data = clip_io.capture([source], start=1, end=10)
+        cmds.delete(source)
+        target = self._control("target")
+
+        result = clip_io.apply(
+            data,
+            nodes=[target],
+            start_time=20,
+            apply_start_anchor=False,
+            apply_end_anchor=False,
+        )
+
+        self.assertEqual(1, result["applied_keys"])
+        self.assertEqual(
+            [24.0],
             cmds.keyframe(target, attribute="translateX", query=True, timeChange=True),
         )
 
@@ -319,6 +356,11 @@ class ClipIoTests(TestCase):
         cmds.optionVar(stringValue=(clip_io.MODE_OPTION, "append"))
 
         self.assertEqual(("replace", True), clip_io.get_load_settings())
+
+    def test_anchor_settings_round_trip(self):
+        self.assertEqual((True, True), clip_io.get_anchor_settings())
+        self.assertEqual((False, True), clip_io.set_anchor_settings(False, True))
+        self.assertEqual((False, True), clip_io.get_anchor_settings())
 
     def test_load_options_window_builds(self):
         self.assertEqual("ywtaClipLoadOptionsWindow", clip_io.show_load_options())

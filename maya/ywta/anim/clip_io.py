@@ -31,6 +31,8 @@ TANGENT_TYPES = {
 }
 MODE_OPTION = "ywtaClipLoadMode"
 SELECTED_ONLY_OPTION = "ywtaClipLoadSelectedOnly"
+START_ANCHOR_OPTION = "ywtaClipLoadStartAnchor"
+END_ANCHOR_OPTION = "ywtaClipLoadEndAnchor"
 LOAD_MODES = ("place", "replace", "insert")
 
 
@@ -52,6 +54,22 @@ def set_load_settings(mode, selected_only):
     cmds.optionVar(stringValue=(MODE_OPTION, mode))
     cmds.optionVar(intValue=(SELECTED_ONLY_OPTION, int(selected_only)))
     return mode, selected_only
+
+
+def get_anchor_settings():
+    """optionVarからclip境界anchorの適用設定を取得する。"""
+    start_anchor = bool(cmds.optionVar(query=START_ANCHOR_OPTION)) if cmds.optionVar(exists=START_ANCHOR_OPTION) else True
+    end_anchor = bool(cmds.optionVar(query=END_ANCHOR_OPTION)) if cmds.optionVar(exists=END_ANCHOR_OPTION) else True
+    return start_anchor, end_anchor
+
+
+def set_anchor_settings(start_anchor, end_anchor):
+    """検証済みclip境界anchor設定をoptionVarへ保存する。"""
+    if not isinstance(start_anchor, bool) or not isinstance(end_anchor, bool):
+        raise ValueError("anchor設定はboolにしてください。")
+    cmds.optionVar(intValue=(START_ANCHOR_OPTION, int(start_anchor)))
+    cmds.optionVar(intValue=(END_ANCHOR_OPTION, int(end_anchor)))
+    return start_anchor, end_anchor
 
 
 def _finite_number(value, label):
@@ -122,6 +140,28 @@ def _capture_channel(node, attribute, start, end):
         if attr_type == "enum":
             key["enum_label"] = pose_io._enum_label(plug, value)
         keys.append(key)
+    real_times = {float(time) for time in times}
+    boundaries = ((start, "start", 0.0), (end, "end", end - start))
+    for absolute_time, boundary, relative_time in boundaries:
+        if absolute_time in real_times or (boundary == "end" and end == start):
+            continue
+        value = cmds.getAttr(plug, time=absolute_time)
+        tangent = "step" if attr_type in {"enum", "bool"} else "auto"
+        key = {
+            "time": relative_time,
+            "value": float(value),
+            "in_tangent": tangent,
+            "out_tangent": tangent,
+            "in_angle": 0.0,
+            "out_angle": 0.0,
+            "in_weight": 1.0,
+            "out_weight": 1.0,
+            "synthetic_boundary": boundary,
+        }
+        if attr_type == "enum":
+            key["enum_label"] = pose_io._enum_label(plug, value)
+        keys.append(key)
+    keys.sort(key=lambda item: item["time"])
     weighted = cmds.keyTangent(plug, query=True, weightedTangents=True) or [False]
     return {
         "name": attribute,
@@ -222,6 +262,11 @@ def _validate(data):
                 if not isinstance(key, dict):
                     raise ValueError("key が不正です: {}.{}".format(address, name))
                 time = _finite_number(key.get("time"), "key time")
+                boundary = key.get("synthetic_boundary")
+                if boundary not in {None, "start", "end"}:
+                    raise ValueError("synthetic boundaryが不正です: {}.{}".format(address, name))
+                if boundary == "start" and time != 0.0 or boundary == "end" and time != duration:
+                    raise ValueError("synthetic boundary時刻が不正です: {}.{}".format(address, name))
                 _finite_number(key.get("value"), "key value")
                 tangent_values = ("in_angle", "out_angle", "in_weight", "out_weight")
                 present_values = [value_name in key for value_name in tangent_values]
@@ -299,7 +344,15 @@ def _shift_keys_for_insert(nodes, start_time, offset):
     return shifted
 
 
-def apply(data, nodes=None, start_time=None, replace=True, mode=None):
+def apply(
+    data,
+    nodes=None,
+    start_time=None,
+    replace=True,
+    mode=None,
+    apply_start_anchor=True,
+    apply_end_anchor=True,
+):
     """Animation clip を namespace 非依存で適用する。
 
     Args:
@@ -315,6 +368,8 @@ def apply(data, nodes=None, start_time=None, replace=True, mode=None):
     """
     data = _validate(data)
     mode = _apply_mode(mode, replace)
+    if not isinstance(apply_start_anchor, bool) or not isinstance(apply_end_anchor, bool):
+        raise ValueError("anchor適用設定はboolにしてください。")
     if start_time is None:
         start_time = cmds.currentTime(query=True)
     start_time = _finite_number(start_time, "start_time")
@@ -359,7 +414,13 @@ def apply(data, nodes=None, start_time=None, replace=True, mode=None):
         for plug, channel in operations:
             if mode == "replace":
                 cmds.cutKey(plug, time=(start_time, end_time), clear=True)
-            for key in channel["keys"]:
+            keys = [
+                key
+                for key in channel["keys"]
+                if not (key.get("synthetic_boundary") == "start" and not apply_start_anchor)
+                and not (key.get("synthetic_boundary") == "end" and not apply_end_anchor)
+            ]
+            for key in keys:
                 time = start_time + key["time"]
                 value = (
                     pose_io._enum_index(plug, key["enum_label"])
@@ -374,7 +435,7 @@ def apply(data, nodes=None, start_time=None, replace=True, mode=None):
                     edit=True,
                     weightedTangents=channel["weighted_tangents"],
                 )
-            for key in channel["keys"]:
+            for key in keys:
                 time = start_time + key["time"]
                 cmds.keyTangent(
                     plug,
@@ -434,13 +495,24 @@ def save_selected():
     return save(selected, paths[0])
 
 
-def load_clip(selected_only=False, mode="replace"):
+def load_clip(
+    selected_only=False,
+    mode="replace",
+    apply_start_anchor=True,
+    apply_end_anchor=True,
+):
     """ダイアログで選んだ clip を現在フレームから適用する。"""
     selected = pose_io.resolve_controls() if selected_only else None
     paths = cmds.fileDialog2(fileMode=1, dialogStyle=2, caption="Load Animation Clip", fileFilter="JSON (*.json)")
     if not paths:
         return None
-    result = apply(read(paths[0]), nodes=selected, mode=mode)
+    result = apply(
+        read(paths[0]),
+        nodes=selected,
+        mode=mode,
+        apply_start_anchor=apply_start_anchor,
+        apply_end_anchor=apply_end_anchor,
+    )
     if result["unit_mismatches"]:
         cmds.warning(
             "Animation Clip unit mismatch {}; raw値・rawフレームで適用しました。".format(", ".join(result["unit_mismatches"]))
@@ -451,7 +523,13 @@ def load_clip(selected_only=False, mode="replace"):
 def load_clip_with_settings():
     """保存済みMode/Selected-only設定でClipファイルを適用する。"""
     mode, selected_only = get_load_settings()
-    return load_clip(selected_only=selected_only, mode=mode)
+    start_anchor, end_anchor = get_anchor_settings()
+    return load_clip(
+        selected_only=selected_only,
+        mode=mode,
+        apply_start_anchor=start_anchor,
+        apply_end_anchor=end_anchor,
+    )
 
 
 def show_load_options():
@@ -471,12 +549,25 @@ def show_load_options():
         label="Apply to selected controls only",
         value=selected_only,
     )
+    start_anchor, end_anchor = get_anchor_settings()
+    start_anchor_field = cmds.checkBox(
+        label="Apply synthetic start anchors",
+        value=start_anchor,
+    )
+    end_anchor_field = cmds.checkBox(
+        label="Apply synthetic end anchors",
+        value=end_anchor,
+    )
 
     def apply_options(*_args):
         inverse_labels = {label: value for value, label in labels.items()}
         set_load_settings(
             inverse_labels[cmds.optionMenuGrp(mode_field, query=True, value=True)],
             cmds.checkBox(selected_field, query=True, value=True),
+        )
+        set_anchor_settings(
+            cmds.checkBox(start_anchor_field, query=True, value=True),
+            cmds.checkBox(end_anchor_field, query=True, value=True),
         )
         return load_clip_with_settings()
 
