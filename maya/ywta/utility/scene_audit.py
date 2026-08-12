@@ -128,8 +128,7 @@ def issue_nodes(report, categories=None, include_duplicate_names=True):
 
 
 def select_issues(report=None, categories=None, include_duplicate_names=True):
-    """監査結果に含まれる問題箇所を Maya selection に設定する。"""
-    report = _LAST_REPORT if report is None else report
+    """最新または明示した監査結果の問題箇所をMaya selectionに設定する。"""
     if report is None:
         report = audit_scene()
     nodes = issue_nodes(report, categories, include_duplicate_names)

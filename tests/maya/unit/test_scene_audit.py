@@ -105,6 +105,20 @@ class SceneAuditTests(TestCase):
         self.assertIn(".f[", selected[0])
         self.assertEqual(selected, cmds.ls(selection=True, flatten=True, long=True))
 
+    def test_implicit_issue_selection_does_not_reuse_stale_report(self):
+        """report省略時は前scene相当のglobal cacheではなく再監査する。"""
+        stale = cmds.createNode("transform", name="stale_issue")
+        scene_audit._LAST_REPORT = {
+            "duplicate_short_names": [{"name": "stale_issue", "nodes": [stale]}],
+            "meshes": [],
+        }
+        cmds.select(stale, replace=True)
+
+        selected = scene_audit.select_issues()
+
+        self.assertEqual([], selected)
+        self.assertFalse(cmds.ls(selection=True))
+
     def test_empty_categories_selects_no_mesh_components(self):
         """明示した空カテゴリを全カテゴリへ読み替えない。"""
         shape = self._create_lamina_mesh()
