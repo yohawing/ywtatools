@@ -58,6 +58,20 @@ def create_menu():
         annotation="sceneごとに独立mayapyでPython処理と明示的な上書き保存を実行します",
     )
 
+    cmds.menuItem(parent=menu, divider=True, dividerLabel="Export")
+    cmds.menuItem(
+        parent=menu,
+        label="Export Selected FBX",
+        command="import ywta.io.fbx_exporter as fbx_exporter; fbx_exporter.export_selected()",
+        annotation="選択nodeをscene非破壊・設定復元・原子的置換でFBX exportします",
+    )
+    cmds.menuItem(
+        parent=menu,
+        label="Export Animation FBX",
+        command="import ywta.io.fbx_exporter as fbx_exporter; fbx_exporter.export_animation()",
+        annotation="選択root jointのplayback range animationをFBX exportします",
+    )
+
     # Aboutセクション
     cmds.menuItem(parent=menu, divider=True)
 
