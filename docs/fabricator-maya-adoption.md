@@ -55,6 +55,7 @@ Skin JSON は geometry と weight を含むため、大きいメッシュでは�
 - blend、選択 control 限定適用、開始フレーム offset、範囲内キー置換
 - PoseのBlend / Selected-onlyを保存・実行できるMaya Option UI
 - Animation ClipのPlace / Replace / Insert適用モード
+- ModeとSelected-onlyを任意組合せで保存・実行できるClip Option UI
 - Insert時は解決・適用可能なcontrolだけの後続キーをclip占有フレーム数ぶん移動
 - animCurve は現在フレームへ key を設定し、constraint や計算node駆動属性は上書きしない
 - 同一アドレス候補が複数ある場合は推測せず拒否

@@ -29,6 +29,29 @@ TANGENT_TYPES = {
     "step",
     "stepnext",
 }
+MODE_OPTION = "ywtaClipLoadMode"
+SELECTED_ONLY_OPTION = "ywtaClipLoadSelectedOnly"
+LOAD_MODES = ("place", "replace", "insert")
+
+
+def get_load_settings():
+    """optionVarから検証済みClip適用設定を取得する。"""
+    mode = cmds.optionVar(query=MODE_OPTION) if cmds.optionVar(exists=MODE_OPTION) else "replace"
+    selected_only = bool(cmds.optionVar(query=SELECTED_ONLY_OPTION)) if cmds.optionVar(exists=SELECTED_ONLY_OPTION) else False
+    if mode not in LOAD_MODES:
+        mode = "replace"
+    return mode, selected_only
+
+
+def set_load_settings(mode, selected_only):
+    """検証済みClip適用設定をoptionVarへ保存する。"""
+    if mode not in LOAD_MODES:
+        raise ValueError("modeはplace / replace / insertのいずれかにしてください。")
+    if not isinstance(selected_only, bool):
+        raise ValueError("selected_onlyはboolにしてください。")
+    cmds.optionVar(stringValue=(MODE_OPTION, mode))
+    cmds.optionVar(intValue=(SELECTED_ONLY_OPTION, int(selected_only)))
+    return mode, selected_only
 
 
 def _finite_number(value, label):
@@ -423,3 +446,40 @@ def load_clip(selected_only=False, mode="replace"):
             "Animation Clip unit mismatch {}; raw値・rawフレームで適用しました。".format(", ".join(result["unit_mismatches"]))
         )
     return result
+
+
+def load_clip_with_settings():
+    """保存済みMode/Selected-only設定でClipファイルを適用する。"""
+    mode, selected_only = get_load_settings()
+    return load_clip(selected_only=selected_only, mode=mode)
+
+
+def show_load_options():
+    """ClipのModeとSelected-onlyを設定して適用するUIを表示する。"""
+    window = "ywtaClipLoadOptionsWindow"
+    if cmds.window(window, exists=True):
+        cmds.deleteUI(window)
+    mode, selected_only = get_load_settings()
+    cmds.window(window, title="YWTA Load Animation Clip", sizeable=False)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=8, width=380)
+    mode_field = cmds.optionMenuGrp(label="Mode")
+    labels = {"place": "Place", "replace": "Replace", "insert": "Insert"}
+    for value in LOAD_MODES:
+        cmds.menuItem(label=labels[value])
+    cmds.optionMenuGrp(mode_field, edit=True, value=labels[mode])
+    selected_field = cmds.checkBox(
+        label="Apply to selected controls only",
+        value=selected_only,
+    )
+
+    def apply_options(*_args):
+        inverse_labels = {label: value for value, label in labels.items()}
+        set_load_settings(
+            inverse_labels[cmds.optionMenuGrp(mode_field, query=True, value=True)],
+            cmds.checkBox(selected_field, query=True, value=True),
+        )
+        return load_clip_with_settings()
+
+    cmds.button(label="Load Animation Clip...", command=apply_options)
+    cmds.showWindow(window)
+    return window

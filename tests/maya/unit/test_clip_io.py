@@ -11,6 +11,11 @@ from ywta.test import TestCase
 class ClipIoTests(TestCase):
     """namespace 可搬 clip の保存・適用 contract を検証する。"""
 
+    def setUp(self):
+        for option in (clip_io.MODE_OPTION, clip_io.SELECTED_ONLY_OPTION):
+            if cmds.optionVar(exists=option):
+                cmds.optionVar(remove=option)
+
     def _control(self, namespace, name="hand_ctrl"):
         if namespace and not cmds.namespace(exists=namespace):
             cmds.namespace(add=namespace)
@@ -305,3 +310,15 @@ class ClipIoTests(TestCase):
 
         self.assertEqual(clip_io.FORMAT, data["format"])
         self.assertEqual(10.0, data["duration"])
+
+    def test_load_settings_round_trip_and_invalid_mode_falls_back(self):
+        self.assertEqual(("replace", False), clip_io.get_load_settings())
+        self.assertEqual(("insert", True), clip_io.set_load_settings("insert", True))
+        self.assertEqual(("insert", True), clip_io.get_load_settings())
+
+        cmds.optionVar(stringValue=(clip_io.MODE_OPTION, "append"))
+
+        self.assertEqual(("replace", True), clip_io.get_load_settings())
+
+    def test_load_options_window_builds(self):
+        self.assertEqual("ywtaClipLoadOptionsWindow", clip_io.show_load_options())

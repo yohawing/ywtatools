@@ -59,6 +59,19 @@ def create_animation_menu(parent_menu):
         command="import ywta.anim.clip_io as clip_io; clip_io.save_selected()",
         annotation="選択コントロールのplayback rangeキーを可搬JSONへ保存します",
     )
+    configured_clip_item = cmds.menuItem(
+        parent=animation_menu,
+        label="Load Animation Clip (Configured)",
+        command="import ywta.anim.clip_io as clip_io; clip_io.load_clip_with_settings()",
+        annotation="保存済みMode/Selected-only設定でclipを適用します",
+    )
+    cmds.menuItem(
+        parent=animation_menu,
+        insertAfter=configured_clip_item,
+        optionBox=True,
+        command="import ywta.anim.clip_io as clip_io; clip_io.show_load_options()",
+        annotation="Animation ClipのModeと選択control限定を設定します",
+    )
     cmds.menuItem(
         parent=animation_menu,
         label="Load Animation Clip (Replace)",
