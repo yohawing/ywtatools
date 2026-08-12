@@ -309,6 +309,20 @@ Undo の共通 contract が完成するまで追加しません。
 - Animation FBXはjoint chain途中の選択を拒否し、最上位jointだけをrootとして許可
 - source skeleton の rename、duplicate、namespace 移動を行わない
 
+## 検証
+
+Maya 2024の単体・subprocess統合テストは、リポジトリルートから次のコマンドで
+再実行できます。
+
+```powershell
+python tests/run_maya_tests.py --type unit --maya 2024
+```
+
+CLI runnerは一時`MAYA_APP_DIR`を使用するため、ユーザーの`userSetup.py`、optionVar、
+Temporary Clipboardを読み書きしません。`mayapy`へ必要な許可済み依存を準備する手順は
+[tests/README.md](../tests/README.md)を参照してください。依存欠落によるtest moduleの
+import失敗はskipへ変換せず、検証失敗として扱います。
+
 ## 意図的に未採用の範囲
 
 - Fabricator 固有の modular rig / component binding / Armature blueprint
