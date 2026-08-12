@@ -1,0 +1,292 @@
+"""安全な versioned JSON で Maya joint hierarchy を保存・再構築する。"""
+
+from __future__ import absolute_import
+
+import json
+import math
+import os
+import tempfile
+
+import maya.cmds as cmds
+
+
+FORMAT = "ywta.skeleton"
+VERSION = 1
+VECTOR_ATTRIBUTES = (
+    "translate",
+    "rotate",
+    "scale",
+    "jointOrient",
+    "rotateAxis",
+    "preferredAngle",
+)
+SCALAR_ATTRIBUTES = (
+    "rotateOrder",
+    "radius",
+    "segmentScaleCompensate",
+    "drawStyle",
+    "visibility",
+)
+MATRIX_ATTRIBUTES = ("offsetParentMatrix",)
+ALL_ATTRIBUTES = VECTOR_ATTRIBUTES + SCALAR_ATTRIBUTES + MATRIX_ATTRIBUTES
+
+
+def _joint_path(joint):
+    """root joint を一意なロングパスへ解決する。"""
+    matches = cmds.ls(joint, type="joint", long=True) or []
+    if len(matches) != 1:
+        raise ValueError("root joint を一意に解決できません: {}".format(joint))
+    return matches[0]
+
+
+def _portable_name(joint):
+    """DAG path と namespace を除いた可搬名を返す。"""
+    return joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+
+
+def _attribute_value(joint, attribute):
+    """Maya 属性値を JSON 配列または scalar へ正規化する。"""
+    value = cmds.getAttr("{}.{}".format(joint, attribute))
+    if isinstance(value, list) and len(value) == 1 and isinstance(value[0], tuple):
+        return list(value[0])
+    if isinstance(value, tuple):
+        return list(value)
+    return value
+
+
+def capture(root):
+    """joint hierarchy を親 index 付き辞書へ変換する。"""
+    root = _joint_path(root)
+    joints = []
+
+    def visit(joint, parent_index):
+        index = len(joints)
+        attributes = {
+            attribute: _attribute_value(joint, attribute)
+            for attribute in ALL_ATTRIBUTES
+            if cmds.objExists("{}.{}".format(joint, attribute))
+        }
+        joints.append(
+            {
+                "name": _portable_name(joint),
+                "parent": parent_index,
+                "attributes": attributes,
+            }
+        )
+        children = cmds.listRelatives(joint, children=True, type="joint", fullPath=True) or []
+        for child in children:
+            visit(child, index)
+
+    visit(root, None)
+    return {"format": FORMAT, "version": VERSION, "joints": joints}
+
+
+def _finite_values(value, count, label):
+    """固定長の有限数配列を検証する。"""
+    if not isinstance(value, list) or len(value) != count:
+        raise ValueError("{} は長さ{}の配列にしてください。".format(label, count))
+    for item in value:
+        if not isinstance(item, (int, float)) or isinstance(item, bool) or not math.isfinite(float(item)):
+            raise ValueError("{} に不正な数値があります。".format(label))
+
+
+def _validate(data):
+    """外部 skeleton JSON を scene 編集前に完全検証する。"""
+    if not isinstance(data, dict) or data.get("format") != FORMAT:
+        raise ValueError("YWTA Skeleton ファイルではありません。")
+    if data.get("version") != VERSION:
+        raise ValueError("未対応の Skeleton version です: {}".format(data.get("version")))
+    joints = data.get("joints")
+    if not isinstance(joints, list) or not joints:
+        raise ValueError("joints がありません。")
+    sibling_names = set()
+    for index, joint in enumerate(joints):
+        if not isinstance(joint, dict):
+            raise ValueError("joint {} が不正です。".format(index))
+        name = joint.get("name")
+        parent = joint.get("parent")
+        if not isinstance(name, str) or not name or "|" in name or ":" in name:
+            raise ValueError("joint {} の name が不正です。".format(index))
+        if index == 0:
+            if parent is not None:
+                raise ValueError("root joint の parent は null にしてください。")
+        elif not isinstance(parent, int) or isinstance(parent, bool) or parent < 0 or parent >= index:
+            raise ValueError("joint {} の parent index が不正です。".format(index))
+        sibling_key = (parent, name)
+        if sibling_key in sibling_names:
+            raise ValueError("同じ親に joint 名が重複しています: {}".format(name))
+        sibling_names.add(sibling_key)
+
+        attributes = joint.get("attributes")
+        if not isinstance(attributes, dict):
+            raise ValueError("joint {} の attributes が不正です。".format(index))
+        unknown = set(attributes) - set(ALL_ATTRIBUTES)
+        if unknown:
+            raise ValueError("未対応の joint 属性です: {}".format(", ".join(sorted(unknown))))
+        for attribute in VECTOR_ATTRIBUTES:
+            if attribute in attributes:
+                _finite_values(attributes[attribute], 3, "{}.{}".format(name, attribute))
+        for attribute in MATRIX_ATTRIBUTES:
+            if attribute in attributes:
+                _finite_values(attributes[attribute], 16, "{}.{}".format(name, attribute))
+        for attribute in SCALAR_ATTRIBUTES:
+            if attribute not in attributes:
+                continue
+            value = attributes[attribute]
+            if attribute in {"segmentScaleCompensate", "visibility"}:
+                valid = isinstance(value, bool)
+            elif attribute in {"rotateOrder", "drawStyle"}:
+                valid = isinstance(value, int) and not isinstance(value, bool)
+            else:
+                valid = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+            if not valid:
+                raise ValueError("{}.{} が不正です。".format(name, attribute))
+    return data
+
+
+def save(root, file_path):
+    """joint hierarchy を JSON へ原子的に保存する。"""
+    data = capture(root)
+    target = os.path.abspath(file_path)
+    directory = os.path.dirname(target)
+    if not os.path.isdir(directory):
+        raise ValueError("保存先ディレクトリがありません: {}".format(directory))
+    handle = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=directory,
+        prefix=".ywta_skeleton_",
+        suffix=".tmp",
+        delete=False,
+    )
+    temporary = handle.name
+    try:
+        with handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.replace(temporary, target)
+    except Exception:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+        raise
+    return target
+
+
+def read(file_path):
+    """Skeleton JSON を読み込み、検証済み辞書を返す。"""
+    with open(file_path, "r", encoding="utf-8") as handle:
+        return _validate(json.load(handle))
+
+
+def _namespace_prefix(namespace):
+    """入力 namespace を Maya の絶対でない prefix へ正規化する。"""
+    namespace = (namespace or "").strip().strip(":")
+    return namespace + ":" if namespace else ""
+
+
+def _ensure_namespace(namespace):
+    """入れ子 namespace を root から順に作成する。"""
+    namespace = (namespace or "").strip().strip(":")
+    if not namespace:
+        return
+    parent = ":"
+    full_name = ""
+    for segment in namespace.split(":"):
+        full_name = segment if not full_name else full_name + ":" + segment
+        if not cmds.namespace(exists=":" + full_name):
+            cmds.namespace(add=segment, parent=parent)
+        parent = ":" + full_name
+
+
+def _set_attributes(joint, attributes):
+    """検証済み joint 属性を適切な Maya 型で設定する。"""
+    for attribute in MATRIX_ATTRIBUTES:
+        if attribute in attributes:
+            cmds.setAttr("{}.{}".format(joint, attribute), *attributes[attribute], type="matrix")
+    for attribute in VECTOR_ATTRIBUTES:
+        if attribute in attributes:
+            cmds.setAttr("{}.{}".format(joint, attribute), *attributes[attribute])
+    for attribute in SCALAR_ATTRIBUTES:
+        if attribute in attributes:
+            cmds.setAttr("{}.{}".format(joint, attribute), attributes[attribute])
+
+
+def create(data, namespace=""):
+    """検証済み hierarchy を衝突拒否・一括 Undo で作成する。"""
+    data = _validate(data)
+    prefix = _namespace_prefix(namespace)
+    root_name = prefix + data["joints"][0]["name"]
+    if cmds.objExists(":" + root_name):
+        raise ValueError("import 先 root が既に存在します: {}".format(root_name))
+
+    cmds.undoInfo(openChunk=True, chunkName="YWTA Skeleton Import")
+    failed = False
+    created = []
+    try:
+        _ensure_namespace(namespace)
+        for item in data["joints"]:
+            parent = created[item["parent"]] if item["parent"] is not None else None
+            name = prefix + item["name"]
+            kwargs = {"name": ":" + name}
+            if parent:
+                kwargs["parent"] = parent
+            joint = cmds.createNode("joint", **kwargs)
+            expected_leaf = name
+            if joint.rsplit("|", 1)[-1] != expected_leaf:
+                raise RuntimeError("joint 名が競合しています: {} -> {}".format(name, joint))
+            _set_attributes(joint, item["attributes"])
+            created.append((cmds.ls(joint, long=True) or [joint])[0])
+    except Exception:
+        failed = True
+        raise
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        if failed:
+            cmds.undo()
+    cmds.select(created[0], replace=True)
+    return created
+
+
+def load(file_path, namespace=""):
+    """Skeleton JSON を読み込み scene に作成する。"""
+    return create(read(file_path), namespace=namespace)
+
+
+def save_selected():
+    """選択 root joint をファイルダイアログで保存する。"""
+    selected = cmds.ls(selection=True, type="joint", long=True) or []
+    if len(selected) != 1:
+        raise ValueError("保存する root joint を1つ選択してください。")
+    paths = cmds.fileDialog2(
+        fileMode=0,
+        dialogStyle=2,
+        caption="Export Skeleton",
+        fileFilter="YWTA Skeleton (*.skeleton.json)",
+    )
+    if not paths:
+        return None
+    return save(selected[0], paths[0])
+
+
+def load_dialog():
+    """ファイルと任意 namespace をダイアログで指定して import する。"""
+    paths = cmds.fileDialog2(
+        fileMode=1,
+        dialogStyle=2,
+        caption="Import Skeleton",
+        fileFilter="YWTA Skeleton (*.skeleton.json)",
+    )
+    if not paths:
+        return None
+    result = cmds.promptDialog(
+        title="Import Skeleton",
+        message="Namespace (optional):",
+        button=["Import", "Cancel"],
+        defaultButton="Import",
+        cancelButton="Cancel",
+        dismissString="Cancel",
+    )
+    if result != "Import":
+        return None
+    namespace = cmds.promptDialog(query=True, text=True)
+    return load(paths[0], namespace=namespace)

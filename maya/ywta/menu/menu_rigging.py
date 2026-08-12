@@ -65,17 +65,17 @@ def create_rigging_menu(parent_menu):
     cmds.menuItem(
         parent=rig_menu,
         label="Export Skeleton",
-        command="import ywta.rig.skeleton as skeleton; skeleton.dump()",
+        command="import ywta.rig.skeleton_io as skeleton_io; skeleton_io.save_selected()",
         image="kinJoint.png",
-        annotation="スケルトン構造をファイルにエクスポートします",
+        annotation="選択rootのスケルトン構造を検証可能なJSONへエクスポートします",
     )
 
     cmds.menuItem(
         parent=rig_menu,
         label="Import Skeleton",
-        command="import ywta.rig.skeleton as skeleton; skeleton.load()",
+        command="import ywta.rig.skeleton_io as skeleton_io; skeleton_io.load_dialog()",
         image="kinJoint.png",
-        annotation="スケルトン構造をファイルからインポートします",
+        annotation="versioned JSONから衝突を拒否してスケルトンをインポートします",
     )
 
     item = cmds.menuItem(
