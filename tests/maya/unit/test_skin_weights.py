@@ -49,6 +49,27 @@ class SkinWeightsTests(TestCase):
         cmds.undo()
         self.assertEqual(before, self._weights(self.vertices[3]))
 
+    def test_paste_across_multiple_meshes_is_single_undo(self):
+        """同じclipboardを複数meshへ適用し、追加influenceごと1回で戻す。"""
+        data = skin_weights.capture_vertex_weights(self.vertices[3])
+        second = cmds.polyPlane(name="cape")[0]
+        second_cluster = cmds.skinCluster(self.root, second, toSelectedBones=True)[0]
+        targets = [self.vertices[0], second + ".vtx[0]"]
+        before_first = self._weights(targets[0])
+        before_second = cmds.skinPercent(second_cluster, targets[1], query=True, value=True)
+        cmds.select(targets, replace=True)
+
+        result = skin_weights.paste_vertex_weights(data=data)
+
+        self.assertEqual(2, len(result))
+        self.assertAlmostEqual(1.0, cmds.skinPercent(self.cluster, targets[0], query=True, transform=self.tip))
+        self.assertAlmostEqual(1.0, cmds.skinPercent(second_cluster, targets[1], query=True, transform=self.tip))
+        self.assertEqual(targets, cmds.ls(selection=True, flatten=True))
+        cmds.undo()
+        self.assertEqual(before_first, self._weights(targets[0]))
+        self.assertEqual(before_second, cmds.skinPercent(second_cluster, targets[1], query=True, value=True))
+        self.assertNotIn(self.tip, cmds.skinCluster(second_cluster, query=True, influence=True))
+
     def test_average_selected_vertex_weights(self):
         selected = [self.vertices[0], self.vertices[3]]
         before = [self._weights(vertex) for vertex in selected]

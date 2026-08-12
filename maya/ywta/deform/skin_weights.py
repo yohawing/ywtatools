@@ -23,30 +23,33 @@ CLIPBOARD_VERSION = 1
 CLIPBOARD_FILENAME = "ywta_vertex_weight_clipboard.json"
 
 
-def _selected_vertex_indices(vertices=None):
-    """単一 mesh 上の頂点選択を shape と index 列へ正規化する。"""
+def _selected_vertex_groups(vertices=None):
+    """頂点選択をmesh shapeごとのindex列へ正規化する。"""
     source = vertices if vertices is not None else cmds.ls(selection=True, flatten=True)
     converted = cmds.polyListComponentConversion(source or [], toVertex=True) or []
     expanded = cmds.filterExpand(converted, selectionMask=31, expand=True) or []
     if not expanded:
         raise ValueError("polygon vertex を1つ以上選択してください。")
-    shape = None
-    indices = []
-    seen = set()
+    groups = {}
     for component in expanded:
         match = _VERTEX_RE.match(component)
         if not match:
             raise ValueError("vertex component を解決できません: {}".format(component))
-        component_shape = skin_io._mesh_shape(match.group(1))
-        if shape is None:
-            shape = component_shape
-        elif component_shape != shape:
-            raise ValueError("頂点選択は1つの mesh に限定してください。")
+        shape = skin_io._mesh_shape(match.group(1))
         index = int(match.group(2))
-        if index not in seen:
-            seen.add(index)
-            indices.append(index)
-    return shape, indices
+        group = groups.setdefault(shape, {"indices": [], "seen": set()})
+        if index not in group["seen"]:
+            group["seen"].add(index)
+            group["indices"].append(index)
+    return [(shape, group["indices"]) for shape, group in groups.items()]
+
+
+def _selected_vertex_indices(vertices=None):
+    """単一mesh上の頂点選択をshapeとindex列へ正規化する。"""
+    groups = _selected_vertex_groups(vertices)
+    if len(groups) != 1:
+        raise ValueError("頂点選択は1つの mesh に限定してください。")
+    return groups[0]
 
 
 def _component(indices):
@@ -203,33 +206,36 @@ def copy_average_vertex_weights(vertices=None, file_path=None):
     return _CLIPBOARD
 
 
-def _set_uniform_weights(shape, indices, data, chunk_name):
-    """検証済み1頂点ウェイトを複数頂点へ一括設定する。"""
+def _set_uniform_weight_groups(groups, data, chunk_name):
+    """検証済みclipboardウェイトを複数meshへ単一Undoで設定する。"""
     data = _validate_weights(data)
     influences = skin_io._resolve_influences(data["influences"])
     original_selection = cmds.ls(selection=True, long=True, flatten=True) or []
     undo_utils.require_enabled(chunk_name)
     cmds.undoInfo(openChunk=True, chunkName=chunk_name)
     failed = False
+    clusters = []
     try:
-        cluster = skin_io._ensure_skin_cluster(shape, influences)
-        locked = [
-            influence
-            for influence in (cmds.skinCluster(cluster, query=True, influence=True) or [])
-            if cmds.objExists(influence + ".lockInfluenceWeights") and cmds.getAttr(influence + ".lockInfluenceWeights")
-        ]
-        if locked:
-            raise ValueError("locked influenceがあるためウェイトを変更できません: {}".format(", ".join(locked)))
         total = sum(float(value) for value in data["weights"])
         transform_values = [(influence, float(value) / total) for influence, value in zip(influences, data["weights"])]
-        components = ["{}.vtx[{}]".format(shape, index) for index in indices]
-        cmds.skinPercent(
-            cluster,
-            components,
-            transformValue=transform_values,
-            normalize=True,
-            zeroRemainingInfluences=True,
-        )
+        for shape, indices in groups:
+            cluster = skin_io._ensure_skin_cluster(shape, influences)
+            locked = [
+                influence
+                for influence in (cmds.skinCluster(cluster, query=True, influence=True) or [])
+                if cmds.objExists(influence + ".lockInfluenceWeights") and cmds.getAttr(influence + ".lockInfluenceWeights")
+            ]
+            if locked:
+                raise ValueError("locked influenceがあるためウェイトを変更できません: {}".format(", ".join(locked)))
+            components = ["{}.vtx[{}]".format(shape, index) for index in indices]
+            cmds.skinPercent(
+                cluster,
+                components,
+                transformValue=transform_values,
+                normalize=True,
+                zeroRemainingInfluences=True,
+            )
+            clusters.append(cluster)
     except Exception:
         failed = True
         raise
@@ -243,7 +249,12 @@ def _set_uniform_weights(shape, indices, data, chunk_name):
             cmds.undoInfo(closeChunk=True)
             if failed:
                 cmds.undo()
-    return cluster
+    return clusters
+
+
+def _set_uniform_weights(shape, indices, data, chunk_name):
+    """単一mesh互換入口から検証済みclipboardウェイトを設定する。"""
+    return _set_uniform_weight_groups([(shape, indices)], data, chunk_name)[0]
 
 
 def paste_vertex_weights(vertices=None, data=None, clipboard_file=None):
@@ -256,8 +267,9 @@ def paste_vertex_weights(vertices=None, data=None, clipboard_file=None):
             data = read_clipboard(source) if os.path.isfile(source) else _CLIPBOARD
         if data is None:
             raise ValueError("先にコピー元vertexのウェイトをコピーしてください。")
-    shape, indices = _selected_vertex_indices(vertices)
-    return _set_uniform_weights(shape, indices, data, "YWTA Paste Vertex Weights")
+    groups = _selected_vertex_groups(vertices)
+    clusters = _set_uniform_weight_groups(groups, data, "YWTA Paste Vertex Weights")
+    return clusters[0] if len(clusters) == 1 else clusters
 
 
 def average_vertex_weights(vertices=None):
