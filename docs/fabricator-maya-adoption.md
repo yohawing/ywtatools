@@ -46,6 +46,11 @@ Skin JSON は geometry と weight を含むため、大きいメッシュでは�
 大きくなります。Direct load は fingerprint が一致するメッシュだけに使用し、
 リトポロジー後は Transfer を使用してください。
 
+Skinned Mesh Combineは実行時のjoint・mesh評価姿勢を新しいskinClusterのbind stateに
+します。animation rigでは、そのrigで正本とするrest / bind frameへ移動してから実行して
+ください。特定frameを暗黙に強制する処理は、YWTA側に共通のframe 0規約がないため入れて
+いません。
+
 ### Pose / Animation Clip / Selection Sets
 
 メニュー: `YWTA > Animation`
