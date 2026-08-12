@@ -129,6 +129,22 @@ class FbxExporterTests(TestCase):
             self.assertEqual(b"existing", handle.read())
         self.assertEqual([sentinel], cmds.ls(selection=True))
 
+    def test_failed_atomic_replace_preserves_target_and_removes_temporary(self):
+        """最終置換失敗時も既存FBXとdirectoryを汚さない。"""
+        cube = cmds.polyCube(name="asset")[0]
+        path = self.get_temp_filename("locked.fbx")
+        directory = os.path.dirname(path)
+        with open(path, "wb") as handle:
+            handle.write(b"existing")
+
+        with mock.patch.object(fbx_exporter.os, "replace", side_effect=PermissionError("locked")):
+            with self.assertRaises(PermissionError):
+                fbx_exporter.export_selected([cube], path)
+
+        with open(path, "rb") as handle:
+            self.assertEqual(b"existing", handle.read())
+        self.assertFalse(any(name.startswith(".ywta_fbx_") for name in os.listdir(directory)))
+
     def test_invalid_animation_range_fails_before_file_write(self):
         cmds.select(clear=True)
         root = cmds.joint(name="root_jnt")
