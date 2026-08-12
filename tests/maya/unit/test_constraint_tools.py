@@ -51,6 +51,37 @@ class ConstraintToolsTests(TestCase):
 
         self.assertEqual([], cmds.ls(type="pointConstraint"))
 
+    def test_keyed_driven_channel_rejects_before_pair_blend_creation(self):
+        """animCurve接続をMayaの暗黙pairBlendへ差し替えない。"""
+        driver = cmds.spaceLocator(name="driver")[0]
+        driven = cmds.spaceLocator(name="driven")[0]
+        cmds.setKeyframe(driven, attribute="translateX", time=1, value=1.0)
+        incoming = cmds.listConnections(
+            driven + ".translateX",
+            source=True,
+            destination=False,
+            plugs=True,
+        )
+
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            with self.assertRaises(ValueError):
+                constraint_tools.create_constraint("point", [driver], driven)
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+        self.assertEqual([], cmds.ls(type="pointConstraint"))
+        self.assertEqual([], cmds.ls(type="pairBlend"))
+        self.assertEqual(
+            incoming,
+            cmds.listConnections(
+                driven + ".translateX",
+                source=True,
+                destination=False,
+                plugs=True,
+            ),
+        )
+
     def test_delete_constraints_is_undoable(self):
         """drivenへ入るconstraintだけを削除してUndoできる。"""
         driver = cmds.spaceLocator(name="driver")[0]

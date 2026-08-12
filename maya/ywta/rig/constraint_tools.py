@@ -112,7 +112,16 @@ def create_constraint(
     for channel in DRIVEN_CHANNELS[kind]:
         for axis in "XYZ":
             attribute = "{}.{}{}".format(resolved_driven, channel, axis)
-            if not cmds.getAttr(attribute, settable=True):
+            incoming = (
+                cmds.listConnections(
+                    attribute,
+                    source=True,
+                    destination=False,
+                    plugs=True,
+                )
+                or []
+            )
+            if incoming or not cmds.getAttr(attribute, settable=True):
                 blocked.append(channel + axis)
     if blocked:
         raise ValueError("driven channelが編集できません: {} ({})".format(resolved_driven, ", ".join(blocked)))
