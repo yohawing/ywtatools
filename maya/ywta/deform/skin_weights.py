@@ -207,6 +207,7 @@ def _set_uniform_weights(shape, indices, data, chunk_name):
     """検証済み1頂点ウェイトを複数頂点へ一括設定する。"""
     data = _validate_weights(data)
     influences = skin_io._resolve_influences(data["influences"])
+    original_selection = cmds.ls(selection=True, long=True, flatten=True) or []
     undo_utils.require_enabled(chunk_name)
     cmds.undoInfo(openChunk=True, chunkName=chunk_name)
     failed = False
@@ -226,9 +227,15 @@ def _set_uniform_weights(shape, indices, data, chunk_name):
         failed = True
         raise
     finally:
-        cmds.undoInfo(closeChunk=True)
-        if failed:
-            cmds.undo()
+        try:
+            skin_io._restore_selection(original_selection)
+        except Exception:
+            failed = True
+            raise
+        finally:
+            cmds.undoInfo(closeChunk=True)
+            if failed:
+                cmds.undo()
     return cluster
 
 

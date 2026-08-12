@@ -37,10 +37,15 @@ class SkinWeightsTests(TestCase):
     def test_copy_and_paste_vertex_weights_with_single_undo(self):
         data = skin_weights.capture_vertex_weights(self.vertices[0])
         before = self._weights(self.vertices[3])
+        cmds.select(self.vertices[3], replace=True)
 
-        skin_weights.paste_vertex_weights([self.vertices[3]], data=data)
+        skin_weights.paste_vertex_weights(data=data)
 
         self.assertEqual(self._weights(self.vertices[0]), self._weights(self.vertices[3]))
+        self.assertEqual(
+            cmds.ls(self.vertices[3], long=True, flatten=True),
+            cmds.ls(selection=True, long=True, flatten=True),
+        )
         cmds.undo()
         self.assertEqual(before, self._weights(self.vertices[3]))
 
