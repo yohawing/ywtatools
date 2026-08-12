@@ -167,3 +167,35 @@ class SceneAuditTests(TestCase):
 
         self.assertEqual(1, report["summary"]["scan_errors"])
         self.assertEqual(shape, report["errors"][0]["shape"])
+
+    def test_selected_audit_only_scans_selected_mesh(self):
+        """選択外の不正meshを局所監査結果に混ぜない。"""
+        bad_shape = self._create_lamina_mesh()
+        clean = cmds.polyCube(name="selectedCleanMesh")[0]
+        cmds.select(clean, replace=True)
+
+        report = scene_audit.audit_selected_meshes()
+
+        self.assertEqual([], report["meshes"])
+        self.assertEqual(0, report["summary"]["affected_meshes"])
+        self.assertNotIn(bad_shape, [item["shape"] for item in report["meshes"]])
+        self.assertEqual([], report["duplicate_short_names"])
+
+    def test_selected_audit_accepts_mesh_component(self):
+        """component選択から所属meshを解決する。"""
+        shape = self._create_lamina_mesh()
+        transform = cmds.listRelatives(shape, parent=True, fullPath=True)[0]
+        cmds.select(transform + ".f[0]", replace=True)
+
+        report = scene_audit.audit_selected_meshes()
+
+        self.assertEqual([shape], [item["shape"] for item in report["meshes"]])
+
+    def test_selected_audit_rejects_non_mesh_selection(self):
+        locator = cmds.spaceLocator(name="notMesh")[0]
+        cmds.select(locator, replace=True)
+
+        with self.assertRaises(ValueError):
+            scene_audit.audit_selected_meshes()
+
+        self.assertEqual([locator], cmds.ls(selection=True))

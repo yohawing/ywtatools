@@ -70,12 +70,12 @@ def audit_mesh(shape):
     }
 
 
-def audit_scene():
-    """scene 全体を監査し、選択可能な report を返す。"""
+def _audit_shapes(shapes, duplicates):
+    """shape列を監査し、選択可能なreportを作る。"""
     global _LAST_REPORT
     meshes = []
     errors = []
-    for shape in cmds.ls(type="mesh", long=True) or []:
+    for shape in shapes:
         if cmds.getAttr(shape + ".intermediateObject"):
             continue
         try:
@@ -85,7 +85,6 @@ def audit_scene():
             continue
         if any(item[category] for category in ISSUE_CATEGORIES):
             meshes.append(item)
-    duplicates = find_duplicate_short_names()
     issue_counts = {category: sum(len(item[category]) for item in meshes) for category in ISSUE_CATEGORIES}
     report = {
         "duplicate_short_names": duplicates,
@@ -101,6 +100,42 @@ def audit_scene():
     }
     _LAST_REPORT = report
     return report
+
+
+def audit_scene():
+    """scene 全体を監査し、選択可能な report を返す。"""
+    shapes = cmds.ls(type="mesh", long=True) or []
+    return _audit_shapes(shapes, find_duplicate_short_names())
+
+
+def _selected_mesh_shapes():
+    """現在選択のtransform / shape / componentからmesh shapeを取得する。"""
+    objects = cmds.ls(selection=True, objectsOnly=True, long=True) or []
+    shapes = []
+    for node in objects:
+        if cmds.nodeType(node) == "mesh":
+            candidates = [node]
+        else:
+            candidates = (
+                cmds.listRelatives(
+                    node,
+                    shapes=True,
+                    fullPath=True,
+                    noIntermediate=True,
+                    type="mesh",
+                )
+                or []
+            )
+        shapes.extend(candidates)
+    return list(dict.fromkeys(shapes))
+
+
+def audit_selected_meshes():
+    """選択meshだけを監査し、scene-wide名前衝突は含めない。"""
+    shapes = _selected_mesh_shapes()
+    if not shapes:
+        raise ValueError("監査するmesh transform / shape / componentを選択してください。")
+    return _audit_shapes(shapes, [])
 
 
 def issue_nodes(report, categories=None, include_duplicate_names=True):
@@ -159,9 +194,20 @@ def show():
         cmds.scrollField(output, edit=True, text=format_report(report))
         return select_issues(report)
 
-    cmds.rowLayout(numberOfColumns=2, adjustableColumn=1)
-    cmds.button(label="Audit", command=run_audit)
-    cmds.button(label="Audit + Select Issues", command=run_audit_and_select)
+    def run_selected_audit(*_args):
+        report = audit_selected_meshes()
+        cmds.scrollField(output, edit=True, text=format_report(report))
+
+    def run_selected_audit_and_select(*_args):
+        report = audit_selected_meshes()
+        cmds.scrollField(output, edit=True, text=format_report(report))
+        return select_issues(report, include_duplicate_names=False)
+
+    cmds.gridLayout(numberOfColumns=2, cellWidthHeight=(300, 28))
+    cmds.button(label="Audit Scene", command=run_audit)
+    cmds.button(label="Audit Scene + Select Issues", command=run_audit_and_select)
+    cmds.button(label="Audit Selected Meshes", command=run_selected_audit)
+    cmds.button(label="Audit Selected + Select Issues", command=run_selected_audit_and_select)
     cmds.setParent("..")
     cmds.showWindow(window)
     return window
