@@ -57,6 +57,22 @@ class JointDuplicateTests(TestCase):
         self.assertEqual("character:R_arm_jnt", created[0].rsplit("|", 1)[-1])
         self.assertFalse(cmds.objExists(":working:character:R_arm_jnt"))
 
+    def test_mid_chain_root_duplicates_as_sibling_under_same_parent(self):
+        cmds.select(clear=True)
+        skeleton_root = cmds.joint(name="skeleton_root", position=(0.0, 2.0, 0.0))
+        source = cmds.joint(name="L_arm_jnt", position=(2.0, 3.0, 0.0))
+        cmds.joint(name="L_elbow_jnt", position=(4.0, 3.0, 0.0))
+        before = self._matrix(source)
+
+        created = joint_duplicate.duplicate_hierarchy(source, "L_", "R_")
+
+        self.assertEqual(
+            cmds.ls(skeleton_root, long=True)[0],
+            cmds.listRelatives(created[0], parent=True, fullPath=True)[0],
+        )
+        for expected, actual in zip(before, self._matrix(created[0])):
+            self.assertAlmostEqual(expected, actual, places=7)
+
     def test_unmatched_name_and_existing_target_reject_before_edit(self):
         root, _child, _tip = self._chain()
         before = cmds.ls(type="joint", long=True)
