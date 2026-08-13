@@ -1,6 +1,6 @@
 import maya.cmds as cmds
 import maya.api.OpenMaya as OpenMaya
-import ywta.shortcuts as shortcuts
+from ywta.core import maya_utils
 import ywta.rig.common as common
 from ywta.dge import dge
 
@@ -83,12 +83,12 @@ class SpineRig(object):
             cmds.connectAttr("{}.output".format(mdl), "{}.translateX".format(joint))
 
         joint_up = OpenMaya.MVector(0.0, 1.0, 0.0)
-        start_joint_path = shortcuts.get_dag_path2(self.start_joint)
-        start_control_path = shortcuts.get_dag_path2(self.start_control)
+        start_joint_path = maya_utils.get_dag_path(self.start_joint)
+        start_control_path = maya_utils.get_dag_path(self.start_control)
         up_vector_start = joint_up * start_joint_path.inclusiveMatrix() * start_control_path.inclusiveMatrixInverse()
 
-        end_joint_path = shortcuts.get_dag_path2(self.end_joint)
-        end_control_path = shortcuts.get_dag_path2(self.end_control)
+        end_joint_path = maya_utils.get_dag_path(self.end_joint)
+        end_control_path = maya_utils.get_dag_path(self.end_control)
         up_vector_end = joint_up * end_joint_path.inclusiveMatrix() * end_control_path.inclusiveMatrixInverse()
 
         # Setup advanced twist

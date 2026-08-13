@@ -5,7 +5,7 @@ try:
 except ImportError:
     from PySide2.QtCore import QStringListModel
 
-from ywta import shortcuts as shortcuts
+from ywta.core import settings_utils
 
 
 class StringCache(QStringListModel):
@@ -21,7 +21,7 @@ class StringCache(QStringListModel):
         super(StringCache, self).__init__(parent)
         self._name = name
         self.max_values = max_values
-        data = shortcuts.get_setting(self._name)
+        data = settings_utils.get_setting(self._name)
         if data:
             data = json.loads(data)
             self.setStringList(data)
@@ -42,4 +42,4 @@ class StringCache(QStringListModel):
 
     def _save(self):
         """Saves the string list to the persistent cache."""
-        shortcuts.set_setting(self._name, json.dumps(self.stringList()))
+        settings_utils.set_setting(self._name, json.dumps(self.stringList()))

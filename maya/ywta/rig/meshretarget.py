@@ -16,7 +16,7 @@ import numpy as np
 
 import maya.api.OpenMaya as OpenMaya
 import maya.cmds as cmds
-import ywta.shortcuts as shortcuts
+from ywta.core import maya_utils, node_utils
 from ywta.rig.rbf_solver import (  # noqa: F401
     RBF,
     RbfSolver,
@@ -84,12 +84,12 @@ def points_to_np_array(mesh, stride=1):
 
 
 def get_points(mesh):
-    path = shortcuts.get_dag_path2(shortcuts.get_shape(mesh))
+    path = maya_utils.get_dag_path(node_utils.get_shape(mesh))
     mesh_fn = OpenMaya.MFnMesh(path)
     return mesh_fn.getPoints()
 
 
 def set_points(mesh, points):
-    path = shortcuts.get_dag_path2(shortcuts.get_shape(mesh))
+    path = maya_utils.get_dag_path(node_utils.get_shape(mesh))
     mesh_fn = OpenMaya.MFnMesh(path)
     mesh_fn.setPoints(points)

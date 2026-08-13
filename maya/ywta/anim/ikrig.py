@@ -3,7 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import maya.cmds as cmds
-import ywta.shortcuts as shortcuts
+from ywta.core import maya_utils
 
 import logging
 import os
@@ -150,12 +150,12 @@ def attach_skeletons(source_joints, target_joints):
 
         if j:
             cmds.connectAttr("{}.worldMatrix[0]".format(j), "{}.inMatrix[{}]".format(node, i))
-            path = shortcuts.get_dag_path2(j)
+            path = maya_utils.get_dag_path(j)
             rest_matrix = list(path.inclusiveMatrix())
             cmds.setAttr("{}.inRestMatrix[{}]".format(node, i), *rest_matrix, type="matrix")
 
         if target_joints[i]:
-            path = shortcuts.get_dag_path2(target_joints[i])
+            path = maya_utils.get_dag_path(target_joints[i])
             matrix = list(path.inclusiveMatrix())
             cmds.setAttr("{}.targetRestMatrix[{}]".format(node, i), *matrix, type="matrix")
 

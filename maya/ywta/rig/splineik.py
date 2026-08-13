@@ -1,9 +1,9 @@
 import maya.cmds as cmds
-import ywta.shortcuts as shortcuts
+import ywta.rig.common as common
 
 
 def create_spine(start_joint, end_joint, lower_control, upper_control, name="spine"):
-    spline_chain, original_chain = shortcuts.duplicate_chain(start_joint, end_joint, prefix="ikSpine_")
+    spline_chain, original_chain = common.duplicate_chain(start_joint, end_joint, prefix="ikSpine_")
 
     # Create the spline ik
     ikh, effector, curve = cmds.ikHandle(

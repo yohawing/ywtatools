@@ -1,6 +1,6 @@
 import maya.cmds as cmds
 import maya.mel as mel
-import ywta.shortcuts as shortcuts
+from ywta.core import namespace_utils, settings_utils
 
 
 def import_fbx(file_path):
@@ -31,7 +31,7 @@ def export_animation_fbx(root=None, file_path=None, start_frame=None, end_frame=
         root = root[0]
 
     if file_path is None:
-        file_path = shortcuts.get_save_file_name("*.fbx", "cmt.fbx.export")
+        file_path = settings_utils.get_save_file_name("*.fbx", "cmt.fbx.export")
         if not file_path:
             return
 
@@ -70,7 +70,7 @@ class ExportSkeleton(object):
         self.joints = None
 
     def __enter__(self):
-        namespace = shortcuts.get_namespace_from_name(self.orig_root)
+        namespace = namespace_utils.get_namespace_from_name(self.orig_root)
         if not namespace:
             # Temporarily put the input skeleton in a namespace so we can create a duplicate
             # skeleton using the same names
@@ -94,7 +94,7 @@ def create_export_skeleton(root):
     :param joints:
     :return:
     """
-    namespace = shortcuts.get_namespace_from_name(root)
+    namespace = namespace_utils.get_namespace_from_name(root)
     export_root = cmds.duplicate(root)[0]
     if cmds.listRelatives(export_root, parent=True):
         export_root = cmds.parent(export_root, world=True)[0]

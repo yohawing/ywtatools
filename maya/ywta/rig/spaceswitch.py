@@ -26,7 +26,7 @@ Example Usage
 import maya.cmds as cmds
 import maya.api.OpenMaya as OpenMaya
 from ywta.dge import dge
-import ywta.shortcuts as shortcuts
+from ywta.core import maya_utils
 
 
 def create_space_switch(node, drivers, switch_attribute=None, use_translate=True, use_rotate=True):
@@ -98,7 +98,7 @@ def _connect_driver_matrix_network(blend, node, driver, index, to_parent_local):
     # by this driver transform
     mult = cmds.createNode("multMatrix", name="spaceswitch_{}_to_{}".format(node, driver))
 
-    offset = shortcuts.get_dag_path2(node).exclusiveMatrix() * OpenMaya.MMatrix(
+    offset = maya_utils.get_dag_path(node).exclusiveMatrix() * OpenMaya.MMatrix(
         cmds.getAttr("{}.worldInverseMatrix[0]".format(driver))
     )
     cmds.setAttr("{}.matrixIn[0]".format(mult), list(offset), type="matrix")

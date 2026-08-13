@@ -1,6 +1,6 @@
 import maya.api.OpenMaya as OpenMaya
 import maya.cmds as cmds
-import ywta.shortcuts as shortcuts
+from ywta.core import maya_utils
 from six import string_types
 
 HIERARCHY = {"top": {"anim": None, "skeleton": None, "rig": None, "geo": None}}
@@ -380,7 +380,7 @@ def opm_constraint(
         if freeze:
             offset = OpenMaya.MMatrix(cmds.getAttr("{}.worldMatrix[0]".format(driven)))
         else:
-            offset = shortcuts.get_dag_path2(driven).exclusiveMatrix()
+            offset = maya_utils.get_dag_path(driven).exclusiveMatrix()
         offset *= OpenMaya.MMatrix(cmds.getAttr("{}.worldInverseMatrix[0]".format(driver)))
         cmds.setAttr("{}.matrixIn[0]".format(mult), list(offset), type="matrix")
 

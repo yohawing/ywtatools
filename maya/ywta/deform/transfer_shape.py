@@ -2,14 +2,14 @@ import maya.cmds as cmds
 import maya.api.OpenMaya as OpenMaya2
 import ywta.deform.blendshape as blendshape
 import ywta.mesh.colorset as colorset
-import ywta.shortcuts as shortcuts
+from ywta.core import maya_utils
 from ywta.ui.optionbox import OptionBox
 
 
 def blend_points_width_weights(source, target, weights):
 
-    source_points = shortcuts.get_points(source)
-    target_points = shortcuts.get_points(target)
+    source_points = maya_utils.get_points(source)
+    target_points = maya_utils.get_points(target)
 
     if len(source_points) != len(target_points):
         raise RuntimeError("Source and target points must be the same length")
@@ -37,7 +37,7 @@ def new_target_with_points(target_mesh, points, target_name=None):
     target_dup = cmds.duplicate(target_mesh, name=f"{target_mesh}_dup")[0]
 
     # 頂点をセットして
-    target_dup_fnmesh = shortcuts.get_mfnmesh(target_dup)
+    target_dup_fnmesh = maya_utils.get_mfnmesh(target_dup)
     target_dup_fnmesh.setPoints(points)
 
     # ブレンドシェイプターゲットに追加
@@ -61,7 +61,7 @@ def transfer_shape_with_colorset(source_mesh, target_mesh, is_use_colorset=None,
     else:
         weights = colorset.get_weights_from_colorset(target_mesh)
         new_points = blend_points_width_weights(source_mesh, target_mesh, weights)
-        target_fnmesh = shortcuts.get_mfnmesh(target_mesh)
+        target_fnmesh = maya_utils.get_mfnmesh(target_mesh)
         if is_add_blendshape_target:
             target_name = f"new_target_{source_mesh.split('|')[-1]}"
             new_target_with_points(target_mesh, new_points, target_name)

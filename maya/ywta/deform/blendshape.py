@@ -2,7 +2,7 @@ from six import string_types
 import maya.cmds as cmds
 import maya.OpenMaya as OpenMaya
 
-import ywta.shortcuts as shortcuts
+from ywta.core import maya_utils, node_utils
 import ywta.deform.np_mesh as np_mesh
 import ywta.rig.common as common
 
@@ -13,7 +13,7 @@ def get_blendshape_node(geometry):
     :param geometry: ジオメトリの名前
     :return: ブレンドシェイプノードの名前
     """
-    geometry = shortcuts.get_shape(geometry)
+    geometry = node_utils.get_shape(geometry)
     history = cmds.listHistory(geometry, il=2, pdo=False) or []
     blendshapes = [x for x in history if cmds.nodeType(x) == "blendShape" and cmds.blendShape(x, q=True, g=True)[0] == geometry]
     if blendshapes:
@@ -29,7 +29,7 @@ def get_or_create_blendshape_node(geometry):
     :param geometry: ジオメトリの名前
     :return: ブレンドシェイプノードの名前
     """
-    geometry = shortcuts.get_shape(geometry)
+    geometry = node_utils.get_shape(geometry)
     blendshape = get_blendshape_node(geometry)
     if blendshape:
         return blendshape
@@ -244,7 +244,7 @@ def get_targets_at_index(blend_name, index=0):
     :param index: <int> シェイプのインデックス
     :return: <tuple> インデックスにあるターゲットの文字列配列
     """
-    blend_fn = shortcuts.get_mfnblendshapedeformer(blend_name)
+    blend_fn = maya_utils.get_mfnblendshapedeformer(blend_name)
     # base_obj = get_base_object(blend_name)[0]
     obj_array = OpenMaya.MObjectArray()
     base_obj = OpenMaya.MObject()
@@ -259,7 +259,7 @@ def get_base_object(blend_name):
     :param blend_name: <str> ブレンドシェイプノードの名前
     :return: <tuple> ベースオブジェクトの文字列配列
     """
-    blend_fn = shortcuts.get_mfnblendshapedeformer(blend_name)
+    blend_fn = maya_utils.get_mfnblendshapedeformer(blend_name)
     obj_array = OpenMaya.MObjectArray()
     blend_fn.getBaseObjects(obj_array)
     return obj_array[0]

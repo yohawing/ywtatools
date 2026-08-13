@@ -71,7 +71,7 @@ import maya.api.OpenMaya as OpenMaya
 
 from ywta.settings import DOCUMENTATION_ROOT
 from ywta.core import undo_utils
-import ywta.shortcuts as shortcuts
+from ywta.core import node_utils, settings_utils
 
 logger = logging.getLogger(__name__)
 CONTROLS_DIRECTORY = os.path.join(os.path.dirname(__file__), "controls")
@@ -87,7 +87,7 @@ def export_curves(controls=None, file_path=None):
     :return: The exported list of ControlShapes.
     """
     if file_path is None:
-        file_path = shortcuts.get_save_file_name("*.json", "ywta.control")
+        file_path = settings_utils.get_save_file_name("*.json", "ywta.control")
         if not file_path:
             return
     if controls is None:
@@ -321,7 +321,7 @@ def import_new_curves(file_path=None, tag_as_controller=False):
     :return: The new curve transforms
     """
     if file_path is None:
-        file_path = shortcuts.get_open_file_name("*.json", "ywta.control")
+        file_path = settings_utils.get_open_file_name("*.json", "ywta.control")
         if not file_path:
             return None
     return import_new_curve_files([file_path], tag_as_controller=tag_as_controller)
@@ -426,7 +426,7 @@ def import_curves_on_selected(file_path=None, tag_as_controller=False):
     :return: The new curve transform
     """
     if file_path is None:
-        file_path = shortcuts.get_open_file_name("*.json", "ywta.control")
+        file_path = settings_utils.get_open_file_name("*.json", "ywta.control")
         if not file_path:
             return None
     return import_curve_files_on_selected([file_path], tag_as_controller=tag_as_controller)
@@ -459,7 +459,7 @@ def load_curves(file_path=None):
     :return:
     """
     if file_path is None:
-        file_path = shortcuts.get_open_file_name("*.json", "ywta.control")
+        file_path = settings_utils.get_open_file_name("*.json", "ywta.control")
         if not file_path:
             return
 
@@ -595,7 +595,7 @@ class CurveShape(object):
 
         :param transform: Transform
         """
-        shape = shortcuts.get_shape(transform)
+        shape = node_utils.get_shape(transform)
         if shape and cmds.nodeType(shape) == "nurbsCurve":
             curve = _curve_data_from_shape(shape)
             self.transform = transform
@@ -620,7 +620,7 @@ class CurveShape(object):
         points = self._get_transformed_points()
         points = points + points[: self.degree] if periodic else points
         curve = cmds.curve(degree=self.degree, p=points, per=periodic, k=self.knots)
-        shape = shortcuts.get_shape(curve)
+        shape = node_utils.get_shape(curve)
         if self.color is not None:
             cmds.setAttr("{}.overrideEnabled".format(shape), True)
             if isinstance(self.color, int):
@@ -1193,7 +1193,7 @@ def get_knots(curve):
     :param curve: Curve to query.
     :return: A list of knot values that can be passed into the curve creation command.
     """
-    shape = shortcuts.get_shape(curve)
+    shape = node_utils.get_shape(curve)
     return list(OpenMaya.MFnNurbsCurve(_dag_path(shape)).knots())
 
 

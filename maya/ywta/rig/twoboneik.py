@@ -1,7 +1,7 @@
 """Two bone stretchy soft ik setup"""
 
 import maya.cmds as cmds
-import ywta.shortcuts as shortcuts
+from ywta.core import geometry_utils
 import ywta.rig.common as common
 from ywta.dge import dge
 
@@ -126,8 +126,8 @@ class TwoBoneIk(object):
         cmds.setAttr("{}.v".format(self.end_loc), 0)
         common.snap_to_position(self.end_loc, self.end_joint)
 
-        rest_length = shortcuts.distance(self.start_joint, self.mid_joint)
-        rest_length += shortcuts.distance(self.mid_joint, self.end_joint)
+        rest_length = geometry_utils.distance(self.start_joint, self.mid_joint)
+        rest_length += geometry_utils.distance(self.mid_joint, self.end_joint)
 
         length_ratio = dge(
             "distance(start, end) / (restLength * globalScale)",

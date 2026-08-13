@@ -4,7 +4,7 @@ import numpy as np
 import os
 import json
 import maya.api.OpenMaya as OpenMaya
-import ywta.shortcuts as shortcuts
+from ywta.core import maya_utils
 
 
 class Mesh(object):
@@ -29,7 +29,7 @@ class Mesh(object):
     @classmethod
     def from_maya_mesh(cls, mesh):
 
-        points = shortcuts.get_points(mesh)
+        points = maya_utils.get_points(mesh)
         points = np.array([[p.x, p.y, p.z] for p in points])
         return Mesh(points)
 
@@ -74,7 +74,7 @@ class Mesh(object):
         points = OpenMaya.MPointArray()
         for p in self.points:
             points.append(OpenMaya.MPoint(p[0], p[1], p[2]))
-        shortcuts.set_points(mesh, points)
+        maya_utils.set_points(mesh, points)
 
     def __sub__(self, other):
         points = self.points - other.points

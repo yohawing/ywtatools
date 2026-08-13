@@ -44,7 +44,7 @@ except ImportError:
 import maya.cmds as cmds
 from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 
-import ywta.shortcuts as shortcuts
+from ywta.core import node_utils
 from ywta.core.ui_utils import SingletonWindowMixin
 from ywta.rig.control import (
     get_control_paths_in_library,
@@ -255,7 +255,7 @@ class ControlWindow(SingletonWindowMixin, MayaQWidgetBaseMixin, QMainWindow):
         """Open a dialog to set the override RGB color of the selected nodes."""
         nodes = cmds.ls(sl=True) or []
         if nodes:
-            shape = shortcuts.get_shape(nodes[0])
+            shape = node_utils.get_shape(nodes[0])
             color = cmds.getAttr("{}.overrideColorRGB".format(shape))[0]
             color = QColor(color[0] * 255, color[1] * 255, color[2] * 255)
             color = QColorDialog.getColor(color, self, "Set Curve Color")

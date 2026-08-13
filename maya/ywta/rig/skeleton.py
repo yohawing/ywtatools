@@ -20,8 +20,7 @@ import maya.cmds as cmds
 import json
 import logging
 
-import ywta.shortcuts as shortcuts
-from ywta.shortcuts import distance, vector_to
+from ywta.core import geometry_utils, maya_utils
 
 logger = logging.getLogger(__name__)
 
@@ -225,9 +224,9 @@ def insert_joints(joints=None, joint_count=1):
 
         name = joint
         end_joint = children[0]
-        d = distance(joint, children[0])
+        d = geometry_utils.distance(joint, children[0])
         increment = d / (joint_count + 1)
-        direction = vector_to(joint, end_joint)
+        direction = geometry_utils.vector_to(joint, end_joint)
         direction.normalize()
         direction *= increment
 
@@ -267,8 +266,8 @@ def tpose_arm(shoulder, elbow, wrist, hand_aim=None, hand_up=None, length_scale=
     t.x += ((b - a).length() + (c - b).length()) * direction * length_scale
     pv = (a + t) * 0.5
     pv.z -= 100.0
-    path_shoulder = shortcuts.get_dag_path2(shoulder)
-    path_elbow = shortcuts.get_dag_path2(elbow)
+    path_shoulder = maya_utils.get_dag_path(shoulder)
+    path_elbow = maya_utils.get_dag_path(elbow)
 
     a_gr = OpenMaya.MTransformationMatrix(path_shoulder.inclusiveMatrix()).rotation(asQuaternion=True)
     b_gr = OpenMaya.MTransformationMatrix(path_elbow.inclusiveMatrix()).rotation(asQuaternion=True)
