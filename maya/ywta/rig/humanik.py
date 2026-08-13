@@ -16,6 +16,20 @@ import maya.mel as mel
 from ywta.rig import humanik_assignment
 
 
+class HumanIkCharacterCreationError(RuntimeError):
+    """HumanIK Character作成後の失敗とcleanup結果を保持する例外。"""
+
+    def __init__(self, character, creation_error, cleanup_error=None):
+        """作成処理とcleanup処理の例外を保持する。"""
+        self.character = character
+        self.creation_error = creation_error
+        self.cleanup_error = cleanup_error
+        message = "HumanIK Characterの作成に失敗しました: {}".format(character)
+        if cleanup_error is not None:
+            message += " (cleanupにも失敗: {})".format(cleanup_error)
+        super().__init__(message)
+
+
 def _mel_string(value):
     """Python文字列をMELの文字列literalとして安全に表現する。"""
     return json.dumps(str(value), ensure_ascii=False)
@@ -93,19 +107,14 @@ def create_character(name):
     return new_character
 
 
-def load_character_definition(file_path):
-    """検証済みJSONから現在のHumanIK Characterへslotを割り当てる。
-
-    全slot IDと全target Jointを読み取り専用で解決してから適用を始める。
-    targetが存在しない、Jointでない、または名前が曖昧な場合はsceneを
-    変更しない。
-    """
-    character_config = humanik_assignment.load(file_path)
-
-    hikChar = mel.eval("hikGetCurrentCharacter()")
+def _resolve_assignments(assignment_data, require_non_empty=False):
+    """assignmentを正規化し、slot IDとtarget Jointを事前解決する。"""
+    normalized = humanik_assignment.normalize(assignment_data)
+    if require_non_empty and not normalized["assignments"]:
+        raise ValueError("HumanIK assignmentには1件以上のslotが必要です")
 
     resolved_slots = []
-    for assignment in character_config["assignments"]:
+    for assignment in normalized["assignments"]:
         bone_id = mel.eval(f"hikGetNodeIdFromName({_mel_string(assignment['slot'])})")
         if not isinstance(bone_id, int) or isinstance(bone_id, bool) or bone_id < 0:
             raise ValueError("HumanIK slotを解決できません: {}".format(assignment["slot"]))
@@ -123,9 +132,119 @@ def load_character_definition(file_path):
         target_joints = cmds.ls(target_nodes[0], long=True, type="joint") or []
         if len(target_joints) != 1 or target_joints[0] != target_nodes[0]:
             raise ValueError("HumanIK targetはJointではありません: {}".format(target))
-        resolved.append((target_joints[0], bone_id))
+        resolved.append((assignment["slot"], target_joints[0], bone_id))
+    return resolved
 
-    for target_joint, bone_id in resolved:
+
+def _cleanup_created_character(character):
+    """所有するCharacterを削除し、sceneから消えたことを確認する。"""
+    mel.eval("hikDeleteCharacter({});".format(_mel_string(character)))
+    scene_characters = _scene_humanik_characters()
+    if character in scene_characters:
+        raise RuntimeError("HumanIK Characterをsceneから削除できませんでした: {}".format(character))
+
+
+def _scene_humanik_characters():
+    """MELのscene Character返値を検証済みの名前集合へ変換する。"""
+    raw_characters = mel.eval("hikGetSceneCharacters()")
+    if raw_characters is None:
+        raise RuntimeError("scene内のHumanIK Characterを確認できませんでした")
+    if isinstance(raw_characters, str):
+        stripped = raw_characters.strip()
+        if not stripped:
+            return set()
+        characters = re.split(r"[;\s]+", stripped)
+    elif isinstance(raw_characters, (list, tuple)):
+        characters = raw_characters
+    else:
+        raise RuntimeError("HumanIK Character一覧の返値が不正です")
+    if any(not isinstance(character, str) or not character.strip().strip('"') for character in characters):
+        raise RuntimeError("HumanIK Character一覧に不正な名前があります")
+    return {character.strip().strip('"') for character in characters}
+
+
+def create_character_definition(assignment_data, name_hint="YWTACharacter"):
+    """検証済みassignmentから新規HumanIK Characterを構築する。
+
+    全slotとJointをscene変更前に解決します。作成後の割り当てまたは
+    readback検証に失敗した場合は、この関数が作成したCharacterだけを
+    削除し、元の失敗とcleanup結果を例外へ保持します。
+    """
+    if not isinstance(name_hint, str) or not name_hint.strip():
+        raise ValueError("HumanIK Character名は空でない文字列にしてください")
+    resolved = _resolve_assignments(assignment_data, require_non_empty=True)
+
+    characters_before = _scene_humanik_characters()
+    character = None
+    try:
+        character = mel.eval("hikCreateCharacter({});".format(_mel_string(name_hint)))
+        if not isinstance(character, str) or not character.strip():
+            raise RuntimeError("HumanIK Characterを作成できませんでした")
+    except Exception as creation_error:
+        cleanup_error = None
+        try:
+            created_characters = _scene_humanik_characters() - characters_before
+            if len(created_characters) > 1:
+                raise RuntimeError("作成されたHumanIK Characterを一意に特定できません")
+            if created_characters:
+                character = next(iter(created_characters))
+                _cleanup_created_character(character)
+        except Exception as error:
+            cleanup_error = error
+        raise HumanIkCharacterCreationError(character, creation_error, cleanup_error) from creation_error
+
+    try:
+        for _slot, target_joint, bone_id in resolved:
+            mel.eval(
+                "setCharacterObject({},{},{},0)".format(
+                    _mel_string(target_joint),
+                    _mel_string(character),
+                    bone_id,
+                )
+            )
+
+        for slot, expected_joint, bone_id in resolved:
+            readback = mel.eval(
+                "hikGetSkNode({},{})".format(
+                    _mel_string(character),
+                    bone_id,
+                )
+            )
+            if not isinstance(readback, str) or not readback.strip():
+                raise RuntimeError("HumanIK slotのreadbackが空です: {}".format(slot))
+            readback_joints = cmds.ls(readback, long=True, type="joint") or []
+            if len(readback_joints) != 1 or readback_joints[0] != expected_joint:
+                raise RuntimeError(
+                    "HumanIK slotのreadbackが一致しません: {} (expected={}, actual={})".format(
+                        slot,
+                        expected_joint,
+                        readback,
+                    )
+                )
+        return character
+    except Exception as creation_error:
+        cleanup_error = None
+        try:
+            _cleanup_created_character(character)
+        except Exception as error:
+            cleanup_error = error
+        raise HumanIkCharacterCreationError(character, creation_error, cleanup_error) from creation_error
+
+
+def load_character_definition(file_path):
+    """検証済みJSONから現在のHumanIK Characterへslotを割り当てる。
+
+    全slot IDと全target Jointを読み取り専用で解決してから適用を始める。
+    targetが存在しない、Jointでない、または名前が曖昧な場合はsceneを
+    変更しない。
+    """
+    character_config = humanik_assignment.load(file_path)
+
+    hikChar = mel.eval("hikGetCurrentCharacter()")
+
+    resolved = _resolve_assignments(character_config)
+
+    for _slot, target_joint, bone_id in resolved:
         mel.eval(
             "setCharacterObject({},{},{},0)".format(
                 _mel_string(target_joint),

@@ -46,6 +46,18 @@ bind/rest poseの証明は後段のbuilderが担当します。旧形式の
 同一slotは後のlayerが優先されます。全layerを厳密に検証してから結果を生成し、
 入力データは変更しません。
 
+## Character Builder API
+
+`ywta.rig.humanik.create_character_definition(assignment_data, name_hint)` は、version 1または
+旧形式のassignmentから、新しいHumanIK Characterを作成します。空のassignment、未知のslot、
+存在しないtarget、Jointでないtarget、曖昧な短名は、Character作成前に拒否します。
+
+検証後はslot名順に割り当て、各slotを`hikGetSkNode`で読み戻して、期待するlong DAG pathと
+完全一致することを確認します。このAPIはcurrent Characterの変更、Definition UIの更新、Lockを
+行いません。割り当てまたはreadbackに失敗した場合は、このAPIが作成したCharacterだけを削除し、
+sceneから消えたことも確認します。`HumanIkCharacterCreationError`の`creation_error`と
+`cleanup_error`で、元の失敗とcleanupの失敗を個別に確認できます。
+
 ## Known Limitations
 
 汎用的な全身自動マッピングではありません。Hip / Pelvis中心の限定的な設定で、Character名も
