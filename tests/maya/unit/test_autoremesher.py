@@ -146,6 +146,41 @@ class TestAutoRemesherNode(unittest.TestCase):
         self.assertAlmostEqual(cmds.getAttr(f"{node}.sharpEdgeDegrees"), 45.0, places=6)
         self.assertAlmostEqual(cmds.getAttr(f"{node}.smoothNormalDegrees"), 30.0, places=6)
 
+    def test_create_remesh_node_copies_parented_source_world_transform(self):
+        """親子化・変形済み入力のワールド行列と頂点位置を出力へ引き継ぐかテスト"""
+        import ywta.mesh.autoremesher as autoremesher
+
+        parent = cmds.group(empty=True, name="remeshSourceParent")
+        cmds.xform(parent, translation=(3.0, -2.0, 5.0), rotation=(15.0, 25.0, -10.0), worldSpace=True)
+        source = cmds.polyCube(name="remeshSource")[0]
+        cmds.parent(source, parent)
+        cmds.xform(source, translation=(1.0, 2.0, -4.0), rotation=(20.0, -35.0, 40.0), scale=(2.0, 1.5, 0.75))
+        source_shape = cmds.listRelatives(source, shapes=True, noIntermediate=True)[0]
+        source_world_matrix = cmds.xform(source, query=True, matrix=True, worldSpace=True)
+        source_selection = om2.MSelectionList()
+        source_selection.add(source_shape)
+        source_points = om2.MFnMesh(source_selection.getDagPath(0)).getPoints(om2.MSpace.kWorld)
+
+        cmds.select(source)
+        node = autoremesher.create_remesh_node()
+        output_transform = cmds.ls(f"{source}_remeshed", long=True)[0]
+        output = cmds.listRelatives(output_transform, shapes=True, noIntermediate=True)[0]
+
+        output_world_matrix = cmds.xform(output_transform, query=True, matrix=True, worldSpace=True)
+        for expected, actual in zip(source_world_matrix, output_world_matrix):
+            self.assertAlmostEqual(expected, actual, places=5)
+
+        # enable=false で outMesh をパススルーに戻し、ワールド頂点が一致することを検証する。
+        cmds.setAttr(f"{node}.enable", False)
+        output_selection = om2.MSelectionList()
+        output_selection.add(output)
+        output_points = om2.MFnMesh(output_selection.getDagPath(0)).getPoints(om2.MSpace.kWorld)
+        self.assertEqual(len(source_points), len(output_points))
+        for source_point, output_point in zip(source_points, output_points):
+            self.assertAlmostEqual(source_point.x, output_point.x, places=5)
+            self.assertAlmostEqual(source_point.y, output_point.y, places=5)
+            self.assertAlmostEqual(source_point.z, output_point.z, places=5)
+
     def test_plugin_loader_falls_back_to_versioned_repository_binary(self):
         """module path未設定時はversion別の同梱mllを絶対pathでロードする。"""
         import ywta.mesh.autoremesher as autoremesher

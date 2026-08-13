@@ -105,11 +105,15 @@ def create_remesh_node(
         return ""
 
     transform = cmds.listRelatives(shape, parent=True)[0]
+    source_world_matrix = cmds.xform(transform, query=True, matrix=True, worldSpace=True)
 
     node = cmds.createNode("autoRemesherNode", name=f"{transform}_autoRemesher")
     cmds.connectAttr(f"{shape}.outMesh", f"{node}.inMesh")
 
     out_transform = cmds.createNode("transform", name=f"{transform}_remeshed")
+    # outMesh は入力シェイプのオブジェクト空間なので、元のワールド行列を
+    # 出力トランスフォームへコピーして表示位置を一致させる。
+    cmds.xform(out_transform, matrix=source_world_matrix, worldSpace=True)
     out_shape = cmds.createNode("mesh", name=f"{transform}_remeshedShape", parent=out_transform)
     cmds.connectAttr(f"{node}.outMesh", f"{out_shape}.inMesh")
     cmds.sets(out_shape, edit=True, forceElement="initialShadingGroup")
