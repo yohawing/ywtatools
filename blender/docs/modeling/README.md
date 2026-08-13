@@ -6,8 +6,8 @@ Meshの形を作り直したり、表面を整えたりするツールです。
 
 ## Hair TubeをCurveで編集する
 
-[Hair Tube Curve Cage](hair-tube.md)は、4-sided tubeから4本のCurveと別Meshを作ります。
-Curveを編集したあと、密度を変えてMeshを再生成できます。
+[Hair Tube Curve Cage](hair-tube.md)は、3-sided以上のquad tubeから断面頂点数と同じ本数の
+Curveと別Meshを作ります。Curveを編集したあと、密度を変えてMeshやLODを再生成できます。
 
 ## Topologyを作り直す
 
