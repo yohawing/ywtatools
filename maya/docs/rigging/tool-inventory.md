@@ -2,7 +2,9 @@
 
 ## 目的とスコープ
 
-本書は、`maya/ywta/menu/menu_rigging.py` と現行の Rigging 実装を読み取った**コードスナップショット**である。目的は、機能・配置・重複・共通 UI/Undo 要件を固定し、次の `JointEditTools` 統合タスクが実装できるメニュー構成を一つに決めることにある。メニューの実統合、entrypoint の変更、`JointEditTools` のコード変更は本書のスコープ外（別タスク）である。
+本書は、`maya/ywta/menu/menu_rigging.py` と現行の Rigging 実装を読み取った**コードスナップショット**である。目的は、機能・配置・重複・共通 UI/Undo 要件を固定し、`JointEditTools` 統合後のメニュー構成を一つに決めることにある。
+
+第1段階として `Skeleton > Joint Editing` と `Skeleton > Naming` を実装済みである。JET の Add / Insert / Align / Mirror は既存の canonical backend をそのまま利用し、直接メニューと同じ prevalidation / transaction を通る。`Rename Chain` は `Name Tools` と同じ UI を開く互換 alias として `Naming` 内に残す。Skeleton I/O、Clipboard、Rig Construction、Controls の階層移行は本タスクに含めず、既存の到達性を維持する。
 
 UI の実機表示、HumanIK の依存（PyMEL/MEL）、Swing/Twist プラグインのロード可否はこの読み取りだけでは確認していない。以下で「要確認」としたものを適合済みとは扱わない。
 

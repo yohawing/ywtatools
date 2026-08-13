@@ -26,11 +26,26 @@ def create_rigging_menu(parent_menu):
         annotation="選択transformのTRSをoffsetParentMatrixへ移し、見た目を保ったまま値を初期化します",
     )
 
-    # スケルトン関連
-    cmds.menuItem(parent=rig_menu, divider=True, dividerLabel="Skeleton")
+    # スケルトン関連。既存の I/O / Clipboard 項目は移行中のため rig_menu
+    # 直下に残し、Joint Editing と Naming の入口だけを整理する。
+    skeleton_menu = cmds.menuItem(
+        parent=rig_menu,
+        subMenu=True,
+        tearOff=True,
+        label="Skeleton",
+        annotation="ジョイント編集と命名の入口をまとめます",
+    )
+
+    joint_editing_menu = cmds.menuItem(
+        parent=skeleton_menu,
+        subMenu=True,
+        tearOff=True,
+        label="Joint Editing",
+        annotation="ジョイントの作成、編集、複製、表示サイズをまとめます",
+    )
 
     cmds.menuItem(
-        parent=rig_menu,
+        parent=joint_editing_menu,
         label="Joint Edit Tools",
         command="import ywta.rig.joint_edit_tools as oj; oj.JointEditToolsWindow()",
         image="orientJoint.png",
@@ -38,14 +53,7 @@ def create_rigging_menu(parent_menu):
     )
 
     cmds.menuItem(
-        parent=rig_menu,
-        label="Mirror Joint Hierarchy (Static YZ)",
-        command="import ywta.rig.joint_mirror as joint_mirror; joint_mirror.mirror_selected_hierarchy()",
-        annotation="side tokenと衝突を事前検証して選択joint階層を静的mirrorします",
-    )
-
-    cmds.menuItem(
-        parent=rig_menu,
+        parent=joint_editing_menu,
         label="Create Joint",
         command="import ywta.rig.create_joint as cj; cj.create_joint_at_selection()",
         image="joint.png",
@@ -53,7 +61,7 @@ def create_rigging_menu(parent_menu):
     )
 
     cmds.menuItem(
-        parent=rig_menu,
+        parent=joint_editing_menu,
         label="Insert Joints Between Selected...",
         command="import ywta.rig.joint_insert as joint_insert; joint_insert.show_options()",
         image="joint.png",
@@ -61,17 +69,58 @@ def create_rigging_menu(parent_menu):
     )
 
     cmds.menuItem(
-        parent=rig_menu,
+        parent=joint_editing_menu,
         label="Orient Selected Joints to Children",
         command="import ywta.rig.joint_orient as joint_orient; joint_orient.orient_selected()",
         annotation="未リグの選択joint階層を+X軸で子方向へ静的orientします",
     )
 
     cmds.menuItem(
-        parent=rig_menu,
+        parent=joint_editing_menu,
         label="Duplicate Joint Hierarchy...",
         command="import ywta.rig.joint_duplicate as joint_duplicate; joint_duplicate.show_options()",
         annotation="Find/Replace名を事前検証して選択joint階層を複製します",
+    )
+
+    cmds.menuItem(
+        parent=joint_editing_menu,
+        label="Mirror Joint Hierarchy (Static YZ)",
+        command="import ywta.rig.joint_mirror as joint_mirror; joint_mirror.mirror_selected_hierarchy()",
+        annotation="side tokenと衝突を事前検証して選択joint階層を静的mirrorします",
+    )
+
+    cmds.menuItem(
+        parent=joint_editing_menu,
+        label="Joint Size Tools",
+        command="import ywta.rig.joint_size as js; js.set_joint_size_from_menu()",
+        image="joint.png",
+        annotation="選択jointと子階層（またはUI指定の全joint）のradiusを一括設定します",
+    )
+
+    naming_menu = cmds.menuItem(
+        parent=skeleton_menu,
+        subMenu=True,
+        tearOff=True,
+        label="Naming",
+        annotation="ジョイントやノードの名前を編集する入口をまとめます",
+    )
+
+    cmds.menuItem(
+        parent=naming_menu,
+        label="Name Tools",
+        command="import ywta.name; ywta.name.show()",
+        image="menuIconModify.png",
+        imageOverlayLabel="name",
+        annotation="選択ノードの連番、検索置換、prefix/suffix、番号を一括編集します",
+    )
+
+    # 互換性のため旧 Rename Chain エントリーポイントを同じ label で残す。
+    cmds.menuItem(
+        parent=naming_menu,
+        label="Rename Chain",
+        command="import ywta.name; ywta.name.rename_chain_ui()",
+        image="menuIconModify.png",
+        annotation="従来のjoint chain一括rename UIを開きます",
     )
 
     create_menu = cmds.menuItem(
@@ -131,31 +180,6 @@ def create_rigging_menu(parent_menu):
         label="Delete Constraints",
         command="import ywta.rig.constraint_tools as constraints; constraints.delete_constraints()",
         annotation="選択transformを駆動するconstraintを単一Undoで削除します",
-    )
-
-    cmds.menuItem(
-        parent=rig_menu,
-        label="Name Tools",
-        command="import ywta.name; ywta.name.show()",
-        image="menuIconModify.png",
-        imageOverlayLabel="name",
-        annotation="選択ノードの連番、検索置換、prefix/suffix、番号を一括編集します",
-    )
-
-    cmds.menuItem(
-        parent=rig_menu,
-        label="Rename Chain",
-        command="import ywta.name; ywta.name.rename_chain_ui()",
-        image="menuIconModify.png",
-        annotation="従来のjoint chain一括rename UIを開きます",
-    )
-
-    cmds.menuItem(
-        parent=rig_menu,
-        label="Joint Size Tools",
-        command="import ywta.rig.joint_size as js; js.set_joint_size_from_menu()",
-        image="joint.png",
-        annotation="選択jointと子階層（またはUI指定の全joint）のradiusを一括設定します",
     )
 
     cmds.menuItem(

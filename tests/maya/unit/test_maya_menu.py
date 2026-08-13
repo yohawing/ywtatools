@@ -169,6 +169,41 @@ class MayaMenuTests(TestCase):
             }.issubset(labels)
         )
 
+    def test_joint_editing_and_naming_submenus_preserve_entries(self):
+        """整理後の Skeleton 階層と互換 Rename Chain alias の親子関係を確認する。"""
+        calls = self._capture_menu_items(menu_rigging.create_rigging_menu)
+        by_label = {call.get("label"): call for call in calls if call.get("label")}
+
+        skeleton = by_label["Skeleton"]
+        self.assertTrue(skeleton.get("subMenu"))
+
+        joint_editing = by_label["Joint Editing"]
+        self.assertTrue(joint_editing.get("subMenu"))
+        self.assertEqual(joint_editing.get("parent"), skeleton["_item_id"])
+        joint_editing_labels = (
+            "Joint Edit Tools",
+            "Create Joint",
+            "Insert Joints Between Selected...",
+            "Orient Selected Joints to Children",
+            "Duplicate Joint Hierarchy...",
+            "Mirror Joint Hierarchy (Static YZ)",
+            "Joint Size Tools",
+        )
+        self.assertEqual(
+            tuple(call["label"] for call in calls if call.get("parent") == joint_editing["_item_id"]),
+            joint_editing_labels,
+        )
+        for label in joint_editing_labels:
+            with self.subTest(label=label):
+                self.assertEqual(by_label[label].get("parent"), joint_editing["_item_id"])
+
+        naming = by_label["Naming"]
+        self.assertTrue(naming.get("subMenu"))
+        self.assertEqual(naming.get("parent"), skeleton["_item_id"])
+        for label in ("Name Tools", "Rename Chain"):
+            with self.subTest(label=label):
+                self.assertEqual(by_label[label].get("parent"), naming["_item_id"])
+
     def test_deform_adoption_entries_are_reachable(self):
         labels = self._build(menu_deform.create_deform_menu)
 
