@@ -56,6 +56,7 @@ def create_menu():
         parent=menu,
         label="Batch Runner",
         command="import ywta.pipeline.batch_runner as batch_runner; batch_runner.show()",
+        image="menuIconFile.png",
         annotation="sceneごとに独立mayapyでPython処理と明示的な上書き保存を実行します",
     )
 
@@ -64,12 +65,14 @@ def create_menu():
         parent=menu,
         label="Export Selected FBX",
         command="import ywta.io.fbx_exporter as fbx_exporter; fbx_exporter.export_selected()",
+        image="game_exporter.png",
         annotation="選択nodeをscene非破壊・設定復元・原子的置換でFBX exportします",
     )
     cmds.menuItem(
         parent=menu,
         label="Export Animation FBX",
         command="import ywta.io.fbx_exporter as fbx_exporter; fbx_exporter.export_animation()",
+        image="game_exporter.png",
         annotation="選択root jointのhighlight/playback range animationをFBX exportします",
     )
 

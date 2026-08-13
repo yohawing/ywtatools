@@ -226,8 +226,8 @@ class MayaMenuTests(TestCase):
 
         self.assertEqual(images["Connect Twist Joint"], "swingTwist.png")
 
-    def test_all_specified_category_menu_icons_resolve(self):
-        """指定されたカテゴリメニュー画像が Maya 2024 または project に存在する。"""
+    def test_all_actionable_category_menu_icons_resolve(self):
+        """全カテゴリ実行項目の画像が Maya 2024 または project に存在する。"""
         for builder in (
             menu_animation.create_animation_menu,
             menu_mesh.create_mesh_menu,
@@ -236,10 +236,15 @@ class MayaMenuTests(TestCase):
             menu_utility.create_utility_menu,
         ):
             for call in self._capture_menu_items(builder):
+                if call.get("divider") or call.get("subMenu"):
+                    continue
+                if not any(call.get(key) for key in ("command", "callback", "optionBox")):
+                    continue
                 image_name = call.get("image")
-                if image_name:
-                    with self.subTest(builder=builder.__name__, image=image_name):
-                        self._assert_image_resolves(image_name)
+                with self.subTest(builder=builder.__name__, label=call.get("label")):
+                    self.assertIsInstance(image_name, str)
+                    self.assertTrue(image_name.strip())
+                    self._assert_image_resolves(image_name)
 
     def test_deform_adoption_entries_are_reachable(self):
         labels = self._build(menu_deform.create_deform_menu)
@@ -330,7 +335,10 @@ class MayaMenuTests(TestCase):
         self.assertNotIn("imageOverlayLabel", by_label["Reload YWTA"])
         self.assertEqual(by_label["Run Script"].get("image"), "ywta_icon_02_run.png")
         for call in calls:
-            if call.get("image"):
+            if call.get("divider"):
+                continue
+            if any(call.get(key) for key in ("command", "callback", "optionBox")):
+                self.assertIsInstance(call.get("image"), str)
                 self._assert_image_resolves(call["image"])
             if isinstance(call.get("command"), str):
                 self._assert_command_targets_exist(call["command"])
