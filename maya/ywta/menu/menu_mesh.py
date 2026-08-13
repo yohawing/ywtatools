@@ -51,6 +51,13 @@ def create_mesh_menu(parent_menu):
         annotation="パラメータを指定してAutoRemesherノードを作成します（別オブジェクトに出力）",
         image="out_mesh.png",
     )
+    cmds.menuItem(
+        parent=mesh_menu,
+        label="Finalize AutoRemesher...",
+        command="import ywta.mesh.autoremesher as ar; ar.finalize_remesh()",
+        annotation="選択または指定したAutoRemesherの現在結果を確定し、UVとskinを必要に応じて転送します（Undo対応）",
+        image="out_mesh.png",
+    )
 
     cmds.menuItem(
         parent=mesh_menu,

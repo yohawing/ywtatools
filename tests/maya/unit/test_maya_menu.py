@@ -32,6 +32,7 @@ class MayaMenuTests(TestCase):
         "ywta.deform.skin_mirror",
         "ywta.deform.skin_smooth",
         "ywta.deform.skin_weights",
+        "ywta.mesh.autoremesher",
         "ywta.io.fbx_exporter",
         "ywta.name",
         "ywta.pipeline.batch_runner",
@@ -218,13 +219,17 @@ class MayaMenuTests(TestCase):
     def test_dedicated_rigging_icon_is_connected(self):
         """既存の専用アイコンを対応するリギング項目へ割り当てる。"""
         rigging_items = self._capture_menu_items(menu_rigging.create_rigging_menu)
-        images = {
-            call.get("label"): call.get("image")
-            for call in rigging_items
-            if call.get("label")
-        }
+        images = {call.get("label"): call.get("image") for call in rigging_items if call.get("label")}
 
         self.assertEqual(images["Connect Twist Joint"], "swingTwist.png")
+
+    def test_autoremesher_finalize_menu_entry(self):
+        """AutoRemesher確定コマンドの到達性・annotation・iconを固定する。"""
+        calls = self._capture_menu_items(menu_mesh.create_mesh_menu)
+        finalize = next(call for call in calls if call.get("label") == "Finalize AutoRemesher...")
+        self.assertIn("finalize_remesh", finalize["command"])
+        self.assertTrue(self._contains_japanese(finalize["annotation"]))
+        self.assertEqual(finalize["image"], "out_mesh.png")
 
     def test_all_actionable_category_menu_icons_resolve(self):
         """全カテゴリ実行項目の画像が Maya 2024 または project に存在する。"""

@@ -305,6 +305,36 @@ class SkinIoTests(TestCase):
         target_shape = cmds.listRelatives(target, shapes=True, fullPath=True)[0]
         self.assertIsNone(skin_io._skin_cluster(target_shape))
 
+    def test_transfer_without_undo_management_keeps_cleanup_and_selection(self):
+        """外側transactionを指定した転送でもcleanupとselection復元を行う。"""
+        data = skin_io.capture(self.mesh)
+        target = cmds.polyPlane(name="retopo", subdivisionsX=2, subdivisionsY=1)[0]
+        sentinel = cmds.spaceLocator(name="selection_sentinel")[0]
+        cmds.select(sentinel, replace=True)
+
+        with (
+            mock.patch.object(skin_io.cmds, "undoInfo", wraps=skin_io.cmds.undoInfo) as undo_info,
+            mock.patch.object(skin_io.cmds, "undo", wraps=skin_io.cmds.undo) as undo,
+        ):
+            cluster = skin_io.transfer(target, data, manage_undo=False)
+
+        self.assertTrue(cmds.objExists(cluster))
+        self.assertFalse(cmds.ls("__ywtaSkinTransferSource*", type="transform"))
+        self.assertEqual([sentinel], cmds.ls(selection=True))
+        chunk_calls = [
+            call for call in undo_info.call_args_list if call.kwargs.get("openChunk") or call.kwargs.get("closeChunk")
+        ]
+        self.assertFalse(chunk_calls)
+        self.assertFalse(undo.called)
+
+    def test_transfer_rejects_non_bool_undo_management(self):
+        """manage_undoはbool以外を受け付けない。"""
+        data = skin_io.capture(self.mesh)
+        target = cmds.polyPlane(name="retopo", subdivisionsX=2, subdivisionsY=1)[0]
+
+        with self.assertRaises(ValueError):
+            skin_io.transfer(target, data, manage_undo=1)
+
     def test_transfer_supports_closest_component(self):
         """Maya標準closestComponent方式を公開APIから利用できる。"""
         data = skin_io.capture(self.mesh)

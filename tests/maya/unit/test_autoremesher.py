@@ -181,6 +181,146 @@ class TestAutoRemesherNode(unittest.TestCase):
             self.assertAlmostEqual(source_point.y, output_point.y, places=5)
             self.assertAlmostEqual(source_point.z, output_point.z, places=5)
 
+    def test_finalize_remesh_bakes_target_and_preserves_source(self):
+        """Finalizeはtargetだけをbakeし、sourceとUndoを保持する。"""
+        import ywta.mesh.autoremesher as autoremesher
+
+        source = cmds.polyCube(name="finalizeSource", subdivisionsX=2, subdivisionsY=2, subdivisionsZ=2)[0]
+        source_shape = cmds.listRelatives(source, shapes=True, noIntermediate=True)[0]
+        cmds.select(source, replace=True)
+        node = autoremesher.create_remesh_node(target_count=200)
+        source_history_before = set(cmds.listHistory(source_shape) or [])
+
+        target = autoremesher.finalize_remesh(node=node, transfer_uvs=False, transfer_skin=False)
+
+        self.assertTrue(cmds.objExists(target))
+        self.assertFalse(cmds.objExists(node))
+        self.assertTrue(source_history_before.issubset(set(cmds.listHistory(source_shape) or [])))
+        self.assertGreater(cmds.polyEvaluate(target, face=True), 0)
+
+        cmds.undo()
+        self.assertTrue(cmds.objExists(node))
+        self.assertTrue(cmds.objExists(target))
+        cmds.redo()
+        self.assertFalse(cmds.objExists(node))
+        self.assertTrue(cmds.objExists(target))
+
+    def test_finalize_remesh_requires_single_connected_node(self):
+        """無効な選択や接続はscene変更前に拒否する。"""
+        import ywta.mesh.autoremesher as autoremesher
+
+        with self.assertRaises(ValueError):
+            autoremesher.finalize_remesh(node="missingAutoRemesherNode")
+
+        source = cmds.polyCube(name="invalidFinalizeSource")[0]
+        cmds.select(source, replace=True)
+        with self.assertRaises(ValueError):
+            autoremesher.finalize_remesh()
+
+    def test_finalize_remesh_transfers_uv_and_skin(self):
+        """Finalizeは全UV setとsource skinをtargetへ転送する。"""
+        import ywta.mesh.autoremesher as autoremesher
+        from ywta.deform import skin_io
+
+        source = cmds.polyCube(
+            name="skinnedFinalizeSource",
+            subdivisionsX=2,
+            subdivisionsY=2,
+            subdivisionsZ=2,
+        )[0]
+        source_shape = cmds.listRelatives(source, shapes=True, noIntermediate=True)[0]
+        joint_a = cmds.joint(name="finalizeJointA")
+        cmds.select(clear=True)
+        joint_b = cmds.joint(name="finalizeJointB")
+        cmds.move(2.0, 0.0, 0.0, joint_b)
+        cmds.select([joint_a, joint_b, source], replace=True)
+        cluster = cmds.skinCluster(joint_a, joint_b, source, toSelectedBones=True, normalizeWeights=1)[0]
+        cmds.skinPercent(cluster, source, transformValue=[(joint_a, 0.6), (joint_b, 0.4)])
+        cmds.select(source, replace=True)
+        node = autoremesher.create_remesh_node(target_count=200)
+        source_history_before = set(cmds.listHistory(source_shape) or [])
+
+        target = autoremesher.finalize_remesh(node=node)
+        target_shape = cmds.listRelatives(target, shapes=True, noIntermediate=True)[0]
+        target_cluster = skin_io._skin_cluster(target_shape)
+
+        self.assertIsNotNone(target_cluster)
+        self.assertTrue(
+            set(cmds.polyUVSet(source_shape, query=True, allUVSets=True) or []).issubset(
+                set(cmds.polyUVSet(target_shape, query=True, allUVSets=True) or [])
+            )
+        )
+        self.assertTrue(source_history_before.issubset(set(cmds.listHistory(source_shape) or [])))
+        for row in skin_io.capture(target)["weights"]:
+            self.assertAlmostEqual(sum(value for _, value in row), 1.0, places=5)
+
+        # 外側chunkとskin_io内部chunkが一つのUndo単位として扱われることを確認する。
+        cmds.undo()
+        self.assertTrue(cmds.objExists(node))
+        self.assertIsNone(skin_io._skin_cluster(target_shape))
+        cmds.redo()
+        self.assertFalse(cmds.objExists(node))
+        self.assertIsNotNone(skin_io._skin_cluster(target_shape))
+
+    def test_finalize_remesh_rejects_locked_source_influence_before_edit(self):
+        """locked influenceはtarget編集前に拒否し、接続とselectionを保つ。"""
+        import ywta.mesh.autoremesher as autoremesher
+
+        source = cmds.polyCube(name="lockedFinalizeSource")[0]
+        joint = cmds.joint(name="lockedFinalizeJoint")
+        cmds.select([joint, source], replace=True)
+        cmds.skinCluster(joint, source, toSelectedBones=True, normalizeWeights=1)
+        cmds.setAttr(joint + ".lockInfluenceWeights", True)
+        cmds.select(source, replace=True)
+        node = autoremesher.create_remesh_node(target_count=200)
+        target = cmds.listConnections(node + ".outMesh", source=False, destination=True)[0]
+        before_selection = cmds.ls(selection=True, long=True)
+
+        with self.assertRaises(ValueError):
+            autoremesher.finalize_remesh(node=node)
+
+        self.assertTrue(cmds.objExists(node))
+        self.assertTrue(cmds.objExists(target))
+        self.assertEqual(cmds.ls(selection=True, long=True), before_selection)
+
+    def test_finalize_remesh_rolls_back_skin_transfer_failure(self):
+        """skin転送途中の失敗はtargetをrollbackし、直前操作を巻き戻さない。"""
+        import ywta.mesh.autoremesher as autoremesher
+        from ywta.deform import skin_io
+
+        source = cmds.polyCube(name="rollbackFinalizeSource")[0]
+        source_shape = cmds.listRelatives(source, shapes=True, noIntermediate=True)[0]
+        joint = cmds.joint(name="rollbackFinalizeJoint")
+        cmds.select([joint, source], replace=True)
+        cluster = cmds.skinCluster(joint, source, toSelectedBones=True, normalizeWeights=1)[0]
+        cmds.skinPercent(cluster, source, transformValue=[(joint, 1.0)])
+        cmds.select(source, replace=True)
+        node = autoremesher.create_remesh_node(target_count=200)
+        target_plug = cmds.listConnections(node + ".outMesh", source=False, destination=True, plugs=True)[0]
+        target_shape = target_plug.split(".", 1)[0]
+        target_transform = cmds.listRelatives(target_shape, parent=True, fullPath=True)[0]
+        source_history_before = set(cmds.listHistory(source_shape) or [])
+        source_skin_before = skin_io.capture(source)
+        marker = cmds.createNode("transform", name="rollbackFinalizeMarker")
+        cmds.setAttr(marker + ".translateX", 3.0)
+        cmds.select(marker, replace=True)
+
+        with (
+            mock.patch.object(skin_io.cmds, "copySkinWeights", wraps=skin_io.cmds.copySkinWeights) as copy_skin_weights,
+            mock.patch.object(skin_io, "_normalize_influence_subset", side_effect=RuntimeError("forced failure")),
+        ):
+            with self.assertRaises(RuntimeError):
+                autoremesher.finalize_remesh(node=node)
+        copy_skin_weights.assert_called_once()
+
+        self.assertTrue(cmds.objExists(node))
+        self.assertTrue(cmds.objExists(target_transform))
+        self.assertIsNone(skin_io._skin_cluster(target_shape))
+        self.assertTrue(source_history_before.issubset(set(cmds.listHistory(source_shape) or [])))
+        self.assertEqual(source_skin_before["weights"], skin_io.capture(source)["weights"])
+        self.assertAlmostEqual(cmds.getAttr(marker + ".translateX"), 3.0, places=5)
+        self.assertEqual(cmds.ls(selection=True, long=True), [cmds.ls(marker, long=True)[0]])
+
     def test_plugin_loader_falls_back_to_versioned_repository_binary(self):
         """module path未設定時はversion別の同梱mllを絶対pathでロードする。"""
         import ywta.mesh.autoremesher as autoremesher

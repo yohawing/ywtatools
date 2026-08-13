@@ -682,8 +682,18 @@ def _ensure_transfer_convention(data):
         raise ValueError("Skin Transfer scene conventionが一致しません: saved={} current={}".format(saved, current))
 
 
-def transfer(mesh, data, surface_association="closestPoint"):
-    """保存 source を再構築し、異なる topology の target へ weights を転送する。"""
+def transfer(mesh, data, surface_association="closestPoint", manage_undo=True):
+    """保存 source を再構築し、異なる topology の target へ weights を転送する。
+
+    Args:
+        mesh: weightsを適用するtarget mesh transformまたはshape。
+        data: :func:`capture` で取得したSkin IO辞書。
+        surface_association: MayaのcopySkinWeightsに渡す対応付け方式。
+        manage_undo: 外側transactionをこの関数が所有するか。Falseの場合は
+            callerがUndo chunkと失敗時rollbackを管理する。
+    """
+    if not isinstance(manage_undo, bool):
+        raise ValueError("manage_undoはboolにしてください。")
     data = _validate_data(data)
     if surface_association not in SURFACE_ASSOCIATIONS:
         raise ValueError("未対応の surface association です: {}".format(surface_association))
@@ -696,8 +706,9 @@ def transfer(mesh, data, surface_association="closestPoint"):
     _require_unlocked_nodes(influences)
     original_selection = cmds.ls(selection=True, long=True) or []
 
-    undo_utils.require_enabled("Skin IO Transfer")
-    cmds.undoInfo(openChunk=True, chunkName="YWTA Skin IO Transfer")
+    if manage_undo:
+        undo_utils.require_enabled("Skin IO Transfer")
+        cmds.undoInfo(openChunk=True, chunkName="YWTA Skin IO Transfer")
     failed = False
     temporary = None
     try:
@@ -727,9 +738,10 @@ def transfer(mesh, data, surface_association="closestPoint"):
             failed = True
             raise
         finally:
-            cmds.undoInfo(closeChunk=True)
-            if failed:
-                cmds.undo()
+            if manage_undo:
+                cmds.undoInfo(closeChunk=True)
+                if failed:
+                    cmds.undo()
     return target_cluster
 
 
