@@ -9,8 +9,13 @@
 
 ## Usage
 
-Root Jointを選択して実行します。処理は階層からHipまたはPelvisを探し、HumanIK Characterへ
-割り当ててLockします。
+Root Jointを1つだけ選択して実行します。sceneを変更する前に、選択数と階層内の
+Hip/Pelvis候補を読み取り専用で検証します。候補がない場合や複数あって曖昧な場合は
+fail-closedで停止し、`create_character`やHumanIK MELは呼び出しません。
+
+検証に成功すると、階層から一意に解決したHip/PelvisをHumanIK Characterへ割り当てて
+Lockします。途中でHipを一時選択しますが、成功・失敗にかかわらず実行前のJoint選択へ
+戻します。Character作成後のMEL処理全体をtransactionとして戻す機能はありません。
 
 ## Assignment JSON
 
@@ -37,7 +42,7 @@ version 1へ正規化します。
 ## Known Limitations
 
 汎用的な全身自動マッピングではありません。Hip / Pelvis中心の限定的な設定で、Character名も
-固定されています。
+固定されています。bind/rest poseの検証、接続復元、UI拡張はこの機能の責務外です。
 
 HumanIK MELへの依存、Character/Sourceの接続・復元、bind/rest poseの検証、Bakeは未実装です。
 保存済みSceneのコピーで使用してください。

@@ -10,6 +10,94 @@ from ywta.rig import humanik
 
 
 class HumanIkTests(unittest.TestCase):
+    def _assert_setup_rejected_without_mutation(self, selected_joints, descendants):
+        with (
+            mock.patch.object(humanik.cmds, "ls", return_value=selected_joints),
+            mock.patch.object(humanik.cmds, "nodeType", return_value="joint"),
+            mock.patch.object(humanik.cmds, "listRelatives", return_value=descendants),
+            mock.patch.object(humanik, "create_character") as create_character,
+            mock.patch.object(humanik.mel, "eval") as evaluate,
+        ):
+            with self.assertRaises(ValueError):
+                humanik.setup_hik_character()
+
+        create_character.assert_not_called()
+        evaluate.assert_not_called()
+
+    def test_setup_rejects_unselected_root_before_mutation(self):
+        self._assert_setup_rejected_without_mutation([], [])
+
+    def test_setup_rejects_multiple_selected_roots_before_mutation(self):
+        self._assert_setup_rejected_without_mutation(["root_a", "root_b"], [])
+
+    def test_setup_rejects_root_and_mesh_selection_before_mutation(self):
+        self._assert_setup_rejected_without_mutation(["root", "mesh"], [])
+
+    def test_setup_rejects_missing_hip_before_mutation(self):
+        self._assert_setup_rejected_without_mutation(["root"], ["spine", "chest"])
+
+    def test_setup_ignores_hip_in_ancestor_path(self):
+        self._assert_setup_rejected_without_mutation(["root"], ["|hip_group|spine"])
+
+    def test_setup_rejects_ambiguous_hip_before_mutation(self):
+        self._assert_setup_rejected_without_mutation(["root"], ["pelvis", "hip_joint"])
+
+    def test_setup_resolves_unique_hip_and_restores_selection(self):
+        with (
+            mock.patch.object(humanik.cmds, "ls", return_value=["|rig|root"]),
+            mock.patch.object(humanik.cmds, "nodeType", return_value="joint"),
+            mock.patch.object(
+                humanik.cmds,
+                "listRelatives",
+                return_value=["spine", "pelvis_joint"],
+            ) as list_relatives,
+            mock.patch.object(humanik.cmds, "select") as select,
+            mock.patch.object(humanik, "create_character", return_value="Character1") as create_character,
+            mock.patch.object(humanik.mel, "eval") as evaluate,
+        ):
+            humanik.setup_hik_character()
+
+        create_character.assert_called_once_with("testCharacter")
+        self.assertEqual(
+            [
+                'hikSetCharacterObject("pelvis_joint","Character1",1,0)',
+                "hikUpdateDefinitionUI();",
+                'hikCharacterLock("Character1", 1,1);',
+                "hikUpdateDefinitionUI();",
+            ],
+            [call.args[0] for call in evaluate.call_args_list],
+        )
+        self.assertEqual(
+            [
+                mock.call("pelvis_joint", replace=True),
+                mock.call(["|rig|root"], replace=True),
+            ],
+            select.call_args_list,
+        )
+        list_relatives.assert_called_once_with(
+            "|rig|root", allDescendents=True, type="joint", fullPath=True
+        )
+
+    def test_setup_restores_selection_when_mel_fails(self):
+        with (
+            mock.patch.object(humanik.cmds, "ls", return_value=["|rig|root"]),
+            mock.patch.object(humanik.cmds, "nodeType", return_value="joint"),
+            mock.patch.object(humanik.cmds, "listRelatives", return_value=["pelvis_joint"]),
+            mock.patch.object(humanik.cmds, "select") as select,
+            mock.patch.object(humanik, "create_character", return_value="Character1"),
+            mock.patch.object(humanik.mel, "eval", side_effect=RuntimeError("MEL failed")),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "MEL failed"):
+                humanik.setup_hik_character()
+
+        self.assertEqual(
+            [
+                mock.call("pelvis_joint", replace=True),
+                mock.call(["|rig|root"], replace=True),
+            ],
+            select.call_args_list,
+        )
+
     def test_load_character_definition_uses_maya_mel_only(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "character.json"
