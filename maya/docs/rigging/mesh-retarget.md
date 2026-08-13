@@ -5,6 +5,23 @@
 `ywta.rig.meshretarget.retarget` は、元ボディと編集後ボディの対応頂点を
 RBF control point として、衣装などの follower mesh を複製して変形します。
 
+## RBF Workbench
+
+Maya の `YWTA > Rigging > RBF Mesh Retarget...` から最小ワークベンチを開けます。
+Source Body と Modified Body は同一 topology の mesh を指定し、Followers には
+変形対象を `Add Selected` で複数追加します。`Remove` と `Clear` は一覧だけを変更し、
+元meshは変更しません。
+
+`Preview` は `max_control_points=64` の低密度計算でduplicateを作成します。Previewの
+duplicateは次のPreview、本適用、またはウィンドウを閉じるときに追跡して削除されます。
+`Apply max control points` は 4〜4096 の整数で、本適用時だけ指定値をbackendへ渡します。
+本適用前にもPreview duplicateを削除するため、backendのtransaction/Undo契約をそのまま
+利用できます。backendで例外が発生した場合は日本語警告を表示し、部分的なscene変更の
+rollback判断はbackend契約に委ねます。
+
+この文書とテストはcallback、backend引数、preview cleanup、元mesh非破壊の契約を検証します。
+実Maya GUIでの視認性・操作感はまだ確認していません。
+
 ## Current contract
 
 - `retarget` は実行前に source / target / follower 全てを検証します。mesh以外、存在しない名前、曖昧な短縮名、参照node、空のfollower、重複入力、source / target のfollower混入を拒否します。

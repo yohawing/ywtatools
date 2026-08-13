@@ -19,4 +19,4 @@ Joint、Constraint、Skeleton、Control Curveを扱うツールです。
 - [Control Curves](control-curves.md) — Controlの作成、保存、交換、Mirror、結合
 - [Swing/Twist](swing-twist.md) — Twist Joint接続
 - [HumanIK Auto Setup](humanik.md) — 限定的なHumanIK Character作成
-- [RBF Mesh Retarget](mesh-retarget.md) — 対応ボディ間の変形を衣装などへ転送
+- [RBF Mesh Retarget](mesh-retarget.md) — 対応ボディ間の変形を衣装などへ転送（Workbench UIを含む）

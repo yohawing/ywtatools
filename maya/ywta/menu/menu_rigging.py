@@ -127,6 +127,14 @@ def create_rigging_menu(parent_menu):
         annotation="従来のjoint chain一括rename UIを開きます",
     )
 
+    cmds.menuItem(
+        parent=rig_menu,
+        label="RBF Mesh Retarget...",
+        command="import ywta.rig.meshretarget_ui as meshretarget_ui; meshretarget_ui.show()",
+        image="out_mesh.png",
+        annotation="source bodyとmodified bodyの差分をfollower meshへ非破壊で転送するワークベンチを開きます",
+    )
+
     create_menu = cmds.menuItem(
         parent=rig_menu,
         subMenu=True,
