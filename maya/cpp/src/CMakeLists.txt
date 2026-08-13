@@ -45,6 +45,7 @@ find_package(Maya REQUIRED)
 find_package(Eigen3 REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${DEMBONES_SOURCE})
+target_compile_options(${PROJECT_NAME} PRIVATE "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
 
 target_link_libraries(${PROJECT_NAME} PRIVATE Maya::Maya Eigen3::Eigen autoremesher_core)
 target_include_directories(${PROJECT_NAME}

@@ -17,6 +17,7 @@
 #include <AutoRemesher/AutoRemesher>
 #include <AutoRemesher/Vector3>
 #include <geogram/basic/common.h>
+#include "quiet_output.h"
 
 #include <cstring>
 #include <mutex>
@@ -222,6 +223,7 @@ MStatus AutoRemesherNode::remesh(const MObject& inMesh, int targetCount, double 
 
   if (!(cacheValid_ && inputHash == cachedInputHash_)) {
     EnsureGeogramInitialized();
+    ywta::autoremesher::ScopedQuietOutput quietOutput;
 
     std::vector<AutoRemesher::Vector3> inputVertices;
     inputVertices.reserve(points.length());

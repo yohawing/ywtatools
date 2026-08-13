@@ -4,6 +4,7 @@
 // をメモリ上の頂点/三角形配列でラップする。ABI境界を越える例外は存在しないため、
 // C++ 例外は全てここで捕捉してエラーコードに変換する。
 #include "capi.h"
+#include "quiet_output.h"
 
 #include <AutoRemesher/AutoRemesher>
 #include <AutoRemesher/Vector3>
@@ -88,6 +89,7 @@ int ywta_remesh(
 
     try {
         ensureGeogramInitialized();
+        ywta::autoremesher::ScopedQuietOutput quietOutput;
 
         std::vector<AutoRemesher::Vector3> inputVertices;
         inputVertices.reserve((size_t)vertex_count);

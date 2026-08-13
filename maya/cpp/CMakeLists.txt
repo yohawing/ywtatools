@@ -18,6 +18,7 @@ set(ENV{EIGEN3_ROOT_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/third-party/Eigen")
 # ビルドはここでは不要なのでOFFにする。
 # (external/autoremesher / cpp/autoremesher_core の実装は変更しない)
 set(YWTA_AUTOREMESHER_BUILD_DLL OFF CACHE BOOL "" FORCE)
+set(YWTA_AUTOREMESHER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory(
     "${CMAKE_CURRENT_SOURCE_DIR}/../../cpp/autoremesher_core"
     "${CMAKE_CURRENT_BINARY_DIR}/autoremesher_core"

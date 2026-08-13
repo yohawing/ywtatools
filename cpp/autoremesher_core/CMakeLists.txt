@@ -76,6 +76,7 @@ endif()
 # autoremesher_core (STATIC)
 # ---------------------------------------------------------------------------
 set(CORE_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/quiet_output.cpp
     ${AR_ROOT}/src/AutoRemesher/autoremesher.cpp
     ${AR_ROOT}/src/AutoRemesher/isotropicremesher.cpp
     ${AR_ROOT}/thirdparty/isotropicremesher/isotropicremesher.cpp
@@ -204,6 +205,7 @@ target_include_directories(autoremesher_core BEFORE PUBLIC
 )
 
 target_include_directories(autoremesher_core PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${AR_ROOT}/include
     ${AR_ROOT}/thirdparty/eigen
     ${AR_ROOT}/thirdparty/isotropicremesher
@@ -231,7 +233,7 @@ if(WIN32)
 endif()
 
 if(MSVC)
-    target_compile_options(autoremesher_core PRIVATE /bigobj /MP)
+    target_compile_options(autoremesher_core PRIVATE /bigobj /MP /utf-8)
     # 大量の警告が出るが、サードパーティコードなのでビルドを止めない
     target_compile_options(autoremesher_core PRIVATE /W0)
 endif()
@@ -262,11 +264,22 @@ if(YWTA_AUTOREMESHER_BUILD_DLL)
     target_compile_definitions(ywta_autoremesher PRIVATE YWTA_AUTOREMESHER_BUILD_DLL)
 
     if(MSVC)
-        target_compile_options(ywta_autoremesher PRIVATE /bigobj)
+        target_compile_options(ywta_autoremesher PRIVATE /bigobj /utf-8)
     endif()
 
     set_target_properties(ywta_autoremesher PROPERTIES
         FOLDER "autoremesher"
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/output"
     )
+endif()
+
+option(YWTA_AUTOREMESHER_BUILD_TESTS "Build AutoRemesher wrapper tests" ON)
+if(YWTA_AUTOREMESHER_BUILD_TESTS)
+    enable_testing()
+    add_executable(ywta_autoremesher_quiet_output_tests tests/quiet_output_test.cpp)
+    target_link_libraries(ywta_autoremesher_quiet_output_tests PRIVATE autoremesher_core)
+    if(MSVC)
+        target_compile_options(ywta_autoremesher_quiet_output_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME ywta_autoremesher_quiet_output_tests COMMAND ywta_autoremesher_quiet_output_tests)
 endif()
