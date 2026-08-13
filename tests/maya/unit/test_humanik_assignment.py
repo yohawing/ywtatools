@@ -1,5 +1,6 @@
 """HumanIK assignment JSON契約を検証する。"""
 
+import copy
 import unittest
 
 from ywta.rig import humanik_assignment
@@ -55,6 +56,78 @@ class HumanIkAssignmentTests(unittest.TestCase):
             ],
             result["assignments"],
         )
+
+    def test_preview_merge_reports_changes_in_slot_order(self):
+        base = self._data(
+            [
+                {"slot": "Spine", "target": "base:spine"},
+                {"slot": "Hips", "target": "base:hips"},
+            ]
+        )
+        override = self._data(
+            [
+                {"slot": "LeftArm", "target": "manual:left_arm"},
+                {"slot": "Hips", "target": "manual:hips"},
+            ]
+        )
+
+        result = humanik_assignment.preview_merge(base, override)
+
+        self.assertEqual(
+            [
+                {
+                    "slot": "Hips",
+                    "before": "base:hips",
+                    "after": "manual:hips",
+                    "status": "changed",
+                },
+                {
+                    "slot": "LeftArm",
+                    "before": None,
+                    "after": "manual:left_arm",
+                    "status": "added",
+                },
+                {
+                    "slot": "Spine",
+                    "before": "base:spine",
+                    "after": "base:spine",
+                    "status": "unchanged",
+                },
+            ],
+            result["changes"],
+        )
+        self.assertEqual(
+            ["Hips", "LeftArm", "Spine"],
+            [item["slot"] for item in result["merged"]["assignments"]],
+        )
+
+    def test_preview_merge_accepts_legacy_and_uses_last_override(self):
+        result = humanik_assignment.preview_merge(
+            {"Hips": {"target": "base:hips"}},
+            {"Hips": {"target": "first:hips"}},
+            {"Hips": {"target": "last:hips"}},
+        )
+
+        self.assertEqual("last:hips", result["changes"][0]["after"])
+        self.assertEqual("changed", result["changes"][0]["status"])
+
+    def test_preview_merge_validates_every_layer_before_returning(self):
+        base = self._data([{"slot": "Hips", "target": "base:hips"}])
+        invalid = self._data([{"slot": "Spine", "target": ""}])
+
+        with self.assertRaises(ValueError):
+            humanik_assignment.preview_merge(base, invalid)
+
+    def test_preview_merge_does_not_mutate_inputs(self):
+        base = self._data([{"slot": "Hips", "target": "base:hips"}])
+        override = {"Hips": {"target": "manual:hips"}}
+        original_base = copy.deepcopy(base)
+        original_override = copy.deepcopy(override)
+
+        humanik_assignment.preview_merge(base, override)
+
+        self.assertEqual(original_base, base)
+        self.assertEqual(original_override, override)
 
     def test_rejects_unknown_root_field(self):
         data = self._data([])

@@ -89,3 +89,32 @@ def merge(*layers):
             "assignments": [{"slot": slot, "target": target} for slot, target in assignments.items()],
         }
     )
+
+
+def preview_merge(base, *overrides):
+    """入力を変更せずにassignment layerの統合結果と差分を返す。"""
+    normalized_layers = [normalize(layer) for layer in (base,) + overrides]
+    merged = merge(*normalized_layers)
+    before_by_slot = {assignment["slot"]: assignment["target"] for assignment in normalized_layers[0]["assignments"]}
+
+    changes = []
+    for assignment in merged["assignments"]:
+        slot = assignment["slot"]
+        before = before_by_slot.get(slot)
+        after = assignment["target"]
+        if before is None:
+            status = "added"
+        elif before == after:
+            status = "unchanged"
+        else:
+            status = "changed"
+        changes.append(
+            {
+                "slot": slot,
+                "before": before,
+                "after": after,
+                "status": status,
+            }
+        )
+
+    return {"merged": merged, "changes": changes}

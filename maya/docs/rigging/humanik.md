@@ -40,6 +40,12 @@ targetはlong DAG pathへ正規化し、assignmentはslot順に適用します�
 bind/rest poseの証明は後段のbuilderが担当します。旧形式の
 `{"Hips": {"target": "character:Hips"}}` も読み込み時にversion 1へ正規化します。
 
+`ywta.rig.humanik_assignment.preview_merge(base, *overrides)` は、左から順にlayerを
+重ねたversion 1 assignmentと、baseからの差分を返すMaya非依存の関数です。
+差分はslot順で、`added` / `changed` / `unchanged` を持ちます。削除semanticsはなく、
+同一slotは後のlayerが優先されます。全layerを厳密に検証してから結果を生成し、
+入力データは変更しません。
+
 ## Known Limitations
 
 汎用的な全身自動マッピングではありません。Hip / Pelvis中心の限定的な設定で、Character名も
