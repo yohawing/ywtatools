@@ -13,6 +13,8 @@ import re
 import maya.cmds as cmds
 import maya.mel as mel
 
+from ywta.rig import humanik_assignment
+
 
 def _mel_string(value):
     """Python文字列をMELの文字列literalとして安全に表現する。"""
@@ -50,18 +52,27 @@ def create_character(name):
     return new_character
 
 
-# XMLファイルからHumanIKのキャラクター定義の設定をロードする
 def load_character_definition(file_path):
-    character_config = {}
-
-    with open(file_path, "r") as fp:
-        character_config = json.load(fp)
+    """検証済みJSONから現在のHumanIK Characterへslotを割り当てる。"""
+    character_config = humanik_assignment.load(file_path)
 
     hikChar = mel.eval("hikGetCurrentCharacter()")
 
-    for bone in character_config:
-        bone_id = mel.eval(f"hikGetNodeIdFromName({_mel_string(bone)})")
-        mel.eval(f"setCharacterObject({_mel_string(character_config[bone]['target'])},{_mel_string(hikChar)},{int(bone_id)},0)")
+    resolved = []
+    for assignment in character_config["assignments"]:
+        bone_id = mel.eval(f"hikGetNodeIdFromName({_mel_string(assignment['slot'])})")
+        if not isinstance(bone_id, int) or isinstance(bone_id, bool) or bone_id < 0:
+            raise ValueError("HumanIK slotを解決できません: {}".format(assignment["slot"]))
+        resolved.append((assignment, bone_id))
+
+    for assignment, bone_id in resolved:
+        mel.eval(
+            "setCharacterObject({},{},{},0)".format(
+                _mel_string(assignment["target"]),
+                _mel_string(hikChar),
+                bone_id,
+            )
+        )
 
 
 def setup_hik_character():

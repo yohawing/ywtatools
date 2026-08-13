@@ -29,6 +29,61 @@ class HumanIkTests(unittest.TestCase):
             'setCharacterObject("joint\\"Left","Character1",9,0)',
         )
 
+    def test_load_character_definition_validates_before_mel_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "format": "ywta.humanik-assignment",
+                        "version": 1,
+                        "assignments": [{"slot": "LeftArm", "target": ""}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(humanik.mel, "eval") as evaluate:
+                with self.assertRaises(ValueError):
+                    humanik.load_character_definition(path)
+
+        evaluate.assert_not_called()
+
+    def test_load_character_definition_resolves_all_slots_before_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid-slot.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "format": "ywta.humanik-assignment",
+                        "version": 1,
+                        "assignments": [
+                            {"slot": "Spine", "target": "rig:spine"},
+                            {"slot": "Hips", "target": "rig:hips"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                humanik.mel,
+                "eval",
+                side_effect=["Character1", 1, -1],
+            ) as evaluate:
+                with self.assertRaisesRegex(ValueError, "Spine"):
+                    humanik.load_character_definition(path)
+
+        self.assertEqual(
+            [
+                "hikGetCurrentCharacter()",
+                'hikGetNodeIdFromName("Hips")',
+                'hikGetNodeIdFromName("Spine")',
+            ],
+            [call.args[0] for call in evaluate.call_args_list],
+        )
+        self.assertFalse(any(call.args[0].startswith("setCharacterObject") for call in evaluate.call_args_list))
+
 
 if __name__ == "__main__":
     unittest.main()
