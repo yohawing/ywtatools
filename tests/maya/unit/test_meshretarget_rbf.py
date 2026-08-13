@@ -3,6 +3,7 @@
 import sys
 import types
 import unittest
+from unittest import mock
 
 import numpy as np
 
@@ -63,7 +64,7 @@ class RbfCharacterizationTests(unittest.TestCase):
             with self.subTest(kernel=kernel.__name__):
                 weights = meshretarget.get_weight_matrix(self.source, self.target, kernel, 0.5)
                 distances = meshretarget.get_distance_matrix(samples, self.source, kernel, 0.5)
-                basis = np.bmat([[distances, np.ones((2, 1)), samples]])
+                basis = np.block([distances, np.ones((2, 1)), samples])
                 actual = np.asarray(basis @ weights)
                 np.testing.assert_allclose(actual, expected, atol=2e-15)
 
@@ -101,6 +102,49 @@ class RbfCharacterizationTests(unittest.TestCase):
                 meshretarget.RBF.linear,
                 0.5,
             )
+
+    def test_maya_adapter_uses_spatial_solver_for_multiple_followers(self):
+        follower_a = np.array([[0.2, 0.3, 0.1], [0.4, 0.1, 0.2]])
+        follower_b = np.array([[0.3, 0.2, 0.4]])
+        point_sets = {
+            "source": self.source,
+            "target": self.target,
+            "follower_a": follower_a,
+            "follower_b": follower_b,
+        }
+
+        with (
+            mock.patch.object(
+                meshretarget,
+                "points_to_np_array",
+                side_effect=lambda name, stride=1: point_sets[name][::stride],
+            ),
+            mock.patch.object(
+                meshretarget.OpenMaya,
+                "MPoint",
+                side_effect=lambda *values: tuple(values),
+                create=True,
+            ),
+            mock.patch.object(
+                meshretarget.cmds,
+                "duplicate",
+                side_effect=lambda object_name, **_kwargs: [object_name + "_copy"],
+                create=True,
+            ),
+            mock.patch.object(meshretarget, "set_points") as set_points,
+        ):
+            meshretarget.retarget(
+                "source",
+                "target",
+                ["follower_a", "follower_b"],
+                max_control_points=5,
+            )
+
+        self.assertEqual(2, set_points.call_count)
+        for call, original in zip(set_points.call_args_list, (follower_a, follower_b)):
+            self.assertTrue(call.args[0].endswith("_copy"))
+            expected = original @ self.affine + self.offset
+            np.testing.assert_allclose(np.asarray(call.args[1]), expected, atol=2e-14)
 
 
 if __name__ == "__main__":

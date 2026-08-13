@@ -13,14 +13,29 @@ Example Usage
 
 import time
 import numpy as np
-from scipy.spatial.distance import cdist
 
 import maya.api.OpenMaya as OpenMaya
 import maya.cmds as cmds
 import ywta.shortcuts as shortcuts
+from ywta.rig.rbf_solver import (  # noqa: F401
+    RBF,
+    RbfSolver,
+    get_distance_matrix,
+    get_weight_matrix,
+)
 
 
-def retarget(source, target, shapes, rbf=None, radius=0.5, stride=1):
+def retarget(
+    source,
+    target,
+    shapes,
+    rbf=None,
+    radius=0.5,
+    stride=1,
+    max_control_points=None,
+    progress=None,
+    cancelled=None,
+):
     """Run the mesh retarget.
 
     :param source: Source mesh
@@ -32,22 +47,25 @@ def retarget(source, target, shapes, rbf=None, radius=0.5, stride=1):
     the calculation but less accurate.
     """
     start_time = time.time()
-    source_points = points_to_np_array(source, stride)
-    target_points = points_to_np_array(target, stride)
+    source_points = points_to_np_array(source, stride if max_control_points is None else 1)
+    target_points = points_to_np_array(target, stride if max_control_points is None else 1)
 
-    if rbf is None:
-        rbf = RBF.linear
-    weights = get_weight_matrix(source_points, target_points, rbf, radius)
+    solver = RbfSolver.fit(
+        source_points,
+        target_points,
+        rbf=rbf,
+        radius=radius,
+        max_control_points=max_control_points,
+        progress=progress,
+        cancelled=cancelled,
+    )
 
-    for shape in shapes:
-        points = points_to_np_array(shape)
-        n_points = points.shape[0]
-        dist = get_distance_matrix(points, source_points, rbf, radius)
-        identity = np.ones((n_points, 1))
-        h = np.bmat([[dist, identity, points]])
-        deformed = np.asarray(np.dot(h, weights))
+    shapes = list(shapes)
+    point_sets = [points_to_np_array(shape) for shape in shapes]
+    deformed_sets = solver.transform_many(point_sets, progress, cancelled)
+    for shape, deformed in zip(shapes, deformed_sets):
         points = [OpenMaya.MPoint(*p) for p in deformed]
-        dupe = cmds.duplicate(shape, name="{}_{}_{}".format(shape, radius, rbf.__name__))[0]
+        dupe = cmds.duplicate(shape, name="{}_{}_{}".format(shape, radius, solver.rbf.__name__))[0]
         set_points(dupe, points)
 
     end_time = time.time()
@@ -67,82 +85,7 @@ def get_points(mesh):
     return mesh_fn.getPoints()
 
 
-def get_weight_matrix(sp, tp, rbf, radius):
-    """Get the weight matrix x in Ax=B
-
-    :param sp: Source control point array
-    :param tp: Target control point aray
-    :param rbf: Rbf function from class RBF
-    :param radius: Smoothing parameter
-
-    :return: Weight matrix
-    """
-    identity = np.ones((sp.shape[0], 1))
-    dist = get_distance_matrix(sp, sp, rbf, radius)
-    # Solve x for Ax=B
-    dim = 3
-    a = np.bmat(
-        [
-            [dist, identity, sp],
-            [identity.T, np.zeros((1, 1)), np.zeros((1, dim))],
-            [sp.T, np.zeros((dim, 1)), np.zeros((dim, dim))],
-        ]
-    )
-    b = np.bmat([[tp], [np.zeros((1, dim))], [np.zeros((dim, dim))]])
-    weights = np.linalg.solve(a, b)
-    return weights
-
-
-def get_distance_matrix(v1, v2, rbf, radius):
-    matrix = cdist(v1, v2, "euclidean")
-    if rbf != RBF.linear:
-        matrix = rbf(matrix, radius)
-    return matrix
-
-
 def set_points(mesh, points):
     path = shortcuts.get_dag_path2(shortcuts.get_shape(mesh))
     mesh_fn = OpenMaya.MFnMesh(path)
     mesh_fn.setPoints(points)
-
-
-class RBF(object):
-    """Various RBF kernels"""
-
-    @classmethod
-    def linear(cls, matrix, radius):
-        return matrix
-
-    @classmethod
-    def gaussian(cls, matrix, radius):
-        result = np.exp(-(matrix * matrix) / (radius * radius))
-        return result
-
-    @classmethod
-    def thin_plate(cls, matrix, radius):
-        result = matrix / radius
-        result *= matrix
-
-        with np.errstate(divide="ignore", invalid="ignore"):
-            result = np.where(result > 0, np.log(result), result)
-
-        return result
-
-    @classmethod
-    def multi_quadratic_biharmonic(cls, matrix, radius):
-        result = np.sqrt((matrix * matrix) + (radius * radius))
-        return result
-
-    @classmethod
-    def inv_multi_quadratic_biharmonic(cls, matrix, radius):
-        result = 1.0 / (np.sqrt((matrix * matrix) + (radius * radius)))
-        return result
-
-    @classmethod
-    def beckert_wendland_c2_basis(cls, matrix, radius):
-        arg = matrix / radius
-        first = np.zeros(matrix.shape)
-        first = np.where(1 - arg > 0, np.power(1 - arg, 4), first)
-        second = (4 * arg) + 1
-        result = first * second
-        return result
