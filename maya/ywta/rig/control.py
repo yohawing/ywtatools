@@ -59,14 +59,18 @@ from __future__ import division
 from __future__ import print_function
 
 import json
+import math
 import os
 import logging
+import re
 import webbrowser
+import tempfile
 
 import maya.cmds as cmds
 import maya.api.OpenMaya as OpenMaya
 
 from ywta.settings import DOCUMENTATION_ROOT
+from ywta.core import undo_utils
 import ywta.shortcuts as shortcuts
 
 logger = logging.getLogger(__name__)
@@ -89,10 +93,193 @@ def export_curves(controls=None, file_path=None):
     if controls is None:
         controls = cmds.ls(sl=True)
     data = get_curve_data(controls)
-    with open(file_path, "w") as fh:
-        json.dump(data, fh, indent=4, cls=CurveShapeEncoder)
-        logger.info("Exported controls to {}".format(file_path))
+    _write_curve_data(data, file_path)
     return data
+
+
+def _write_curve_data(data, file_path):
+    """CurveShape列を原子的JSONとして書き出す。"""
+    target = os.path.abspath(file_path)
+    directory = os.path.dirname(target)
+    if not os.path.isdir(directory):
+        raise ValueError("保存先directoryがありません: {}".format(directory))
+    handle = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        newline="\n",
+        prefix=".ywta_control_",
+        suffix=".json",
+        dir=directory,
+        delete=False,
+    )
+    temporary = handle.name
+    try:
+        with handle:
+            json.dump(data, handle, ensure_ascii=False, indent=4, cls=CurveShapeEncoder)
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+    logger.info("Exported controls to {}".format(target))
+    return target
+
+
+def export_shape_to_library(controls, name, overwrite=False, directory=CONTROLS_DIRECTORY):
+    """複数controlのworld形状を1つのlibrary entryとして保存する。
+
+    Args:
+        controls: 保存対象control transform。
+        name: library上のshape名。
+        overwrite: 既存entryの置換を明示許可するか。
+        directory: 保存先library directory。
+
+    Returns:
+        保存したJSONの絶対path。
+    """
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", name.strip()):
+        raise ValueError("library名は英数字、underscore、hyphenだけにしてください。")
+    if not isinstance(overwrite, bool):
+        raise ValueError("overwriteはboolで指定してください。")
+    directory = os.path.abspath(directory)
+    if not os.path.isdir(directory):
+        raise ValueError("control library directoryがありません: {}".format(directory))
+    target = os.path.join(directory, name.strip() + ".json")
+    if os.path.exists(target) and not overwrite:
+        raise ValueError("Control library entryが既に存在します: {}".format(name.strip()))
+
+    controls = [controls] if isinstance(controls, str) else controls
+    data = []
+    seen = set()
+    for control in controls or []:
+        matches = cmds.ls(control, long=True, type="transform") or []
+        if len(matches) != 1:
+            raise ValueError("controlを一意に解決できません: {}".format(control))
+        transform = matches[0]
+        node_uuid = (cmds.ls(transform, uuid=True) or [None])[0]
+        if node_uuid in seen:
+            continue
+        seen.add(node_uuid)
+        shapes = _curve_shapes(transform)
+        if not shapes:
+            raise ValueError("NURBS curve shapeがありません: {}".format(transform))
+        matrix = _dag_path(transform).inclusiveMatrix()
+        for shape in shapes:
+            curve = _curve_data_from_shape(shape)
+            world_points = [OpenMaya.MPoint(*point) * matrix for point in curve.cvs]
+            curve.cvs = [(point.x, point.y, point.z) for point in world_points]
+            curve.transform = name.strip()
+            data.append(curve)
+    if not data:
+        raise ValueError("保存するcontrolを1つ以上指定してください。")
+    return _write_curve_data(data, target)
+
+
+def rename_library_shape(old_name, new_name, directory=CONTROLS_DIRECTORY):
+    """Control library entryを検証して原子的に改名する。
+
+    Args:
+        old_name: 現在のlibrary名。
+        new_name: 新しいlibrary名。
+        directory: Control library directory。
+
+    Returns:
+        改名後JSONの絶対path。
+    """
+    name_pattern = r"[A-Za-z0-9_-]+"
+    if not isinstance(old_name, str) or not re.fullmatch(name_pattern, old_name.strip()):
+        raise ValueError("現在のlibrary名が不正です。")
+    if not isinstance(new_name, str) or not re.fullmatch(name_pattern, new_name.strip()):
+        raise ValueError("library名は英数字、underscore、hyphenだけにしてください。")
+    old_name = old_name.strip()
+    new_name = new_name.strip()
+    if old_name == new_name:
+        raise ValueError("新しいlibrary名を指定してください。")
+    directory = os.path.abspath(directory)
+    if not os.path.isdir(directory):
+        raise ValueError("control library directoryがありません: {}".format(directory))
+    source = os.path.join(directory, old_name + ".json")
+    target = os.path.join(directory, new_name + ".json")
+    if not os.path.isfile(source):
+        raise ValueError("Control library entryがありません: {}".format(old_name))
+    if os.path.exists(target):
+        raise ValueError("Control library entryが既に存在します: {}".format(new_name))
+
+    curves = load_curves(source)
+    for curve in curves:
+        curve.transform = new_name
+    _write_curve_data(curves, target)
+    try:
+        os.remove(source)
+    except Exception:
+        if os.path.exists(target):
+            os.remove(target)
+        raise
+    return target
+
+
+def _validated_library_path(name, directory):
+    """library名とJSONを検証して削除可能な絶対pathを返す。"""
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", name.strip()):
+        raise ValueError("library名は英数字、underscore、hyphenだけにしてください。")
+    target = os.path.abspath(os.path.join(directory, name.strip() + ".json"))
+    if os.path.dirname(target) != directory or not os.path.isfile(target):
+        raise ValueError("Control library entryがありません: {}".format(name.strip()))
+    load_curves(target)
+    return target
+
+
+def delete_library_shapes(names, directory=CONTROLS_DIRECTORY):
+    """全entryを事前検証してからControl library JSONを削除する。
+
+    Args:
+        names: 削除するlibrary名列。
+        directory: Control library directory。
+
+    Returns:
+        削除したJSONの絶対path列。
+    """
+    if isinstance(names, (str, bytes)) or not isinstance(names, (list, tuple)) or not names:
+        raise ValueError("削除するlibrary名を1つ以上指定してください。")
+    directory = os.path.abspath(directory)
+    if not os.path.isdir(directory):
+        raise ValueError("control library directoryがありません: {}".format(directory))
+    targets = [_validated_library_path(name, directory) for name in names]
+    if len(set(os.path.normcase(target) for target in targets)) != len(targets):
+        raise ValueError("同じControl library entryを複数回削除できません。")
+    originals = {}
+    for target in targets:
+        with open(target, "rb") as handle:
+            originals[target] = handle.read()
+    removed = []
+    try:
+        for target in targets:
+            os.remove(target)
+            removed.append(target)
+    except Exception:
+        for target in removed:
+            handle = tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=directory,
+                prefix=".ywta_control_restore_",
+                suffix=".tmp",
+                delete=False,
+            )
+            temporary = handle.name
+            try:
+                with handle:
+                    handle.write(originals[target])
+                os.replace(temporary, target)
+            except Exception:
+                if os.path.exists(temporary):
+                    os.remove(temporary)
+                raise
+        raise
+    return targets
+
+
+def delete_library_shape(name, directory=CONTROLS_DIRECTORY):
+    """検証済みControl library JSONを1件削除する。"""
+    return delete_library_shapes([name], directory=directory)[0]
 
 
 def get_curve_data(controls=None):
@@ -103,9 +290,26 @@ def get_curve_data(controls=None):
     """
     if controls is None:
         controls = cmds.ls(sl=True)
-    data = [CurveShape(transform=control) for control in controls]
-    # Prune empty curves
-    data = [x for x in data if x.cvs]
+    elif isinstance(controls, str):
+        controls = [controls]
+    data = []
+    seen = set()
+    for control in controls or []:
+        matches = cmds.ls(control, long=True, type="transform") or []
+        if len(matches) != 1:
+            raise ValueError("controlを一意に解決できません: {}".format(control))
+        transform = matches[0]
+        node_uuid = (cmds.ls(transform, uuid=True) or [None])[0]
+        if node_uuid in seen:
+            continue
+        seen.add(node_uuid)
+        shapes = _curve_shapes(transform)
+        if not shapes:
+            raise ValueError("NURBS curve shapeがありません: {}".format(transform))
+        for shape in shapes:
+            curve = _curve_data_from_shape(shape)
+            curve.transform = transform.rsplit("|", 1)[-1]
+            data.append(curve)
     return data
 
 
@@ -116,12 +320,82 @@ def import_new_curves(file_path=None, tag_as_controller=False):
     :param tag_as_controller: True to tag the curve transform as a controller
     :return: The new curve transforms
     """
-    controls = load_curves(file_path)
-    transforms = []
-    for curve in controls:
-        transform = _get_new_transform_name(curve.transform)
-        transforms.append(curve.create(transform, tag_as_controller))
-    return transforms
+    if file_path is None:
+        file_path = shortcuts.get_open_file_name("*.json", "ywta.control")
+        if not file_path:
+            return None
+    return import_new_curve_files([file_path], tag_as_controller=tag_as_controller)
+
+
+def import_new_curve_files(file_paths, tag_as_controller=False, world_position=None):
+    """複数Control JSONを事前検証し、1回のUndoで新規作成する。
+
+    Args:
+        file_paths: Control JSON path列。
+        tag_as_controller: controller tagを付けるか。
+        world_position: 作成先のworld位置。省略時は原点。
+
+    Returns:
+        作成したcontrol transform名列。
+    """
+    if isinstance(file_paths, (str, bytes)) or not file_paths:
+        raise ValueError("Control JSON pathを1つ以上指定してください。")
+    if world_position is None:
+        world_position = (0.0, 0.0, 0.0)
+    if (
+        not isinstance(world_position, (list, tuple))
+        or len(world_position) != 3
+        or any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in world_position)
+        or not all(math.isfinite(value) for value in world_position)
+    ):
+        raise ValueError("world_positionは有限な数値3要素で指定してください。")
+    world_position = tuple(float(value) for value in world_position)
+    records = []
+    for file_index, file_path in enumerate(file_paths):
+        controls = load_curves(file_path)
+        for curve in controls:
+            records.append(((file_index, curve.transform), curve))
+
+    mapping = {}
+    reserved = set()
+    for key, curve in records:
+        if key not in mapping:
+            name = curve.transform
+            namespace, separator, _leaf = name.rpartition(":")
+            if separator and not cmds.namespace(exists=":" + namespace):
+                raise ValueError("Control作成先namespaceがありません: {}".format(namespace))
+            suffix = 1
+            while cmds.objExists(name) or name in reserved:
+                name = "{}{}".format(curve.transform, suffix)
+                suffix += 1
+            mapping[key] = name
+            reserved.add(name)
+
+    def create():
+        transforms = []
+        for key, curve in records:
+            transform = mapping[key]
+            curve.create(transform, tag_as_controller)
+            if transform not in transforms:
+                transforms.append(transform)
+        for transform in transforms:
+            cmds.xform(transform, worldSpace=True, translation=world_position)
+        return transforms
+
+    return _run_curve_creation("Import New Control Curves", create)
+
+
+def import_new_curve_files_at_selection(file_paths, tag_as_controller=False):
+    """Control JSONを現在選択のworld bounds中心へ新規作成する。"""
+    from ywta.rig.create_joint import _selection_center
+
+    selection = cmds.ls(selection=True, flatten=True, long=True) or []
+    position = _selection_center(selection)
+    return import_new_curve_files(
+        file_paths,
+        tag_as_controller=tag_as_controller,
+        world_position=position,
+    )
 
 
 def import_curves(file_path=None, tag_as_controller=False):
@@ -133,8 +407,15 @@ def import_curves(file_path=None, tag_as_controller=False):
     """
     controls = load_curves(file_path)
 
-    transforms = [curve.create(curve.transform, tag_as_controller) for curve in controls]
-    return transforms
+    def create():
+        transforms = []
+        for curve in controls:
+            transform = curve.create(curve.transform, tag_as_controller)
+            if transform not in transforms:
+                transforms.append(transform)
+        return transforms
+
+    return _run_curve_creation("Import Control Curves", create)
 
 
 def import_curves_on_selected(file_path=None, tag_as_controller=False):
@@ -144,15 +425,31 @@ def import_curves_on_selected(file_path=None, tag_as_controller=False):
     :param tag_as_controller: True to tag the curve transform as a controller
     :return: The new curve transform
     """
-    controls = load_curves(file_path)
-    selected_transforms = cmds.ls(sl=True)
+    if file_path is None:
+        file_path = shortcuts.get_open_file_name("*.json", "ywta.control")
+        if not file_path:
+            return None
+    return import_curve_files_on_selected([file_path], tag_as_controller=tag_as_controller)
+
+
+def import_curve_files_on_selected(file_paths, tag_as_controller=False):
+    """複数Control JSONを事前検証し、選択transformへ1回のUndoで追加する。"""
+    if isinstance(file_paths, (str, bytes)) or not file_paths:
+        raise ValueError("Control JSON pathを1つ以上指定してください。")
+    controls = []
+    for file_path in file_paths:
+        controls.extend(load_curves(file_path))
+    selected_transforms = cmds.ls(selection=True, long=True, type="transform") or []
     if not selected_transforms:
         return
 
-    for transform in selected_transforms:
-        for curve in controls:
-            curve.create(transform, tag_as_controller)
-    return selected_transforms
+    def create():
+        for transform in selected_transforms:
+            for curve in controls:
+                curve.create(transform, tag_as_controller)
+        return selected_transforms
+
+    return _run_curve_creation("Import Curves on Selected", create)
 
 
 def load_curves(file_path=None):
@@ -166,11 +463,103 @@ def load_curves(file_path=None):
         if not file_path:
             return
 
-    with open(file_path, "r") as fh:
+    with open(file_path, "r", encoding="utf-8") as fh:
         data = json.load(fh)
+    _validate_curve_payload(data)
     logger.info("Loaded controls {}".format(file_path))
     curves = [CurveShape(**control) for control in data]
     return curves
+
+
+def _validate_curve_payload(data):
+    """Control JSON全体をscene編集前に検証する。"""
+    if not isinstance(data, list) or not data:
+        raise ValueError("Control JSONは1件以上のcurve配列にしてください。")
+    required = {"transform", "cvs", "degree", "form", "knots", "color"}
+    for record_index, record in enumerate(data):
+        if not isinstance(record, dict) or set(record) != required:
+            raise ValueError("curve recordの項目が不正です: {}".format(record_index))
+        transform = record["transform"]
+        if (
+            not isinstance(transform, str)
+            or not transform.strip()
+            or "|" in transform
+            or any(not segment or cmds.namespace(validateName=segment) != segment for segment in transform.split(":"))
+        ):
+            raise ValueError("curve transform名が不正です: {}".format(record_index))
+        degree = record["degree"]
+        form = record["form"]
+        if not isinstance(degree, int) or isinstance(degree, bool) or degree < 1:
+            raise ValueError("curve degreeが不正です: {}".format(record_index))
+        if not isinstance(form, int) or isinstance(form, bool) or form not in {0, 1, 2}:
+            raise ValueError("curve formが不正です: {}".format(record_index))
+        cvs = record["cvs"]
+        if not isinstance(cvs, list) or len(cvs) < degree + 1:
+            raise ValueError("curve CV数が不足しています: {}".format(record_index))
+        for point in cvs:
+            if (
+                not isinstance(point, (list, tuple))
+                or len(point) != 3
+                or any(
+                    not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(float(value))
+                    for value in point
+                )
+            ):
+                raise ValueError("curve CVが不正です: {}".format(record_index))
+        knots = record["knots"]
+        expected_knots = len(cvs) + degree - 1
+        if form == 2:
+            expected_knots += degree
+        if (
+            not isinstance(knots, list)
+            or len(knots) != expected_knots
+            or any(
+                not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(float(value))
+                for value in knots
+            )
+            or any(float(left) > float(right) for left, right in zip(knots, knots[1:]))
+        ):
+            raise ValueError("curve knot列が不正です: {}".format(record_index))
+        color = record["color"]
+        if color is None:
+            continue
+        if isinstance(color, int) and not isinstance(color, bool) and 0 <= color <= 31:
+            continue
+        if (
+            isinstance(color, (list, tuple))
+            and len(color) == 3
+            and all(
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and math.isfinite(float(value))
+                and 0.0 <= float(value) <= 1.0
+                for value in color
+            )
+        ):
+            continue
+        raise ValueError("curve colorが不正です: {}".format(record_index))
+
+
+def _run_curve_creation(chunk_name, callback):
+    """Control curve作成を選択復元付きの単一Undoで実行する。"""
+    selection = cmds.ls(selection=True, long=True) or []
+    undo_utils.require_enabled(chunk_name)
+    cmds.undoInfo(openChunk=True, chunkName="YWTA {}".format(chunk_name))
+    failed = False
+    try:
+        result = callback()
+        if selection:
+            cmds.select(selection, replace=True)
+        else:
+            cmds.select(clear=True)
+    except Exception:
+        failed = True
+        raise
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        if failed:
+            cmds.undo()
+    return result
 
 
 def _get_new_transform_name(base):
@@ -208,24 +597,13 @@ class CurveShape(object):
         """
         shape = shortcuts.get_shape(transform)
         if shape and cmds.nodeType(shape) == "nurbsCurve":
-            create_attr = "{}.create".format(shape)
-            connection = cmds.listConnections(create_attr, plugs=True, d=False)
-            if connection:
-                cmds.disconnectAttr(connection[0], create_attr)
+            curve = _curve_data_from_shape(shape)
             self.transform = transform
-            self.cvs = cmds.getAttr("{}.cv[*]".format(shape))
-            self.degree = cmds.getAttr("{}.degree".format(shape))
-            self.form = cmds.getAttr("{}.form".format(shape))
-            self.knots = get_knots(shape)
-            if cmds.getAttr("{}.overrideEnabled".format(shape)):
-                if cmds.getAttr("{}.overrideRGBColors".format(shape)):
-                    self.color = cmds.getAttr("{}.overrideColorRGB".format(shape))[0]
-                else:
-                    self.color = cmds.getAttr("{}.overrideColor".format(shape))
-            else:
-                self.color = None
-            if connection:
-                cmds.connectAttr(connection[0], create_attr)
+            self.cvs = curve.cvs
+            self.degree = curve.degree
+            self.form = curve.form
+            self.knots = curve.knots
+            self.color = curve.color
 
     def create(self, transform=None, as_controller=True):
         """Create a curve.
@@ -251,7 +629,8 @@ class CurveShape(object):
                 cmds.setAttr("{}.overrideRGBColors".format(shape), True)
                 cmds.setAttr("{}.overrideColorRGB".format(shape), *self.color)
         cmds.parent(shape, transform, r=True, s=True)
-        shape = cmds.rename(shape, "{}Shape".format(transform))
+        short_name = transform.rsplit("|", 1)[-1]
+        shape = cmds.rename(shape, ":{}Shape".format(short_name.lstrip(":")))
         cmds.delete(curve)
         if as_controller:
             cmds.controller(transform)
@@ -360,6 +739,13 @@ def rotate_components(rx, ry, rz, nodes=None):
         cmds.rotate(rx, ry, rz, "{0}.cv[*]".format(node), r=True, p=pivot, os=True, fo=True)
 
 
+def _dag_path(node):
+    """DAG nodeのAPI 2.0 MDagPathを返す。"""
+    selection = OpenMaya.MSelectionList()
+    selection.add(node)
+    return selection.getDagPath(0)
+
+
 def mirror_curve(source, destination):
     """Mirrors the curve on source across the YZ plane to destination.
 
@@ -371,10 +757,10 @@ def mirror_curve(source, destination):
     """
     source_curve = CurveShape(source)
 
-    path_source = shortcuts.get_dag_path2(source)
+    path_source = _dag_path(source)
     matrix = path_source.inclusiveMatrix()
 
-    path_destination = shortcuts.get_dag_path2(destination)
+    path_destination = _dag_path(destination)
     inverse_matrix = path_destination.inclusiveMatrixInverse()
 
     world_cvs = [OpenMaya.MPoint(*x) * matrix for x in source_curve.cvs]
@@ -388,19 +774,427 @@ def mirror_curve(source, destination):
     return source_curve
 
 
+_SIDE_TOKENS = {
+    "l": "R",
+    "r": "L",
+    "lf": "rt",
+    "rt": "lf",
+    "left": "right",
+    "right": "left",
+}
+
+
+def _mirrored_control_name(source):
+    """namespaceを保持して最初のside tokenを反転したcontrol名を返す。"""
+    leaf = source.rsplit("|", 1)[-1]
+    namespace, separator, base = leaf.rpartition(":")
+    if not separator:
+        namespace = ""
+        base = leaf
+    parts = base.split("_")
+    for index, part in enumerate(parts):
+        opposite = _SIDE_TOKENS.get(part.casefold())
+        if opposite is None:
+            continue
+        if part.isupper():
+            opposite = opposite.upper()
+        elif part.islower():
+            opposite = opposite.lower()
+        elif part[:1].isupper():
+            opposite = opposite.capitalize()
+        parts[index] = opposite
+        mirrored = "_".join(parts)
+        return "{}:{}".format(namespace, mirrored) if namespace else mirrored
+    raise ValueError("side tokenがありません: {}".format(leaf))
+
+
+def _curve_data_from_shape(shape):
+    """1つのNURBS curve shapeをCurveShapeデータへ変換する。"""
+    function = OpenMaya.MFnNurbsCurve(_dag_path(shape))
+    degree = function.degree
+    form = cmds.getAttr(shape + ".form")
+    points = function.cvPositions(OpenMaya.MSpace.kObject)
+    cvs = [(point.x, point.y, point.z) for point in points]
+    if form == 2:
+        cvs = cvs[:-degree]
+    color = None
+    if cmds.getAttr(shape + ".overrideEnabled"):
+        if cmds.getAttr(shape + ".overrideRGBColors"):
+            color = cmds.getAttr(shape + ".overrideColorRGB")[0]
+        else:
+            color = cmds.getAttr(shape + ".overrideColor")
+    return CurveShape(
+        cvs=cvs,
+        degree=degree,
+        form=form,
+        knots=list(function.knots()),
+        color=color,
+    )
+
+
+def mirror_control_shapes(source, destination=None):
+    """sourceの全curve shapeをworld YZ反転して反対側controlへ差し替える。
+
+    destination transform自体とその接続、表示設定は維持する。destination省略時は
+    L/R、lf/rt、left/rightのunderscore区切りtokenから同namespace内で解決する。
+    """
+    source_matches = cmds.ls(source, long=True, type="transform") or []
+    if len(source_matches) != 1:
+        raise ValueError("source controlを一意に解決できません: {}".format(source))
+    source = source_matches[0]
+    if destination is None:
+        destination = _mirrored_control_name(source)
+    destination_matches = cmds.ls(destination, long=True, type="transform") or []
+    if len(destination_matches) != 1:
+        raise ValueError("mirror先controlを一意に解決できません: {}".format(destination))
+    destination = destination_matches[0]
+    if (cmds.ls(source, uuid=True) or [None])[0] == (cmds.ls(destination, uuid=True) or [None])[0]:
+        raise ValueError("sourceとdestinationは別controlにしてください。")
+    source_shapes = _curve_shapes(source)
+    if not source_shapes:
+        raise ValueError("sourceにNURBS curve shapeがありません: {}".format(source))
+    if not _curve_shapes(destination):
+        raise ValueError("destinationにNURBS curve shapeがありません: {}".format(destination))
+
+    source_matrix = _dag_path(source).inclusiveMatrix()
+    destination_inverse = _dag_path(destination).inclusiveMatrixInverse()
+    curves = []
+    for shape in source_shapes:
+        curve = _curve_data_from_shape(shape)
+        world_points = [OpenMaya.MPoint(*point) * source_matrix for point in curve.cvs]
+        for point in world_points:
+            point.x *= -1.0
+        local_points = [point * destination_inverse for point in world_points]
+        curve.cvs = [(point.x, point.y, point.z) for point in local_points]
+        curves.append(curve)
+    swap_curve_shapes([destination], curves)
+    return destination
+
+
+def mirror_selected_control_shapes():
+    """選択した1つのcontrol shapeを名前解決した反対側へmirrorする。"""
+    selected = cmds.ls(selection=True, long=True, type="transform") or []
+    if len(selected) != 1:
+        raise ValueError("mirror元controlを1つ選択してください。")
+    return mirror_control_shapes(selected[0])
+
+
+def _curve_shapes(transform):
+    """transform直下の表示用NURBS curve shapeをロングパスで返す。"""
+    return (
+        cmds.listRelatives(
+            transform,
+            shapes=True,
+            noIntermediate=True,
+            fullPath=True,
+            type="nurbsCurve",
+        )
+        or []
+    )
+
+
+def select_control_cvs(transforms=None):
+    """選択control直下にある全NURBS curve CVを選択する。
+
+    Args:
+        transforms: 対象transform名。省略時は現在選択を使用する。
+
+    Returns:
+        選択したCV componentの一覧。
+    """
+    if transforms is None:
+        transforms = cmds.ls(selection=True, long=True, type="transform") or []
+    elif isinstance(transforms, str):
+        transforms = [transforms]
+
+    components = []
+    seen = set()
+    for transform in transforms or []:
+        matches = cmds.ls(transform, long=True, type="transform") or []
+        if len(matches) != 1:
+            raise ValueError("controlを一意に解決できません: {}".format(transform))
+        target = matches[0]
+        node_uuid = (cmds.ls(target, uuid=True) or [None])[0]
+        if node_uuid in seen:
+            continue
+        seen.add(node_uuid)
+        shapes = _curve_shapes(target)
+        if not shapes:
+            raise ValueError("NURBS curve shapeがありません: {}".format(target))
+        for shape in shapes:
+            components.extend(cmds.ls(shape + ".cv[*]", flatten=True, long=True) or [])
+
+    if not components:
+        raise ValueError("編集するcontrolを1つ以上選択してください。")
+    cmds.select(components, replace=True)
+    return components
+
+
+def set_control_color(rgb, transforms=None):
+    """control shapeへRGB override colorを単一Undoで設定する。
+
+    Args:
+        rgb: 0から1の範囲にあるRGB値。
+        transforms: 対象control。省略時は現在選択を使用する。
+
+    Returns:
+        色を変更したcurve shapeのロングパス一覧。
+    """
+    if not isinstance(rgb, (list, tuple)) or len(rgb) != 3:
+        raise ValueError("RGBは3要素のlistまたはtupleで指定してください。")
+    if any(
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(float(value))
+        or not 0.0 <= float(value) <= 1.0
+        for value in rgb
+    ):
+        raise ValueError("RGB値は0から1の有限数で指定してください。")
+    color = tuple(float(value) for value in rgb)
+
+    if transforms is None:
+        transforms = cmds.ls(selection=True, long=True, type="transform") or []
+    elif isinstance(transforms, str):
+        transforms = [transforms]
+    shapes = []
+    seen = set()
+    for transform in transforms or []:
+        matches = cmds.ls(transform, long=True, type="transform") or []
+        if len(matches) != 1:
+            raise ValueError("controlを一意に解決できません: {}".format(transform))
+        target = matches[0]
+        node_uuid = (cmds.ls(target, uuid=True) or [None])[0]
+        if node_uuid in seen:
+            continue
+        seen.add(node_uuid)
+        if cmds.referenceQuery(target, isNodeReferenced=True):
+            raise ValueError("参照controlの表示色は変更できません: {}".format(target))
+        target_shapes = _curve_shapes(target)
+        if not target_shapes:
+            raise ValueError("NURBS curve shapeがありません: {}".format(target))
+        for shape in target_shapes:
+            blocked = [
+                attribute
+                for attribute in ("overrideEnabled", "overrideRGBColors", "overrideColorRGB")
+                if not cmds.getAttr("{}.{}".format(shape, attribute), settable=True)
+            ]
+            if blocked:
+                raise ValueError("表示色が編集できません: {} ({})".format(shape, ", ".join(blocked)))
+        shapes.extend(target_shapes)
+    if not shapes:
+        raise ValueError("色を変更するcontrolを1つ以上選択してください。")
+
+    selection = cmds.ls(selection=True, long=True) or []
+    undo_utils.require_enabled("Set Control Color")
+    cmds.undoInfo(openChunk=True, chunkName="YWTA Set Control Color")
+    failed = False
+    try:
+        for shape in shapes:
+            cmds.setAttr(shape + ".overrideEnabled", True)
+            cmds.setAttr(shape + ".overrideRGBColors", True)
+            cmds.setAttr(shape + ".overrideColorRGB", *color, type="double3")
+        cmds.select(selection, replace=True) if selection else cmds.select(clear=True)
+    except Exception:
+        failed = True
+        raise
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        if failed:
+            cmds.undo()
+    return shapes
+
+
+def combine_control_shapes(transforms=None):
+    """複数controlを最後のtransformへworld形状を維持して結合する。
+
+    最後以外のsource transformは削除する。親子関係にある選択や参照nodeは、
+    targetや未選択の子階層を誤って削除しないよう編集前に拒否する。
+
+    Args:
+        transforms: 選択順のcontrol transform名。省略時は現在選択を使用する。
+
+    Returns:
+        結合先controlのロングパス。
+    """
+    if transforms is None:
+        transforms = cmds.ls(selection=True, long=True, type="transform") or []
+    elif isinstance(transforms, str):
+        transforms = [transforms]
+
+    resolved = []
+    seen = set()
+    for transform in transforms or []:
+        matches = cmds.ls(transform, long=True, type="transform") or []
+        if len(matches) != 1:
+            raise ValueError("controlを一意に解決できません: {}".format(transform))
+        target = matches[0]
+        node_uuid = (cmds.ls(target, uuid=True) or [None])[0]
+        if node_uuid in seen:
+            raise ValueError("同じcontrolを複数回指定できません: {}".format(target))
+        seen.add(node_uuid)
+        resolved.append(target)
+    if len(resolved) < 2:
+        raise ValueError("結合するcontrolを2つ以上選択してください。")
+
+    for index, transform in enumerate(resolved):
+        if cmds.referenceQuery(transform, isNodeReferenced=True):
+            raise ValueError("参照controlは結合できません: {}".format(transform))
+        if not _curve_shapes(transform):
+            raise ValueError("NURBS curve shapeがありません: {}".format(transform))
+        descendants = set(cmds.listRelatives(transform, allDescendents=True, fullPath=True, type="transform") or [])
+        if index < len(resolved) - 1 and descendants:
+            raise ValueError("子transformを持つsource controlは結合できません: {}".format(transform))
+
+    destination = resolved[-1]
+    destination_inverse = _dag_path(destination).inclusiveMatrixInverse()
+    plans = []
+    for source in resolved[:-1]:
+        source_matrix = _dag_path(source).inclusiveMatrix()
+        for shape in _curve_shapes(source):
+            curve = _curve_data_from_shape(shape)
+            world_points = [OpenMaya.MPoint(*point) * source_matrix for point in curve.cvs]
+            local_points = [point * destination_inverse for point in world_points]
+            curve.cvs = [(point.x, point.y, point.z) for point in local_points]
+            plans.append((curve, _shape_display_state(shape)))
+
+    undo_utils.require_enabled("Combine Control Shapes")
+    cmds.undoInfo(openChunk=True, chunkName="YWTA Combine Control Shapes")
+    failed = False
+    try:
+        for curve, state in plans:
+            before = set(_curve_shapes(destination))
+            curve.create(destination, as_controller=False)
+            created = [shape for shape in _curve_shapes(destination) if shape not in before]
+            if len(created) != 1:
+                raise RuntimeError("curve shapeを一意に作成できません: {}".format(destination))
+            _apply_shape_display_state(created[0], state)
+        cmds.delete(resolved[:-1])
+        destination = (cmds.ls(destination, long=True, type="transform") or [destination])[0]
+        cmds.select(destination, replace=True)
+    except Exception:
+        failed = True
+        raise
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        if failed:
+            cmds.undo()
+    return destination
+
+
+def _shape_display_state(shape):
+    """shape差し替え時に保持する表示状態を取得する。"""
+    visibility_sources = cmds.listConnections(shape + ".visibility", source=True, destination=False, plugs=True) or []
+    if len(visibility_sources) > 1:
+        raise RuntimeError("visibility入力を一意に解決できません: {}".format(shape))
+    return {
+        "visibility": cmds.getAttr(shape + ".visibility"),
+        "override_enabled": cmds.getAttr(shape + ".overrideEnabled"),
+        "override_rgb": cmds.getAttr(shape + ".overrideRGBColors"),
+        "override_color": cmds.getAttr(shape + ".overrideColor"),
+        "override_color_rgb": cmds.getAttr(shape + ".overrideColorRGB")[0],
+        "override_display_type": cmds.getAttr(shape + ".overrideDisplayType"),
+        "visibility_source": visibility_sources[0] if visibility_sources else None,
+    }
+
+
+def _apply_shape_display_state(shape, state):
+    """保存済み表示状態を新しいcurve shapeへ適用する。"""
+    cmds.setAttr(shape + ".visibility", state["visibility"])
+    cmds.setAttr(shape + ".overrideEnabled", state["override_enabled"])
+    cmds.setAttr(shape + ".overrideRGBColors", state["override_rgb"])
+    cmds.setAttr(shape + ".overrideColor", state["override_color"])
+    cmds.setAttr(shape + ".overrideColorRGB", *state["override_color_rgb"], type="double3")
+    cmds.setAttr(shape + ".overrideDisplayType", state["override_display_type"])
+    if state["visibility_source"]:
+        cmds.connectAttr(state["visibility_source"], shape + ".visibility", force=True)
+
+
+def swap_curve_shapes(transforms, curves):
+    """transform接続を維持してcontrol curve shapeだけを差し替える。
+
+    Args:
+        transforms: 差し替え対象のtransform名。
+        curves: 新規作成に使う :class:`CurveShape` の列。
+
+    Returns:
+        差し替えたtransformのロングパス一覧。
+    """
+    if not curves or not all(isinstance(curve, CurveShape) and curve.cvs for curve in curves):
+        raise ValueError("有効なCurveShapeを1つ以上指定してください。")
+    if isinstance(transforms, str):
+        transforms = [transforms]
+    resolved = []
+    plans = []
+    seen = set()
+    for transform in transforms or []:
+        matches = cmds.ls(transform, long=True, type="transform") or []
+        if len(matches) != 1:
+            raise ValueError("transformを一意に解決できません: {}".format(transform))
+        target = matches[0]
+        node_uuid = (cmds.ls(target, uuid=True) or [None])[0]
+        if node_uuid in seen:
+            continue
+        seen.add(node_uuid)
+        if cmds.referenceQuery(target, isNodeReferenced=True):
+            raise ValueError("参照controlのshapeは差し替えできません: {}".format(target))
+        old_shapes = _curve_shapes(target)
+        if not old_shapes:
+            raise ValueError("NURBS curve shapeがありません: {}".format(target))
+        plans.append((target, old_shapes, [_shape_display_state(shape) for shape in old_shapes]))
+        resolved.append(target)
+    if not plans:
+        raise ValueError("差し替え対象のcontrolを1つ以上指定してください。")
+
+    selection = cmds.ls(selection=True, long=True) or []
+    undo_utils.require_enabled("Swap Control Shapes")
+    cmds.undoInfo(openChunk=True, chunkName="YWTA Swap Control Shapes")
+    failed = False
+    try:
+        for target, old_shapes, states in plans:
+            before = set(old_shapes)
+            for curve in curves:
+                curve.create(target, as_controller=False)
+            new_shapes = [shape for shape in _curve_shapes(target) if shape not in before]
+            if len(new_shapes) != len(curves):
+                raise RuntimeError("作成したcurve shape数が一致しません: {}".format(target))
+            for index, shape in enumerate(new_shapes):
+                state = states[index] if len(states) == len(new_shapes) else states[0]
+                _apply_shape_display_state(shape, state)
+            cmds.delete(old_shapes)
+        valid_selection = [item for item in selection if cmds.objExists(item)]
+        if valid_selection:
+            cmds.select(valid_selection, replace=True)
+        else:
+            cmds.select(clear=True)
+    except Exception:
+        failed = True
+        raise
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        if failed:
+            cmds.undo()
+    return resolved
+
+
+def swap_selected_curves(file_path=None):
+    """選択controlのshapeをJSON内のcurveへ差し替える。"""
+    transforms = cmds.ls(selection=True, long=True, type="transform") or []
+    if not transforms:
+        raise ValueError("差し替えるcontrolを1つ以上選択してください。")
+    curves = load_curves(file_path)
+    if curves is None:
+        return None
+    return swap_curve_shapes(transforms, curves)
+
+
 def get_knots(curve):
     """Gets the list of knots of a curve so it can be recreated.
 
     :param curve: Curve to query.
     :return: A list of knot values that can be passed into the curve creation command.
     """
-    curve = shortcuts.get_shape(curve)
-    info = cmds.createNode("curveInfo")
-    cmds.connectAttr("{0}.worldSpace".format(curve), "{0}.inputCurve".format(info))
-    knots = cmds.getAttr("{0}.knots[*]".format(info))
-    knots = [int(x) for x in knots]
-    cmds.delete(info)
-    return knots
+    shape = shortcuts.get_shape(curve)
+    return list(OpenMaya.MFnNurbsCurve(_dag_path(shape)).knots())
 
 
 def documentation():

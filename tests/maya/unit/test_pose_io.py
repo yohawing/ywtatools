@@ -1,0 +1,440 @@
+"""Pose IO の Maya 単体テスト。"""
+
+import copy
+from unittest import mock
+
+import maya.cmds as cmds
+
+from ywta.anim import pose_io
+from ywta.test import TestCase
+
+
+class PoseIoTests(TestCase):
+    """namespace 可搬 pose の主要 contract を検証する。"""
+
+    def setUp(self):
+        for option in (pose_io.BLEND_OPTION, pose_io.SELECTED_ONLY_OPTION):
+            if cmds.optionVar(exists=option):
+                cmds.optionVar(remove=option)
+
+    def _control(self, namespace, name="hand_ctrl"):
+        if namespace and not cmds.namespace(exists=namespace):
+            cmds.namespace(add=namespace)
+        prefix = namespace + ":" if namespace else ""
+        node = cmds.createNode("transform", name=prefix + name)
+        cmds.addAttr(node, longName="space", attributeType="enum", enumName="World:Chest", keyable=True)
+        return node
+
+    def test_pose_applies_across_namespaces(self):
+        source = self._control("source")
+        cmds.setAttr(source + ".translateX", 4.5)
+        cmds.setAttr(source + ".rotateY", -12.0)
+        data = pose_io.capture([source])
+        cmds.delete(source)
+        target = self._control("target")
+
+        result = pose_io.apply(data)
+
+        self.assertGreater(result["applied"], 0)
+        self.assertAlmostEqual(4.5, cmds.getAttr(target + ".translateX"))
+        self.assertAlmostEqual(-12.0, cmds.getAttr(target + ".rotateY"))
+
+    def test_successful_apply_is_one_undo(self):
+        source = self._control("source")
+        cmds.setAttr(source + ".translateX", 4.5)
+        cmds.setAttr(source + ".rotateY", -12.0)
+        data = pose_io.capture([source])
+        cmds.delete(source)
+        target = self._control("target")
+
+        pose_io.apply(data)
+        cmds.undo()
+
+        self.assertAlmostEqual(0.0, cmds.getAttr(target + ".translateX"))
+        self.assertAlmostEqual(0.0, cmds.getAttr(target + ".rotateY"))
+
+    def test_mid_apply_failure_rolls_back_prior_attributes(self):
+        """後続setAttr失敗時に先行channelを残さない。"""
+        source = self._control("source")
+        cmds.setAttr(source + ".translateX", 10.0)
+        cmds.setAttr(source + ".translateY", 20.0)
+        data = pose_io.capture([source])
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.setAttr(target + ".translateX", 1.0)
+        cmds.setAttr(target + ".translateY", 2.0)
+        before = {
+            attribute: cmds.getAttr("{}.{}".format(target, attribute))
+            for attribute in cmds.listAttr(target, keyable=True, scalar=True) or []
+        }
+        original_set_attr = pose_io.cmds.setAttr
+        calls = 0
+
+        def fail_second(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("expected failure")
+            return original_set_attr(*args, **kwargs)
+
+        with mock.patch.object(pose_io.cmds, "setAttr", side_effect=fail_second):
+            with self.assertRaises(RuntimeError):
+                pose_io.apply(data)
+
+        for attribute, value in before.items():
+            self.assertEqual(value, cmds.getAttr("{}.{}".format(target, attribute)))
+
+    def test_explicit_pose_id_survives_control_rename(self):
+        source = self._control("source", "left_hand")
+        pose_io.set_pose_id(source, "arm.left.ik")
+        cmds.setAttr(source + ".translateZ", 7.0)
+        data = pose_io.capture([source])
+        cmds.delete(source)
+        target = self._control("target", "renamed_hand")
+        pose_io.set_pose_id(target, "arm.left.ik")
+
+        pose_io.apply(data)
+
+        self.assertAlmostEqual(7.0, cmds.getAttr(target + ".translateZ"))
+
+    def test_pose_id_creation_is_one_undoable_action(self):
+        """Pose ID属性の追加と値設定をまとめてUndo/Redoできる。"""
+        control = self._control("character")
+
+        plug = pose_io.set_pose_id(control, "arm.left.ik")
+        self.assertEqual("arm.left.ik", cmds.getAttr(plug))
+        cmds.undo()
+        self.assertFalse(cmds.objExists(plug))
+        cmds.redo()
+        self.assertEqual("arm.left.ik", cmds.getAttr(plug))
+
+    def test_pose_id_dialog_sets_selected_control(self):
+        """メニュー用ダイアログから選択controlへ明示IDを設定する。"""
+        control = self._control("character")
+        cmds.select(control, replace=True)
+
+        def prompt_dialog(**kwargs):
+            return "arm.left.ik" if kwargs.get("query") else "Set"
+
+        with mock.patch.object(pose_io.cmds, "promptDialog", side_effect=prompt_dialog):
+            plug = pose_io.set_pose_id_selected()
+
+        self.assertEqual("arm.left.ik", cmds.getAttr(plug))
+
+    def test_pose_id_dialog_cancel_and_multiple_selection_do_not_edit(self):
+        """Cancelと複数選択でPose ID属性を部分作成しない。"""
+        first = self._control("character", "first_ctrl")
+        second = self._control("character", "second_ctrl")
+        cmds.select(first, replace=True)
+        with mock.patch.object(pose_io.cmds, "promptDialog", return_value="Cancel"):
+            self.assertIsNone(pose_io.set_pose_id_selected())
+        self.assertFalse(cmds.objExists(first + "." + pose_io.POSE_ID_ATTRIBUTE))
+
+        cmds.select(first, second, replace=True)
+        with mock.patch.object(pose_io.cmds, "promptDialog") as prompt:
+            with self.assertRaises(ValueError):
+                pose_io.set_pose_id_selected()
+        prompt.assert_not_called()
+
+    def test_pose_id_rejects_non_string_before_edit(self):
+        """文字列以外のPose IDで属性を作成しない。"""
+        control = self._control("character")
+
+        with self.assertRaises(ValueError):
+            pose_io.set_pose_id(control, 42)
+
+        self.assertFalse(cmds.objExists(control + "." + pose_io.POSE_ID_ATTRIBUTE))
+
+    def test_pose_id_rejects_control_characters_before_edit_or_capture(self):
+        """Pose IDとportable addressへ改行やDELを保存しない。"""
+        control = self._control("character")
+
+        with self.assertRaises(ValueError):
+            pose_io.set_pose_id(control, "arm\nleft")
+        self.assertFalse(cmds.objExists(control + "." + pose_io.POSE_ID_ATTRIBUTE))
+
+        cmds.addAttr(control, longName=pose_io.POSE_ID_ATTRIBUTE, dataType="string")
+        cmds.setAttr(control + "." + pose_io.POSE_ID_ATTRIBUTE, "arm\x7fleft", type="string")
+        with self.assertRaises(ValueError):
+            pose_io.capture([control])
+        self.assertFalse(pose_io.is_control_address("id:arm\x7fleft"))
+
+    def test_pose_id_rejects_referenced_or_locked_control_before_edit(self):
+        """参照editやlocked Pose IDへの書込みを作らない。"""
+        control = self._control("character")
+        original_reference_query = pose_io.cmds.referenceQuery
+
+        def reference_query(node, **kwargs):
+            if kwargs.get("isNodeReferenced") and node == "|character:hand_ctrl":
+                return True
+            return original_reference_query(node, **kwargs)
+
+        with mock.patch.object(pose_io.cmds, "referenceQuery", side_effect=reference_query):
+            with self.assertRaises(ValueError):
+                pose_io.set_pose_id(control, "arm.left.ik")
+        self.assertFalse(cmds.objExists(control + "." + pose_io.POSE_ID_ATTRIBUTE))
+
+        cmds.addAttr(control, longName=pose_io.POSE_ID_ATTRIBUTE, dataType="string")
+        cmds.setAttr(control + "." + pose_io.POSE_ID_ATTRIBUTE, "original", type="string", lock=True)
+        with self.assertRaises(ValueError):
+            pose_io.set_pose_id(control, "replacement")
+        self.assertEqual("original", cmds.getAttr(control + "." + pose_io.POSE_ID_ATTRIBUTE))
+
+    def test_blend_and_enum_label(self):
+        source = self._control("source")
+        cmds.setAttr(source + ".translateX", 10.0)
+        cmds.setAttr(source + ".space", 1)
+        data = pose_io.capture([source])
+        cmds.delete(source)
+        target = self._control("target")
+
+        pose_io.apply(data, blend=0.25)
+
+        self.assertAlmostEqual(2.5, cmds.getAttr(target + ".translateX"))
+        self.assertEqual(1, cmds.getAttr(target + ".space"))
+
+    def test_selected_scope_does_not_touch_other_controls(self):
+        source_a = self._control("source", "hand_ctrl")
+        source_b = self._control("source", "foot_ctrl")
+        cmds.setAttr(source_a + ".translateX", 2.0)
+        cmds.setAttr(source_b + ".translateX", 3.0)
+        data = pose_io.capture([source_a, source_b])
+        cmds.delete(source_a, source_b)
+        target_a = self._control("target", "hand_ctrl")
+        target_b = self._control("target", "foot_ctrl")
+
+        pose_io.apply(data, nodes=[target_a])
+
+        self.assertAlmostEqual(2.0, cmds.getAttr(target_a + ".translateX"))
+        self.assertAlmostEqual(0.0, cmds.getAttr(target_b + ".translateX"))
+
+    def test_missing_explicit_control_rejects_partial_capture(self):
+        """明示controlの一部欠落を黙って無視しない。"""
+        source = self._control("source")
+
+        with self.assertRaises(ValueError):
+            pose_io.capture([source, "missing_ctrl"])
+
+    def test_missing_pose_target_is_noop_when_undo_is_disabled(self):
+        """全target欠落のreportはUndo queueを必要としない。"""
+        source = self._control("source")
+        data = pose_io.capture([source])
+        cmds.delete(source)
+        target = self._control("target", "different_ctrl")
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            result = pose_io.apply(data, nodes=[target])
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+        self.assertEqual(0, result["applied"])
+        self.assertEqual("target_missing", result["skipped"][0]["reason"])
+
+    def test_ambiguous_name_fails_before_edit(self):
+        source = self._control("source")
+        cmds.setAttr(source + ".translateX", 8.0)
+        data = pose_io.capture([source])
+        cmds.delete(source)
+        first = self._control("first")
+        second = self._control("second")
+
+        with self.assertRaises(ValueError):
+            pose_io.apply(data)
+
+        self.assertEqual(0.0, cmds.getAttr(first + ".translateX"))
+        self.assertEqual(0.0, cmds.getAttr(second + ".translateX"))
+
+    def test_invalid_value_fails_before_edit(self):
+        source = self._control("source")
+        data = copy.deepcopy(pose_io.capture([source]))
+        data["controls"][0]["attributes"][0]["value"] = float("nan")
+
+        with self.assertRaises(ValueError):
+            pose_io.apply(data)
+
+    def test_fractional_integer_pose_value_fails_before_edit(self):
+        """外部Poseで整数attributeを暗黙丸めしない。"""
+        source = self._control("source")
+        cmds.addAttr(source, longName="modeIndex", attributeType="long", keyable=True)
+        data = pose_io.capture([source])
+        record = next(item for item in data["controls"][0]["attributes"] if item["name"] == "modeIndex")
+        record["value"] = 1.5
+
+        with self.assertRaises(ValueError):
+            pose_io.apply(data)
+
+    def test_empty_portable_address_is_rejected(self):
+        """prefixだけのPose addressをtarget missingとして扱わない。"""
+        source = self._control("source")
+        data = copy.deepcopy(pose_io.capture([source]))
+        data["controls"][0]["address"] = "name:   "
+
+        with self.assertRaises(ValueError):
+            pose_io.apply(data)
+
+        self.assertFalse(pose_io.is_control_address("name: hand_ctrl "))
+
+    def test_save_and_read_round_trip(self):
+        source = self._control("source")
+        cmds.setAttr(source + ".translateY", 6.0)
+        path = self.get_temp_filename("pose.json")
+
+        pose_io.save([source], path)
+        data = pose_io.read(path)
+
+        self.assertEqual(pose_io.FORMAT, data["format"])
+        self.assertEqual("name:hand_ctrl", data["controls"][0]["address"])
+        self.assertEqual(cmds.currentUnit(query=True, linear=True), data["linear_unit"])
+        self.assertEqual(cmds.currentUnit(query=True, angle=True), data["angle_unit"])
+
+    def test_schema_version_requires_integer(self):
+        """真偽値や浮動小数点を整数schema versionとして受理しない。"""
+        data = pose_io.capture([self._control("source")])
+
+        for version in (True, 1.0):
+            invalid = copy.deepcopy(data)
+            invalid["version"] = version
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                pose_io._validate(invalid)
+
+    def test_temporary_pose_round_trip_uses_validated_engine(self):
+        source = self._control("source")
+        cmds.setAttr(source + ".translateX", 7.5)
+        path = self.get_temp_filename("temporary_pose.json")
+        pose_io.save_temp([source], file_path=path)
+        cmds.delete(source)
+        target = self._control("target")
+
+        result = pose_io.load_temp(nodes=[target], file_path=path)
+
+        self.assertGreater(result["applied"], 0)
+        self.assertAlmostEqual(7.5, cmds.getAttr(target + ".translateX"))
+
+    def test_unit_mismatch_is_reported_without_value_conversion(self):
+        source = self._control("source")
+        cmds.setAttr(source + ".translateX", 5.0)
+        data = pose_io.capture([source])
+        data["linear_unit"] = "m" if cmds.currentUnit(query=True, linear=True) != "m" else "cm"
+        cmds.delete(source)
+        target = self._control("target")
+
+        result = pose_io.apply(data, nodes=[target])
+
+        self.assertEqual(["linear_unit"], result["unit_mismatches"])
+        self.assertAlmostEqual(5.0, cmds.getAttr(target + ".translateX"))
+
+    def test_animated_channel_is_keyed_at_current_time(self):
+        source = self._control("source")
+        cmds.setAttr(source + ".translateX", 5.0)
+        data = pose_io.capture([source])
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.setKeyframe(target, attribute="translateX", time=1, value=0.0)
+        cmds.currentTime(1)
+
+        pose_io.apply(data)
+
+        self.assertAlmostEqual(5.0, cmds.getAttr(target + ".translateX"))
+        self.assertEqual([1.0], cmds.keyframe(target, attribute="translateX", query=True, timeChange=True))
+
+    def test_zero_blend_does_not_add_animation_key(self):
+        """0% blendは現在値と同じkeyを新設しない。"""
+        source = self._control("source")
+        cmds.setAttr(source + ".translateX", 5.0)
+        data = pose_io.capture([source])
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.setKeyframe(target, attribute="translateX", time=1, value=2.0)
+        cmds.currentTime(5)
+
+        result = pose_io.apply(data, blend=0.0)
+
+        self.assertEqual(0, result["applied"])
+        self.assertAlmostEqual(2.0, cmds.getAttr(target + ".translateX"))
+        self.assertEqual([1.0], cmds.keyframe(target, attribute="translateX", query=True, timeChange=True))
+
+    def test_computed_channel_is_skipped(self):
+        source = self._control("source")
+        cmds.setAttr(source + ".translateX", 5.0)
+        data = pose_io.capture([source])
+        cmds.delete(source)
+        target = self._control("target")
+        driver = cmds.createNode("multiplyDivide")
+        cmds.setAttr(driver + ".input1X", 2.0)
+        cmds.connectAttr(driver + ".outputX", target + ".translateX")
+
+        result = pose_io.apply(data)
+
+        skipped = [item for item in result["skipped"] if item.get("attribute") == "translateX"]
+        self.assertEqual("driven", skipped[0]["reason"])
+        self.assertAlmostEqual(2.0, cmds.getAttr(target + ".translateX"))
+
+    def test_computed_channel_is_not_captured(self):
+        source = self._control("source")
+        driver = cmds.createNode("multiplyDivide")
+        cmds.setAttr(driver + ".input1X", 3.0)
+        cmds.connectAttr(driver + ".outputX", source + ".translateX")
+
+        data = pose_io.capture([source])
+
+        attributes = data["controls"][0]["attributes"]
+        self.assertNotIn("translateX", [attribute["name"] for attribute in attributes])
+
+    def test_hand_edited_pose_cannot_write_non_keyable_attribute(self):
+        """外部JSONでもcapture対象外のhidden属性へ値を書かない。"""
+        source = self._control("source")
+        data = pose_io.capture([source])
+        translate = next(item for item in data["controls"][0]["attributes"] if item["name"] == "translateX")
+        translate["name"] = "hiddenValue"
+        translate["value"] = 99.0
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.addAttr(target, longName="hiddenValue", attributeType="double")
+        cmds.setAttr(target + ".hiddenValue", 7.0)
+
+        result = pose_io.apply(data, [target])
+
+        skipped = [item for item in result["skipped"] if item.get("attribute") == "hiddenValue"]
+        self.assertEqual("unavailable", skipped[0]["reason"])
+        self.assertAlmostEqual(7.0, cmds.getAttr(target + ".hiddenValue"))
+
+    def test_enum_explicit_indices_are_resolved_by_label(self):
+        source = self._control("source")
+        cmds.addAttr(
+            source,
+            longName="mode",
+            attributeType="enum",
+            enumName="FK=1:IK=5",
+            keyable=True,
+        )
+        cmds.setAttr(source + ".mode", 5)
+        data = pose_io.capture([source])
+        cmds.delete(source)
+        target = self._control("target")
+        cmds.addAttr(
+            target,
+            longName="mode",
+            attributeType="enum",
+            enumName="FK=1:IK=5",
+            keyable=True,
+        )
+
+        pose_io.apply(data)
+
+        self.assertEqual(5, cmds.getAttr(target + ".mode"))
+
+    def test_load_settings_round_trip_and_invalid_blend_falls_back(self):
+        self.assertEqual((1.0, False), pose_io.get_load_settings())
+        self.assertEqual((0.25, True), pose_io.set_load_settings(0.25, True))
+        self.assertEqual((0.25, True), pose_io.get_load_settings())
+
+        cmds.optionVar(floatValue=(pose_io.BLEND_OPTION, 2.0))
+
+        self.assertEqual((1.0, True), pose_io.get_load_settings())
+
+        cmds.optionVar(stringValue=(pose_io.SELECTED_ONLY_OPTION, "false"))
+
+        self.assertEqual((1.0, False), pose_io.get_load_settings())
+
+    def test_load_options_window_builds(self):
+        self.assertEqual("ywtaPoseLoadOptionsWindow", pose_io.show_load_options())

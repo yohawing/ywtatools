@@ -2,22 +2,65 @@
 
 from functools import partial
 import os
-from PySide2.QtCore import *
-from PySide2.QtWidgets import *
-from PySide2.QtGui import *
+
+try:
+    # Maya本体のQt bindingと揃え、両方が見える環境でmetaclassを混在させない。
+    from PySide2.QtCore import Qt
+    from PySide2.QtGui import QColor, QDoubleValidator, QIcon, QPixmap
+    from PySide2.QtWidgets import (
+        QAbstractItemView,
+        QColorDialog,
+        QGridLayout,
+        QHBoxLayout,
+        QLabel,
+        QLineEdit,
+        QListWidget,
+        QMainWindow,
+        QMessageBox,
+        QInputDialog,
+        QPushButton,
+        QVBoxLayout,
+        QWidget,
+    )
+except ImportError:
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QColor, QDoubleValidator, QIcon, QPixmap
+    from PySide6.QtWidgets import (
+        QAbstractItemView,
+        QColorDialog,
+        QGridLayout,
+        QHBoxLayout,
+        QLabel,
+        QLineEdit,
+        QListWidget,
+        QMainWindow,
+        QMessageBox,
+        QInputDialog,
+        QPushButton,
+        QVBoxLayout,
+        QWidget,
+    )
 
 import maya.cmds as cmds
 from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 
 import ywta.shortcuts as shortcuts
+from ywta.core.ui_utils import SingletonWindowMixin
 from ywta.rig.control import (
     get_control_paths_in_library,
     rotate_components,
     CONTROLS_DIRECTORY,
-    export_curves,
+    export_shape_to_library,
+    delete_library_shapes,
+    rename_library_shape,
     mirror_curve,
-    import_curves_on_selected,
-    import_new_curves,
+    import_curve_files_on_selected,
+    import_new_curve_files,
+    import_new_curve_files_at_selection,
+    combine_control_shapes,
+    mirror_selected_control_shapes,
+    select_control_cvs,
+    set_control_color,
     documentation,
 )
 
@@ -26,7 +69,7 @@ def show():
     ControlWindow.show_window()
 
 
-class ControlWindow(shortcuts.SingletonWindowMixin, MayaQWidgetBaseMixin, QMainWindow):
+class ControlWindow(SingletonWindowMixin, MayaQWidgetBaseMixin, QMainWindow):
     """The UI used to create and manipulate curves from the curve library."""
 
     def __init__(self, parent=None):
@@ -104,6 +147,10 @@ class ControlWindow(shortcuts.SingletonWindowMixin, MayaQWidgetBaseMixin, QMainW
         b.released.connect(self.remove_selected)
         hbox.addWidget(b)
 
+        b = QPushButton("Rename Selected")
+        b.released.connect(self.rename_selected)
+        vbox.addWidget(b)
+
         hbox = QHBoxLayout()
         vbox.addLayout(hbox)
         b = QPushButton("Set Color")
@@ -113,8 +160,27 @@ class ControlWindow(shortcuts.SingletonWindowMixin, MayaQWidgetBaseMixin, QMainW
         b.released.connect(self.mirror_curve)
         hbox.addWidget(b)
 
+        b = QPushButton("Smart Mirror")
+        b.released.connect(mirror_selected_control_shapes)
+        vbox.addWidget(b)
+
         hbox = QHBoxLayout()
         vbox.addLayout(hbox)
+        b = QPushButton("Edit CVs")
+        b.released.connect(select_control_cvs)
+        hbox.addWidget(b)
+        b = QPushButton("Combine")
+        b.released.connect(combine_control_shapes)
+        hbox.addWidget(b)
+
+        hbox = QHBoxLayout()
+        vbox.addLayout(hbox)
+        b = QPushButton("Build at Origin")
+        b.released.connect(self.build_at_origin)
+        hbox.addWidget(b)
+        b = QPushButton("Build at Selection")
+        b.released.connect(self.build_at_selection)
+        hbox.addWidget(b)
         b = QPushButton("Create Selected")
         b.released.connect(self.create_selected)
         hbox.addWidget(b)
@@ -161,27 +227,41 @@ class ControlWindow(shortcuts.SingletonWindowMixin, MayaQWidgetBaseMixin, QMainW
 
     def export_to_library(self):
         """Exports the selected curves into the CONTROLS_DIRECTORY."""
-        controls = cmds.ls(sl=True)
-        for control in controls:
-            name = control.split("|")[-1].split(":")[-1]
-            file_path = os.path.join(CONTROLS_DIRECTORY, "{}.json".format(name))
-            export_curves([control], file_path)
+        controls = cmds.ls(selection=True, long=True, type="transform") or []
+        if not controls:
+            raise ValueError("保存するcontrolを1つ以上選択してください。")
+        default_name = controls[-1].rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        name, accepted = QInputDialog.getText(self, "Save Control Shape", "Library Name:", text=default_name)
+        if not accepted:
+            return
+        file_path = os.path.join(CONTROLS_DIRECTORY, "{}.json".format(name.strip()))
+        overwrite = False
+        if os.path.exists(file_path):
+            overwrite = (
+                QMessageBox.question(
+                    self,
+                    "Overwrite Control Shape",
+                    "'{}' already exists. Overwrite it?".format(name.strip()),
+                    QMessageBox.Yes | QMessageBox.No,
+                )
+                == QMessageBox.Yes
+            )
+            if not overwrite:
+                return
+        export_shape_to_library(controls, name, overwrite=overwrite)
         self.populate_controls()
 
     def set_color(self):
         """Open a dialog to set the override RGB color of the selected nodes."""
         nodes = cmds.ls(sl=True) or []
         if nodes:
-            color = cmds.getAttr("{}.overrideColorRGB".format(nodes[0]))[0]
+            shape = shortcuts.get_shape(nodes[0])
+            color = cmds.getAttr("{}.overrideColorRGB".format(shape))[0]
             color = QColor(color[0] * 255, color[1] * 255, color[2] * 255)
             color = QColorDialog.getColor(color, self, "Set Curve Color")
             if color.isValid():
                 color = [color.redF(), color.greenF(), color.blueF()]
-                for node in nodes:
-                    shape = shortcuts.get_shape(node)
-                    cmds.setAttr("{}.overrideEnabled".format(shape), True)
-                    cmds.setAttr("{}.overrideRGBColors".format(shape), True)
-                    cmds.setAttr("{}.overrideColorRGB".format(shape), *color)
+                set_control_color(color, nodes)
 
     def mirror_curve(self):
         """Mirrors the curve of the first selected to the second selected."""
@@ -194,17 +274,37 @@ class ControlWindow(shortcuts.SingletonWindowMixin, MayaQWidgetBaseMixin, QMainW
         """Create the curves selected in the curve list."""
         sel = cmds.ls(sl=True)
         target = sel[0] if sel else None
-        func = import_curves_on_selected if target else import_new_curves
-        curves = []
-        for item in self.control_list.selectedItems():
-            text = item.text()
-            control_file = os.path.join(CONTROLS_DIRECTORY, "{0}.json".format(text))
-            controls = func(control_file)
-            curves += controls
-            if target:
-                cmds.select(target)
+        control_files = [
+            os.path.join(CONTROLS_DIRECTORY, "{0}.json".format(item.text())) for item in self.control_list.selectedItems()
+        ]
+        if not control_files:
+            raise ValueError("作成するcontrol shapeを1つ以上選択してください。")
+        if target:
+            curves = import_curve_files_on_selected(control_files)
+        else:
+            curves = import_new_curve_files(control_files)
         if curves:
             cmds.select(curves)
+
+    def build_at_origin(self):
+        """Viewport選択に関係なくlibrary shapeを原点へ新規作成する。"""
+        control_files = [
+            os.path.join(CONTROLS_DIRECTORY, "{0}.json".format(item.text())) for item in self.control_list.selectedItems()
+        ]
+        if not control_files:
+            raise ValueError("作成するcontrol shapeを1つ以上選択してください。")
+        curves = import_new_curve_files(control_files)
+        cmds.select(curves, replace=True)
+
+    def build_at_selection(self):
+        """Library shapeをviewport選択全体の中心へ新規作成する。"""
+        control_files = [
+            os.path.join(CONTROLS_DIRECTORY, "{0}.json".format(item.text())) for item in self.control_list.selectedItems()
+        ]
+        if not control_files:
+            raise ValueError("作成するcontrol shapeを1つ以上選択してください。")
+        curves = import_new_curve_files_at_selection(control_files)
+        cmds.select(curves, replace=True)
 
     def remove_selected(self):
         """Remove the curves selected in the curve list from the curve library."""
@@ -217,8 +317,25 @@ class ControlWindow(shortcuts.SingletonWindowMixin, MayaQWidgetBaseMixin, QMainW
                 QMessageBox.Yes | QMessageBox.No,
             )
             if button == QMessageBox.Yes:
-                for item in items:
-                    text = item.text()
-                    control_file = os.path.join(CONTROLS_DIRECTORY, "{0}.json".format(text))
-                    os.remove(control_file)
+                delete_library_shapes([item.text() for item in items])
                 self.populate_controls()
+
+    def rename_selected(self):
+        """選択したcontrol library entryを安全に改名する。"""
+        items = self.control_list.selectedItems()
+        if len(items) != 1:
+            raise ValueError("改名するcontrol shapeを1つ選択してください。")
+        old_name = items[0].text()
+        new_name, accepted = QInputDialog.getText(
+            self,
+            "Rename Control Shape",
+            "New Library Name:",
+            text=old_name,
+        )
+        if not accepted:
+            return
+        rename_library_shape(old_name, new_name)
+        self.populate_controls()
+        matches = self.control_list.findItems(new_name.strip(), Qt.MatchExactly)
+        if matches:
+            self.control_list.setCurrentItem(matches[0])

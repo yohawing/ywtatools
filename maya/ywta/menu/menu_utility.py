@@ -18,6 +18,14 @@ def create_utility_menu(parent_menu):
     """
     utility_menu = cmds.menuItem(subMenu=True, tearOff=True, parent=parent_menu, label="Utility")
 
+    cmds.menuItem(parent=utility_menu, divider=True, dividerLabel="Scene")
+    cmds.menuItem(
+        parent=utility_menu,
+        label="Scene Audit",
+        command="import ywta.utility.scene_audit as scene_audit; scene_audit.show()",
+        annotation="重複transform名、non-manifold、lamina、zero-area faceを変更せずに監査します",
+    )
+
     # テスト・開発関連
     cmds.menuItem(parent=utility_menu, divider=True, dividerLabel="Test")
     cmds.menuItem(

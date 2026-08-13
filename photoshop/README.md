@@ -1,5 +1,7 @@
 # Photoshop 用ツール
 
+[← YWTA Tools のトップへ戻る](../README.md)
+
 Photoshop 用ツールは UXP プラグインとして実装します。`ywtatools-uxp/` に、
 外部パッケージへ依存しない3DCG向けテクスチャ書き出し環境があります。
 

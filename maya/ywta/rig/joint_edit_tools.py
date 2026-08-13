@@ -24,7 +24,7 @@ import maya.cmds as cmds
 
 # Import from core modules instead of deprecated shortcuts
 from ywta.core.ui_utils import SingletonWindowMixin
-import ywta.rig.skeleton as skeleton
+from ywta.rig import create_joint, joint_insert, joint_mirror, joint_orient
 
 logger = logging.getLogger(__name__)
 
@@ -127,8 +127,15 @@ class JointEditToolsWindow(SingletonWindowMixin):
         cmds.text(label="挿入するジョイント数:", align="right")
         self.insert_joint_field = cmds.intField(
             minValue=1,
+            maxValue=99,
             value=1,
             annotation="選択された親ジョイントと子ジョイントの間に挿入するジョイント数",
+        )
+
+        cmds.text(label="名前パターン:", align="right")
+        self.insert_joint_name_field = cmds.textField(
+            text="insert_##_jnt",
+            annotation="連番の桁数を#で指定します",
         )
 
         # スペーサー
@@ -324,29 +331,24 @@ class JointEditToolsWindow(SingletonWindowMixin):
         """Show the window."""
         cmds.showWindow(self.window)
 
-    def _create_joint(self, joint_name: str):
-        """Create a joint with the specified name.
-
-        Args:
-            joint_name: Name of the joint to create
-        """
+    def _create_joint(self, *_args):
+        """入力名で選択中心へjointを安全に作成する。"""
+        joint_name = ""
         try:
-            if cmds.objExists(joint_name):
-                cmds.warning(f"Joint '{joint_name}' already exists")
-                return
             joint_name = cmds.textField(self.create_joint_field, query=True, text=True)
-            cmds.joint(name=joint_name)
-            logger.info(f"Created joint: {joint_name}")
+            created = create_joint.create_joint_at_selection(name=joint_name)
+            logger.info(f"Created joint: {created}")
         except Exception as e:
             logger.error(f"Failed to create joint '{joint_name}': {e}")
             cmds.warning(f"Failed to create joint '{joint_name}': {e}")
 
     # Event handlers
     def _insert_joints(self, *args):
-        """Insert joints between selected joint and its child."""
+        """選択した隣接親子joint間へ安全にjointを挿入する。"""
         try:
             joint_count = cmds.intField(self.insert_joint_field, query=True, value=True)
-            skeleton.insert_joints(joint_count=joint_count)
+            name_pattern = cmds.textField(self.insert_joint_name_field, query=True, text=True)
+            joint_insert.insert_selected(count=joint_count, name_pattern=name_pattern)
             logger.info(f"Inserted {joint_count} joints")
         except Exception as e:
             logger.error(f"Failed to insert joints: {e}")
@@ -359,10 +361,12 @@ class JointEditToolsWindow(SingletonWindowMixin):
             zero_orient(joints)
 
     def _align_with_child(self, *args):
-        """Align selected joints with their children."""
-        joints = self._get_selected_joints()
-        if joints:
-            align_with_child(joints)
+        """選択joint階層を安全に子方向へorientする。"""
+        try:
+            joint_orient.orient_selected(include_descendants=self._get_recursive_setting())
+        except Exception as error:
+            logger.error(f"Failed to orient joints to children: {error}")
+            cmds.warning(f"Failed to orient joints to children: {error}")
 
     def _orient_to_world(self, *args):
         """Orient selected joints to world coordinates."""
@@ -443,12 +447,10 @@ class JointEditToolsWindow(SingletonWindowMixin):
             cmds.warning(f"Failed to reset bind pose: {e}")
 
     def _mirror_joint(self, *args):
-        """Mirror selected joints."""
+        """選択root joint以下を安全な静的階層としてmirrorする。"""
         try:
-            selected_joints = self._get_selected_joints()
-            for joint in selected_joints:
-                mirror_joint(joint)
-            logger.info(f"Mirrored {len(selected_joints)} joints")
+            created = joint_mirror.mirror_selected_hierarchy()
+            logger.info(f"Mirrored {len(created)} joints")
         except Exception as e:
             logger.error(f"Failed to mirror joints: {e}")
             cmds.warning(f"Failed to mirror joints: {e}")
@@ -736,34 +738,15 @@ def mirror_joint_attributes(joint: str, word1: str = "Left", word2: str = "Right
 
 
 def align_with_child(joints: List[str]):
-    """Align joints with their child joints.
+    """従来APIから安全な静的joint orientを実行する。
 
     Args:
-        joints: List of joints to align
+        joints: orientするjoint列。
+
+    Returns:
+        orientしたjointのロングパス。
     """
-    for joint in joints:
-        try:
-            children = _unparent_children(joint)
-            if children:
-                # Create aim constraint to align with first child
-                constraint = cmds.aimConstraint(
-                    children[0],
-                    joint,
-                    aim=(1, 0, 0),
-                    upVector=(0, 1, 0),
-                    worldUpType="objectrotation",
-                    worldUpVector=(0, 1, 0),
-                    worldUpObject=children[0],
-                )
-                cmds.delete(constraint)
-                cmds.makeIdentity(joint, apply=True)
-
-            _reparent_children(joint, children)
-        except Exception as e:
-            logger.warning(f"Failed to align joint {joint} with child: {e}")
-
-    if joints:
-        cmds.select(joints)
+    return joint_orient.orient_to_children(joints)
 
 
 def zero_orient(joints: List[str]):

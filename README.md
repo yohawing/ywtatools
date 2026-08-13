@@ -1,110 +1,69 @@
-# YWTA(YohaWing Technical Artist) Tools
+# YWTA Tools
 
-個人プロジェクトでよく使うツールや、ツール開発するにあたっての便利なコンポーネントや関数を詰め込んだリポジトリです。
+Maya、Blender、Photoshop での制作を少し楽にするために作っている、個人用の
+テクニカルアーティストツール集です。
 
-# Maya用ツール
+リギングやスキニングのように何度も繰り返す作業、メッシュの調整、テクスチャの
+書き出しなどを、なるべく安全に、少ない手順で済ませることを目指しています。
 
-[chadmv/cmt](https://github.com/chadmv/cmt)をベースにしています。
+## 使いたいアプリから選ぶ
 
-## インストール方法
+### [Maya Tools](./maya/README.md)
 
-`ywtatools.mod`をテキストファイルで開き`./`を解凍先のディレクトリに変更して、`ywtatools.mod`ファイルを`MAYA_MODULE_PATH`が通ったところにコピーしてください。
+Maya 2024 向けのメインツール群です。ジョイントやコントロールの作成、スキンウェイト、
+Pose / Animation Clip、FBX 書き出し、メッシュ処理などを `YWTA` メニューから使えます。
 
+### [Blender Tools](./blender/README.md)
 
-## How to build plugin
+Blender 4.4 以降向けのアドオンです。Shape Key 名の一括置換、Geometry Nodes の補助、
+クアッドリメッシュ、形を保ちながら表面を整えるスムージングを収録しています。
 
-特定の機能を使う場合は、プラグインのビルドが必要です。プラグインのビルドにはVisual Studioとcmakeが必要です。
-`maya/cpp/build.bat`を実行すると、自動的にpluginがビルドされ、所定のフォルダにプラグインがビルドされます。
+### [Photoshop Tools](./photoshop/README.md)
 
-## AutoRemesher（自動クアッドリメッシュ）
+Photoshop 24.4 以降向けの UXP プラグインです。PSD のレイヤーグループから PBR / Toon
+テクスチャをまとめて書き出せます。
 
-[huxingyi/autoremesher](https://github.com/huxingyi/autoremesher)（MIT）を組み込んだ自動リトポロジー機能です。初回のみ submodule の取得とビルドが必要です（VS2022 + CMake、Qt は不要）:
+## このリポジトリについて
 
-```
-git submodule update --init external/autoremesher
-uvx nox -s autoremesher_build   # Blender用DLL (bin/windows/ywta_autoremesher.dll)
-maya\cpp\build.bat              # Mayaプラグイン (autoRemesherNode を含む)
-```
+それぞれのアプリ向けツールに加えて、Maya と Blender の両方で使う処理を C++ と Rust
+で共有しています。通常の利用では内部構造を意識する必要はありません。ネイティブ機能を
+自分でビルドしたい場合は、次の README を参照してください。
 
-- **Maya**: メッシュを選択して YWTA > Mesh > AutoRemesher Node。`<元名>_remeshed` オブジェクトが生成され、ノードの targetCount / adaptivity / modelType を変更すると再リメッシュされます（元メッシュは非破壊）
-- **Blender**: オブジェクトを選択して Object メニュー > AutoRemesh。実行後は左下のRedoパネル（F9）でパラメータを調整できます
+- [C++ Components](./cpp/README.md) — AutoRemesher
+- [Rust Components](./rust/README.md) — ボリューム保持メッシュスムージング
 
-## Preserve Volume Smoothing
+Maya ツールの一部は [chadmv/cmt](https://github.com/chadmv/cmt) をベースに、個人制作で
+使いやすいよう機能追加と変更を行っています。
 
-Maya / Blenderで共有するRust製メッシュスムージングソルバーです。利用前に
-[Rust toolchain（Cargo）](https://www.rust-lang.org/tools/install) と `uvx` を用意し、
-Windows 11上でリリースDLLをビルドしてください。
+## 開発に参加する場合
 
-```bash
-uvx nox -s mesh_smoothing_build
-uvx nox -s mesh_smoothing_ffi_smoke
-```
+開発環境は Windows 11 を前提としています。まずは対象アプリの README を読み、全体の
+テスト構成は [`tests/README.md`](./tests/README.md)、開発ルールは
+[`AGENTS.md`](./AGENTS.md) を参照してください。Python の依存パッケージは
+[`requirements.txt`](./requirements.txt) にまとめています。
 
-DLLは `bin/windows/ywta_mesh_smoothing.dll` に生成されます。このファイルはgit管理外です。
-別の場所へ配置する場合は、Maya / Blenderの起動前に
-`YWTA_MESH_SMOOTHING_DLL`へDLLの絶対パスを設定してください。
+よく使う検証コマンドは次のとおりです。
 
-- **Maya**: モジュールをインストールしてMayaを起動し、メッシュまたは頂点を選択して YWTA > Mesh > Volume Preserving Smoothing、ブラシ操作は YWTA > Mesh > Volume Smooth Brush を選びます
-- **Blender**: アドオンを有効化し、Edit Modeの Vertex メニューから Volume Preserving Smooth を実行します。Volume Smooth Brush は3D Viewport左側のToolbar（Tキー）で選択し、Tool Settingsから Smooth / Volume / Remove Bumps、半径、強度を調整します
-
-通常スムージングは連続マスクと輪郭railに対応します。
-
-- **Maya**: Vertex Soft Selectionをそのまま強度として使用します。面選択では選択パネルの内側だけを処理し、hard edge、crease、エッジ選択をrailとして保持します
-- **Blender**: オペレータのVertex Group欄を指定するとグループウェイトをマスクとして使用します。hard edge、seam、crease、Edge Selectモードの選択エッジをrailとして保持します
-- rail chainの内部頂点は輪郭接線方向だけ移動し、端点、分岐、鋭いcornerは固定します
-
-Blenderテストはインストール済みの最新版を自動検出します。検出できない場合は
-`BLENDER_EXECUTABLE`へ `blender.exe` の絶対パスを設定してください。
-
-```bash
+```powershell
+uvx nox -s lint
+uvx nox -s maya_tests -- --type unit --maya 2024
 uvx nox -s blender_tests
+uvx nox -s photoshop_validate
 ```
 
-## Dependency
+コードの主な配置は次のとおりです。
 
-Pythonの依存モジュールはRequirements.txtに記載しています。Mayapyへのインストールは自己責任でおねがいします。
-```
-C:\Program Files\Autodesk\Maya2024\bin\mayapy.exe -m pip install -r requirements.txt
-```
-# Blender用ツール
-Blender用のツールは、Blenderのアドオンとして実装されています。
-## インストール方法
-Blenderのアドオンとしてインストールするには、Preferences > File Paths > Scripts Directoriesに、`path/to/ywtatools/blender`を追加してください。
-
-# Photoshop用ツール
-
-Photoshop用のツールは UXP Manifest v5 プラグインとして実装します。
-開発環境の準備と UXP Developer Tool からの読み込み方法は
-[photoshop/README.md](./photoshop/README.md) を参照してください。
-
-
-# テストの実行方法
-
-YWTAツールには、Maya環境とBlender環境の両方でテストを実行するための包括的なテストフレームワークが含まれています。
-
-## Maya用テストの実行
-
-### コマンドラインから実行
-
-以下のコマンドを実行して、Maya 2024でテストを実行します。
-
-```bash
-python tests/run_maya_tests.py --pattern "test_*.py" --maya 2024
-
+```text
+maya/        Maya ツール
+blender/     Blender アドオン
+photoshop/   Photoshop UXP プラグイン
+cpp/         共有 C++ コア
+rust/        共有 Rust コア
+tests/       テスト
+docs/        設計資料
 ```
 
-### Maya内から実行
+## ライセンス
 
-Maya内でテストを実行するには、YWTA > Utility > Unit Test Runnerからテスト実行用のUIを開いてください。
-
-# 開発者向け情報
-
-開発ルール・コーディング規約・コミット規律などは [AGENTS.md](./AGENTS.md) を参照してください。
-Lintは以下のコマンドで実行できます。
-
-```bash
-ruff check .
-```
-
-
-Humanikの半自動マッピングを作ってみたい。
+このリポジトリのライセンスは [`LICENSE`](./LICENSE) を参照してください。外部コードと
+submodule には、それぞれのライセンスが適用されます。

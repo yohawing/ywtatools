@@ -1,0 +1,250 @@
+"""Portable Selection Sets の Maya 単体テスト。"""
+
+import copy
+from unittest import mock
+
+import maya.cmds as cmds
+
+from ywta.anim import selection_sets
+from ywta.test import TestCase
+
+
+class SelectionSetsTests(TestCase):
+    """objectSet と portable address の contract を検証する。"""
+
+    def _control(self, namespace, name):
+        if namespace and not cmds.namespace(exists=namespace):
+            cmds.namespace(add=namespace)
+        prefix = namespace + ":" if namespace else ""
+        return cmds.createNode("transform", name=prefix + name)
+
+    def test_create_list_and_select_members(self):
+        hand = self._control("character", "hand_ctrl")
+        foot = self._control("character", "foot_ctrl")
+
+        node = selection_sets.create_selection_set("Limbs", [hand, foot])
+        selected = selection_sets.select_members(node)
+
+        self.assertEqual([node], selection_sets.list_selection_sets())
+        self.assertEqual({hand, foot}, {value.rsplit("|", 1)[-1] for value in selected})
+
+    def test_duplicate_label_is_rejected(self):
+        hand = self._control("character", "hand_ctrl")
+        selection_sets.create_selection_set("Hands", [hand])
+
+        with self.assertRaises(ValueError):
+            selection_sets.create_selection_set("hands", [hand])
+
+    def test_control_character_label_is_rejected_before_creation_or_import(self):
+        """一覧UIを複数行に壊すlabelでobjectSetを作成しない。"""
+        hand = self._control("character", "hand_ctrl")
+
+        with self.assertRaises(ValueError):
+            selection_sets.create_selection_set("Hands\nFeet", [hand])
+
+        node = selection_sets.create_selection_set("Hands", [hand])
+        data = selection_sets.capture([node])
+        data["sets"][0]["label"] = "Hands\nFeet"
+        cmds.delete(node)
+        with self.assertRaises(ValueError):
+            selection_sets.apply(data)
+
+        self.assertFalse(selection_sets.list_selection_sets())
+
+    def test_import_label_is_trimmed_before_conflict_check(self):
+        """外部labelの周辺空白で既存set衝突を回避できない。"""
+        hand = self._control("character", "hand_ctrl")
+        node = selection_sets.create_selection_set("Hands", [hand])
+        data = copy.deepcopy(selection_sets.capture([node]))
+        data["sets"][0]["label"] = "  Hands  "
+
+        with self.assertRaises(ValueError):
+            selection_sets.apply(data)
+
+        self.assertEqual([node], selection_sets.list_selection_sets())
+
+    def test_validation_does_not_mutate_input_payload(self):
+        """label正規化は呼び出し元の辞書を書き換えない。"""
+        hand = self._control("character", "hand_ctrl")
+        node = selection_sets.create_selection_set("Hands", [hand])
+        data = selection_sets.capture([node])
+        data["sets"][0]["label"] = "  Hands  "
+        original = copy.deepcopy(data)
+
+        validated = selection_sets._validate(data)
+
+        self.assertEqual(original, data)
+        self.assertEqual("Hands", validated["sets"][0]["label"])
+
+    def test_empty_portable_address_is_rejected_before_creation(self):
+        """prefixだけのmember addressから空setを作成しない。"""
+        hand = self._control("source", "hand_ctrl")
+        node = selection_sets.create_selection_set("Hands", [hand])
+        data = copy.deepcopy(selection_sets.capture([node]))
+        data["sets"][0]["members"][0] = "name:"
+        cmds.delete(node)
+
+        with self.assertRaises(ValueError):
+            selection_sets.apply(data)
+
+        self.assertFalse(selection_sets.list_selection_sets())
+
+    def test_create_is_single_undoable_action(self):
+        hand = self._control("character", "hand_ctrl")
+
+        node = selection_sets.create_selection_set("Hands", [hand])
+        cmds.undo()
+        self.assertFalse(cmds.objExists(node))
+        cmds.redo()
+        self.assertTrue(cmds.objExists(node))
+        self.assertEqual([node], selection_sets.list_selection_sets())
+
+    def test_delete_is_undoable(self):
+        """削除したselection setを1回のUndoで復元できる。"""
+        hand = self._control("character", "hand_ctrl")
+        node = selection_sets.create_selection_set("Hands", [hand])
+
+        selection_sets.delete_selection_set(node)
+        self.assertFalse(cmds.objExists(node))
+        cmds.undo()
+        self.assertTrue(cmds.objExists(node))
+        cmds.redo()
+        self.assertFalse(cmds.objExists(node))
+
+    def test_referenced_set_delete_rejects_before_edit(self):
+        """参照objectSetを削除してreference editを作らない。"""
+        hand = self._control("character", "hand_ctrl")
+        node = selection_sets.create_selection_set("Hands", [hand])
+        original_reference_query = selection_sets.cmds.referenceQuery
+
+        def reference_query(target, **kwargs):
+            if kwargs.get("isNodeReferenced") and target == node:
+                return True
+            return original_reference_query(target, **kwargs)
+
+        with mock.patch.object(selection_sets.cmds, "referenceQuery", side_effect=reference_query):
+            with self.assertRaises(ValueError):
+                selection_sets.delete_selection_set(node)
+
+        self.assertTrue(cmds.objExists(node))
+
+    def test_sets_apply_across_namespace(self):
+        source_hand = self._control("source", "hand_ctrl")
+        source_foot = self._control("source", "foot_ctrl")
+        selection_sets.create_selection_set("Limbs", [source_hand, source_foot])
+        data = selection_sets.capture()
+        cmds.delete(selection_sets.list_selection_sets())
+        cmds.delete(source_hand, source_foot)
+        target_hand = self._control("target", "hand_ctrl")
+        target_foot = self._control("target", "foot_ctrl")
+
+        result = selection_sets.apply(data)
+
+        self.assertEqual(1, len(result["created"]))
+        self.assertEqual(
+            {target_hand, target_foot},
+            {value.rsplit("|", 1)[-1] for value in selection_sets.members(result["created"][0])},
+        )
+
+    def test_import_can_be_limited_to_selected_character_controls(self):
+        """同名controlが複数rigにあっても明示scope内だけへsetを作る。"""
+        source = self._control("source", "hand_ctrl")
+        node = selection_sets.create_selection_set("Hands", [source])
+        data = selection_sets.capture([node])
+        cmds.delete(node, source)
+        first = self._control("first", "hand_ctrl")
+        self._control("second", "hand_ctrl")
+
+        result = selection_sets.apply(data, nodes=[first])
+
+        self.assertEqual(1, len(result["created"]))
+        self.assertEqual([first], [member.rsplit("|", 1)[-1] for member in selection_sets.members(result["created"][0])])
+
+    def test_selected_import_dialog_forwards_explicit_scope(self):
+        """UI入口が現在選択controlをimport engineへ渡す。"""
+        control = self._control("character", "hand_ctrl")
+        cmds.select(control, replace=True)
+
+        with mock.patch.object(selection_sets, "import_dialog", return_value={"created": []}) as import_dialog:
+            result = selection_sets.import_to_selected_dialog()
+
+        self.assertEqual({"created": []}, result)
+        import_dialog.assert_called_once_with(nodes=["|character:hand_ctrl"])
+
+    def test_ambiguous_target_fails_before_set_creation(self):
+        source = self._control("source", "hand_ctrl")
+        selection_sets.create_selection_set("Hands", [source])
+        data = selection_sets.capture()
+        cmds.delete(selection_sets.list_selection_sets())
+        cmds.delete(source)
+        self._control("first", "hand_ctrl")
+        self._control("second", "hand_ctrl")
+
+        with self.assertRaises(ValueError):
+            selection_sets.apply(data)
+
+        self.assertFalse(selection_sets.list_selection_sets())
+
+    def test_all_missing_members_are_noop_when_undo_is_disabled(self):
+        """空解決のimport reportはUndo queueを必要としない。"""
+        source = self._control("source", "hand_ctrl")
+        selection_sets.create_selection_set("Hands", [source])
+        data = selection_sets.capture()
+        cmds.delete(selection_sets.list_selection_sets())
+        cmds.delete(source)
+        cmds.undoInfo(stateWithoutFlush=False)
+        try:
+            result = selection_sets.apply(data)
+        finally:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+        self.assertFalse(result["created"])
+        self.assertEqual("target_missing", result["skipped"][0]["reason"])
+        self.assertFalse(selection_sets.list_selection_sets())
+
+    def test_save_and_read_round_trip(self):
+        hand = self._control("character", "hand_ctrl")
+        selection_sets.create_selection_set("Hands", [hand])
+        path = self.get_temp_filename("sets.json")
+
+        selection_sets.save(path)
+        data = selection_sets.read(path)
+
+        self.assertEqual(selection_sets.FORMAT, data["format"])
+        self.assertEqual("Hands", data["sets"][0]["label"])
+
+    def test_schema_version_requires_integer(self):
+        """真偽値や浮動小数点を整数schema versionとして受理しない。"""
+        hand = self._control("character", "hand_ctrl")
+        node = selection_sets.create_selection_set("Hands", [hand])
+        data = selection_sets.capture([node])
+
+        for version in (True, 1.0):
+            invalid = copy.deepcopy(data)
+            invalid["version"] = version
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                selection_sets._validate(invalid)
+
+    def test_capture_accepts_single_set_string(self):
+        """単一objectSet名を文字単位に分解しない。"""
+        control = self._control("source", "hand_ctrl")
+        selection_set = selection_sets.create_selection_set("Hands", [control])
+
+        data = selection_sets.capture(selection_set)
+
+        self.assertEqual(["Hands"], [entry["label"] for entry in data["sets"]])
+
+    def test_window_builds_with_selected_import_action(self):
+        """管理windowと選択scope import buttonをMaya UI上で構築する。"""
+        calls = []
+
+        def button(*_args, **kwargs):
+            calls.append(kwargs)
+            return "button{}".format(len(calls))
+
+        with mock.patch.object(selection_sets.cmds, "button", side_effect=button):
+            window = selection_sets.show()
+
+        self.assertEqual("ywtaSelectionSetsWindow", window)
+        labels = [call.get("label") for call in calls]
+        self.assertIn("Import to Selected", labels)
