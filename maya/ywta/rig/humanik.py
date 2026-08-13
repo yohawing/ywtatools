@@ -9,9 +9,14 @@ Functions:
 
 import json
 import re
+
 import maya.cmds as cmds
 import maya.mel as mel
-import pymel.core as pm
+
+
+def _mel_string(value):
+    """Python文字列をMELの文字列literalとして安全に表現する。"""
+    return json.dumps(str(value), ensure_ascii=False)
 
 
 # 選択したJointの階層からバインドポーズのリストを取得してすべてバインドポーズにする。
@@ -52,13 +57,11 @@ def load_character_definition(file_path):
     with open(file_path, "r") as fp:
         character_config = json.load(fp)
 
-    hikChar = pm.mel.hikGetCurrentCharacter()
-
-    # ctls = [pm.PyNode(character_config[bone]["target"]) for bone in character_config]
+    hikChar = mel.eval("hikGetCurrentCharacter()")
 
     for bone in character_config:
-        bone_id = pm.mel.hikGetNodeIdFromName(bone)
-        pm.mel.setCharacterObject(character_config[bone]["target"], hikChar, bone_id, 0)
+        bone_id = mel.eval(f"hikGetNodeIdFromName({_mel_string(bone)})")
+        mel.eval(f"setCharacterObject({_mel_string(character_config[bone]['target'])},{_mel_string(hikChar)},{int(bone_id)},0)")
 
 
 def setup_hik_character():
@@ -70,7 +73,7 @@ def setup_hik_character():
     hip_joint = find_joint_with_regexp(joint, r"(?i)(hip|pelvis)")
     cmds.select(hip_joint)
 
-    pm.mel.hikSetCharacterObject(hip_joint, new_character, 1, 0)
+    mel.eval(f"hikSetCharacterObject({_mel_string(hip_joint)},{_mel_string(new_character)},1,0)")
     mel.eval("hikUpdateDefinitionUI();")
 
     mel.eval(f'hikCharacterLock("{new_character}", 1,1);')
