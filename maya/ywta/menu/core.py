@@ -31,7 +31,7 @@ def create_menu():
         parent=menu,
         label="Reload YWTA",
         command="import ywta.reloadmodules; ywta.reloadmodules.unload_packages()",
-        imageOverlayLabel="Test",
+        image="ywta_icon_01_logo.png",
         annotation="YWTAツールをリロードします",
     )
 
@@ -48,6 +48,7 @@ def create_menu():
         parent=menu,
         label="Run Script",
         command="import ywta.pipeline.runscript; ywta.pipeline.runscript.show()",
+        image="ywta_icon_02_run.png",
         annotation="Maya上でPythonスクリプトを入力・実行するツールを開きます",
     )
 

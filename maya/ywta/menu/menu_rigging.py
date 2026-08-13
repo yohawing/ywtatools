@@ -270,6 +270,7 @@ def create_rigging_menu(parent_menu):
         parent=rig_menu,
         label="Connect Twist Joint",
         command="import ywta.rig.swingtwist as st; st.create_from_menu()",
+        image="swingTwist.png",
         annotation="2つのtransformをdriver、drivenの順に選択してswing/twist接続を作成します",
     )
 

@@ -204,6 +204,17 @@ class MayaMenuTests(TestCase):
             with self.subTest(label=label):
                 self.assertEqual(by_label[label].get("parent"), naming["_item_id"])
 
+    def test_dedicated_rigging_icon_is_connected(self):
+        """既存の専用アイコンを対応するリギング項目へ割り当てる。"""
+        rigging_items = self._capture_menu_items(menu_rigging.create_rigging_menu)
+        images = {
+            call.get("label"): call.get("image")
+            for call in rigging_items
+            if call.get("label")
+        }
+
+        self.assertEqual(images["Connect Twist Joint"], "swingTwist.png")
+
     def test_deform_adoption_entries_are_reachable(self):
         labels = self._build(menu_deform.create_deform_menu)
 
@@ -288,6 +299,10 @@ class MayaMenuTests(TestCase):
                 "Export Animation FBX",
             }.issubset(labels)
         )
+        by_label = {call.get("label"): call for call in calls if call.get("label")}
+        self.assertEqual(by_label["Reload YWTA"].get("image"), "ywta_icon_01_logo.png")
+        self.assertNotIn("imageOverlayLabel", by_label["Reload YWTA"])
+        self.assertEqual(by_label["Run Script"].get("image"), "ywta_icon_02_run.png")
         for call in calls:
             if isinstance(call.get("command"), str):
                 self._assert_command_targets_exist(call["command"])
