@@ -72,16 +72,46 @@ def autoremesher_build(session: nox.Session) -> None:
 
     submodule_marker = repo_root / "external" / "autoremesher" / "src" / "AutoRemesher" / "autoremesher.h"
     if not submodule_marker.exists():
-        session.error(
-            "external/autoremesher submodule が見つかりません。"
-            "`git submodule update --init` を実行してください。"
-        )
+        session.error("external/autoremesher submodule が見つかりません。`git submodule update --init` を実行してください。")
 
-    # Ninja は cl.exe が PATH 上にある（Developer Command Prompt等でvcvarsが
-    # 通っている）場合のみ使う。それ以外は VS2022 のジェネレータが
-    # vcvars不要でMSVCを自動検出できるため既定とする。
+    # 通常のPowerShellでもVS2022環境を注入し、停止しやすいMSBuild経路を避ける。
+    build_environment = None
     generator = "Visual Studio 17 2022"
-    if shutil.which("ninja") and shutil.which("cl"):
+    if shutil.which("ninja") and not shutil.which("cl"):
+        build_dir = src_dir / "build-vs2022-ninja"
+        vswhere = Path(r"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe")
+        if not vswhere.exists():
+            session.error("VS2022の検出に必要なvswhere.exeが見つかりません")
+        installation = subprocess.run(
+            [
+                str(vswhere),
+                "-latest",
+                "-products",
+                "*",
+                "-version",
+                "[17.0,18.0)",
+                "-requires",
+                "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                "-property",
+                "installationPath",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        if not installation:
+            session.error("VS2022 C++ toolchainが見つかりません")
+        vsdevcmd = Path(installation) / "Common7" / "Tools" / "VsDevCmd.bat"
+        environment_result = subprocess.run(
+            f'call "{vsdevcmd}" -arch=x64 >nul && set',
+            check=True,
+            capture_output=True,
+            text=True,
+            shell=True,
+        )
+        build_environment = dict(line.split("=", 1) for line in environment_result.stdout.splitlines() if "=" in line)
+        generator = "Ninja"
+    elif shutil.which("ninja") and shutil.which("cl"):
         generator = "Ninja"
 
     configure_args = [
@@ -97,7 +127,7 @@ def autoremesher_build(session: nox.Session) -> None:
         configure_args += ["-A", "x64"]
     else:
         configure_args += ["-DCMAKE_BUILD_TYPE=Release"]
-    session.run(*configure_args, external=True)
+    session.run(*configure_args, external=True, env=build_environment)
 
     session.run(
         "cmake",
@@ -105,10 +135,19 @@ def autoremesher_build(session: nox.Session) -> None:
         str(build_dir),
         "--config",
         "Release",
-        "--target",
-        "ywta_autoremesher",
         "--parallel",
         external=True,
+        env=build_environment,
+    )
+    session.run(
+        "ctest",
+        "--test-dir",
+        str(build_dir),
+        "--build-config",
+        "Release",
+        "--output-on-failure",
+        external=True,
+        env=build_environment,
     )
 
     built_dll = build_dir / "output" / "Release" / "ywta_autoremesher.dll"
@@ -217,9 +256,7 @@ def mesh_core_tests(session: nox.Session) -> None:
     # Visual Studio generatorのcompiler probeが他のMSBuildと競合して停止することを避ける。
     if shutil.which("ninja") and not shutil.which("cl"):
         build_dir = src_dir / "build-vs2022-ninja"
-        vswhere = Path(
-            r"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
-        )
+        vswhere = Path(r"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe")
         if not vswhere.exists():
             session.error("VS2022の検出に必要なvswhere.exeが見つかりません")
         installation = subprocess.run(
@@ -249,11 +286,7 @@ def mesh_core_tests(session: nox.Session) -> None:
             text=True,
             shell=True,
         )
-        build_environment = dict(
-            line.split("=", 1)
-            for line in environment_result.stdout.splitlines()
-            if "=" in line
-        )
+        build_environment = dict(line.split("=", 1) for line in environment_result.stdout.splitlines() if "=" in line)
         session.run(
             "cmake",
             "-S",
