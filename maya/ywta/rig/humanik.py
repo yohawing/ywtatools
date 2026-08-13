@@ -136,6 +136,71 @@ def _resolve_assignments(assignment_data, require_non_empty=False):
     return resolved
 
 
+def rebind_assignment_targets(root_joint, assignment_data):
+    """論理Joint名のassignmentを指定root階層のlong DAG pathへ再束縛する。
+
+    namespaceを除いたJointのleaf名だけをcase-sensitiveで完全一致させる。
+    root階層外のscene nodeは検索せず、全targetが一意に解決できるまで
+    HumanIKのMEL処理を呼び出さない読み取り専用APIである。
+
+    Args:
+        root_joint: 検索範囲にするroot Joint名。
+        assignment_data: versionedまたはlegacyのassignment契約。
+
+    Returns:
+        targetをlong DAG pathへ置換したversion 1 assignment。
+
+    Raises:
+        ValueError: rootまたはtargetを一意に解決できない場合。
+    """
+    normalized = humanik_assignment.normalize(assignment_data)
+
+    root_matches = cmds.ls(root_joint, long=True, type="joint") or []
+    if len(root_matches) != 1:
+        raise ValueError("HumanIK rebindのroot Jointを一意に解決できません: {}".format(root_joint))
+    root_path = root_matches[0]
+
+    descendants = (
+        cmds.listRelatives(
+            root_path,
+            allDescendents=True,
+            type="joint",
+            fullPath=True,
+        )
+        or []
+    )
+    hierarchy = [root_path]
+    hierarchy.extend(candidate for candidate in descendants if candidate.startswith(root_path + "|"))
+
+    candidates_by_logical_name = {}
+    for candidate in dict.fromkeys(hierarchy):
+        logical_name = candidate.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        candidates_by_logical_name.setdefault(logical_name, []).append(candidate)
+
+    rebound = []
+    used_targets = set()
+    for assignment in normalized["assignments"]:
+        target = assignment["target"]
+        candidates = candidates_by_logical_name.get(target, [])
+        if not candidates:
+            raise ValueError("HumanIK targetをroot Joint階層から解決できません: {}".format(target))
+        if len(candidates) > 1:
+            raise ValueError("HumanIK targetがroot Joint階層内で曖昧です: {}".format(target))
+        resolved_target = candidates[0]
+        if resolved_target in used_targets:
+            raise ValueError("複数のHumanIK slotが同じJointへ解決されました: {}".format(resolved_target))
+        used_targets.add(resolved_target)
+        rebound.append({"slot": assignment["slot"], "target": resolved_target})
+
+    return humanik_assignment.validate(
+        {
+            "format": humanik_assignment.FORMAT,
+            "version": humanik_assignment.VERSION,
+            "assignments": rebound,
+        }
+    )
+
+
 def _cleanup_created_character(character):
     """所有するCharacterを削除し、sceneから消えたことを確認する。"""
     mel.eval("hikDeleteCharacter({});".format(_mel_string(character)))

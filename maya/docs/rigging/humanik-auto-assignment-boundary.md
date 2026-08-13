@@ -84,6 +84,14 @@ ywtatools側の後続builderは、producerのtargetを選択中のroot Joint階�
 検索範囲をその階層外へ広げず、namespaceを推測せず、各targetが一意のJointへ解決できない場合は
 scene変更前に停止します。
 
+`rebind_assignment_targets(root_joint, assignment_data)`は、このrebindだけを行う読み取り専用の
+境界です。root自身とそのJoint子孫だけを候補とし、候補のlong DAG pathからnamespaceを除いた
+leaf名を論理名として使います。assignmentのtargetは、この論理名とのcase-sensitiveな完全一致
+だけを許可します。casefold、prefix、path suffix、assignment側namespaceの除去は行いません。
+0件または複数件に一致するtarget、複数slotが同じlong DAG pathへ解決されるassignmentは、
+全体をfail-closedにします。成功時はslot順を維持したversion 1契約を返し、targetだけをlong DAG
+pathへ置換します。空assignmentでもrootの一意性は検証します。
+
 assignment JSONを読み込めたことだけではCharacterをLockしません。全targetの解決に加えて、
 使用するbind poseまたはrest poseが対象階層について証明できた後にだけHumanIK Characterへ
 割り当て、Lockします。証明できない場合はfail-closedとし、部分適用や推測したposeでのLockを

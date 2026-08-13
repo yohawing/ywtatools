@@ -32,6 +32,129 @@ class HumanIkTests(unittest.TestCase):
         create_character.assert_not_called()
         evaluate.assert_not_called()
 
+    def test_rebind_targets_resolves_namespaced_hierarchy_in_slot_order(self):
+        assignment = self._assignment(("Spine", "spine"), ("Hips", "hips"))
+        with (
+            mock.patch.object(humanik.cmds, "ls", return_value=["|world|hero:root"]),
+            mock.patch.object(
+                humanik.cmds,
+                "listRelatives",
+                return_value=["|world|hero:root|hero:spine", "|world|hero:root|hero:hips"],
+            ),
+            mock.patch.object(humanik.mel, "eval") as evaluate,
+        ):
+            result = humanik.rebind_assignment_targets("hero:root", assignment)
+
+        self.assertEqual(
+            result,
+            self._assignment(
+                ("Hips", "|world|hero:root|hero:hips"),
+                ("Spine", "|world|hero:root|hero:spine"),
+            ),
+        )
+        evaluate.assert_not_called()
+
+    def test_rebind_targets_can_resolve_root_itself(self):
+        with (
+            mock.patch.object(humanik.cmds, "ls", return_value=["|world|hero:root"]),
+            mock.patch.object(humanik.cmds, "listRelatives", return_value=[]),
+            mock.patch.object(humanik.mel, "eval") as evaluate,
+        ):
+            result = humanik.rebind_assignment_targets("hero:root", self._assignment(("Reference", "root")))
+
+        self.assertEqual(result["assignments"][0]["target"], "|world|hero:root")
+        evaluate.assert_not_called()
+
+    def test_rebind_targets_ignores_same_leaf_outside_root(self):
+        with (
+            mock.patch.object(humanik.cmds, "ls", return_value=["|world|hero:root"]) as list_nodes,
+            mock.patch.object(
+                humanik.cmds,
+                "listRelatives",
+                return_value=["|other|hips", "|world|hero:root|hero:hips"],
+            ),
+        ):
+            result = humanik.rebind_assignment_targets("hero:root", self._assignment(("Hips", "hips")))
+
+        self.assertEqual(result["assignments"][0]["target"], "|world|hero:root|hero:hips")
+        list_nodes.assert_called_once_with("hero:root", long=True, type="joint")
+
+    def test_rebind_targets_rejects_ambiguous_logical_leaf_without_mel(self):
+        with (
+            mock.patch.object(humanik.cmds, "ls", return_value=["|world|root"]),
+            mock.patch.object(
+                humanik.cmds,
+                "listRelatives",
+                return_value=["|world|root|left|hips", "|world|root|right|ns:hips"],
+            ),
+            mock.patch.object(humanik.mel, "eval") as evaluate,
+        ):
+            with self.assertRaisesRegex(ValueError, "曖昧"):
+                humanik.rebind_assignment_targets("root", self._assignment(("Hips", "hips")))
+
+        evaluate.assert_not_called()
+
+    def test_rebind_targets_requires_case_sensitive_exact_match(self):
+        with (
+            mock.patch.object(humanik.cmds, "ls", return_value=["|world|root"]),
+            mock.patch.object(humanik.cmds, "listRelatives", return_value=["|world|root|Hips"]),
+            mock.patch.object(humanik.mel, "eval") as evaluate,
+        ):
+            with self.assertRaisesRegex(ValueError, "解決できません"):
+                humanik.rebind_assignment_targets("root", self._assignment(("Hips", "hips")))
+
+        evaluate.assert_not_called()
+
+    def test_rebind_targets_does_not_normalize_assignment_target(self):
+        for target in ("hero:hips", "|world|root|hips"):
+            with self.subTest(target=target):
+                with (
+                    mock.patch.object(humanik.cmds, "ls", return_value=["|world|root"]),
+                    mock.patch.object(humanik.cmds, "listRelatives", return_value=["|world|root|hero:hips"]),
+                    mock.patch.object(humanik.mel, "eval") as evaluate,
+                ):
+                    with self.assertRaisesRegex(ValueError, "解決できません"):
+                        humanik.rebind_assignment_targets("root", self._assignment(("Hips", target)))
+
+                evaluate.assert_not_called()
+
+    def test_rebind_targets_rejects_invalid_root_even_when_empty(self):
+        for roots in ([], ["|first|root", "|second|root"]):
+            with self.subTest(roots=roots):
+                with (
+                    mock.patch.object(humanik.cmds, "ls", return_value=roots),
+                    mock.patch.object(humanik.cmds, "listRelatives") as list_relatives,
+                    mock.patch.object(humanik.mel, "eval") as evaluate,
+                ):
+                    with self.assertRaisesRegex(ValueError, "root Joint"):
+                        humanik.rebind_assignment_targets("root", self._assignment())
+
+                list_relatives.assert_not_called()
+                evaluate.assert_not_called()
+
+    def test_rebind_targets_rejects_duplicate_resolved_joint(self):
+        assignment = self._assignment(("Hips", "hips"), ("Reference", "hips"))
+        with (
+            mock.patch.object(humanik.cmds, "ls", return_value=["|world|root"]),
+            mock.patch.object(humanik.cmds, "listRelatives", return_value=["|world|root|hips"]),
+            mock.patch.object(humanik.mel, "eval") as evaluate,
+        ):
+            with self.assertRaisesRegex(ValueError, "同じJoint"):
+                humanik.rebind_assignment_targets("root", assignment)
+
+        evaluate.assert_not_called()
+
+    def test_rebind_targets_does_not_mutate_input(self):
+        assignment = self._assignment(("Hips", "hips"))
+        original = json.loads(json.dumps(assignment))
+        with (
+            mock.patch.object(humanik.cmds, "ls", return_value=["|world|root"]),
+            mock.patch.object(humanik.cmds, "listRelatives", return_value=["|world|root|hips"]),
+        ):
+            humanik.rebind_assignment_targets("root", assignment)
+
+        self.assertEqual(assignment, original)
+
     def test_setup_rejects_unselected_root_before_mutation(self):
         self._assert_setup_rejected_without_mutation([], [])
 
