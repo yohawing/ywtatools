@@ -30,6 +30,7 @@ void clear_output(YwtaHairTubeOutput* output) {
 }
 
 int write_generated_output(const ywta::mesh_core::HairTubeCurveCage& cage,
+                           const ywta::mesh_core::HairTubeTopology* source_topology,
                            std::uint64_t target_segments, YwtaHairTubeOutput* output) {
   const ywta::mesh_core::HairTubeGeneratedMeshResult generated =
       ywta::mesh_core::regenerate_hair_tube_fixed_density(cage, target_segments);
@@ -45,11 +46,46 @@ int write_generated_output(const ywta::mesh_core::HairTubeCurveCage& cage,
   }
   std::vector<std::uint64_t> intervals;
   std::vector<double> alphas;
+  std::vector<std::uint32_t> source_vertex_pairs;
   intervals.reserve(generated.mesh.source_mapping.size());
   alphas.reserve(generated.mesh.source_mapping.size());
-  for (const ywta::mesh_core::HairTubeSourceSample& source : generated.mesh.source_mapping) {
+  source_vertex_pairs.reserve(generated.mesh.source_mapping.size() * 2);
+  for (std::size_t vertex = 0; vertex < generated.mesh.source_mapping.size(); ++vertex) {
+    const ywta::mesh_core::HairTubeSourceSample& source = generated.mesh.source_mapping[vertex];
     intervals.push_back(source.interval);
     alphas.push_back(source.alpha);
+    const std::size_t rail = vertex % 4;
+    const std::size_t first = rail * static_cast<std::size_t>(cage.source_station_count) +
+                              static_cast<std::size_t>(source.interval);
+    if (source_topology != nullptr) {
+      source_vertex_pairs.push_back(source_topology->rails[first]);
+      source_vertex_pairs.push_back(source_topology->rails[first + 1]);
+    } else {
+      source_vertex_pairs.push_back(static_cast<std::uint32_t>(first));
+      source_vertex_pairs.push_back(static_cast<std::uint32_t>(first + 1));
+    }
+  }
+  std::vector<std::uint64_t> source_faces(generated.mesh.quad_indices.size() / 4,
+                                          std::numeric_limits<std::uint64_t>::max());
+  if (source_topology != nullptr) {
+    const std::size_t output_station_count = generated.mesh.positions.size() / 4;
+    for (std::size_t station = 0; station + 1 < output_station_count; ++station) {
+      const auto parameter = [&cage](const ywta::mesh_core::HairTubeSourceSample& source) {
+        const std::size_t interval = static_cast<std::size_t>(source.interval);
+        return cage.shared_t[interval] * (1.0 - source.alpha) +
+               cage.shared_t[interval + 1] * source.alpha;
+      };
+      const double midpoint = (parameter(generated.mesh.source_mapping[station * 4]) +
+                               parameter(generated.mesh.source_mapping[(station + 1) * 4])) *
+                              0.5;
+      const auto upper = std::upper_bound(cage.shared_t.begin(), cage.shared_t.end(), midpoint);
+      const std::size_t source_interval =
+          std::min(static_cast<std::size_t>(std::distance(cage.shared_t.begin(), upper) - 1),
+                   static_cast<std::size_t>(cage.source_station_count - 2));
+      for (std::size_t rail = 0; rail < 4; ++rail) {
+        source_faces[station * 4 + rail] = source_topology->side_faces[source_interval * 4 + rail];
+      }
+    }
   }
 
   output->vertex_count = generated.mesh.positions.size();
@@ -58,6 +94,8 @@ int write_generated_output(const ywta::mesh_core::HairTubeCurveCage& cage,
   output->quad_indices = copy_array(generated.mesh.quad_indices);
   output->source_intervals = copy_array(intervals);
   output->source_alphas = copy_array(alphas);
+  output->source_vertex_pairs = copy_array(source_vertex_pairs);
+  output->source_faces = copy_array(source_faces);
   output->source_station_count = cage.source_station_count;
   output->max_fit_deviation = cage.max_fit_deviation;
   output->max_source_distance = generated.mesh.max_source_distance;
@@ -106,7 +144,7 @@ int ywta_hair_tube_generate(uint32_t vertex_count, const double* positions_xyz,
       last_error = cage.message;
       return 200 + static_cast<int>(cage.status);
     }
-    return write_generated_output(cage.cage, target_segments, output);
+    return write_generated_output(cage.cage, &topology.topology, target_segments, output);
   } catch (const std::exception& error) {
     ywta_hair_tube_free(output);
     last_error = error.what();
@@ -161,7 +199,7 @@ int ywta_hair_tube_generate_from_rails(const double* rail_positions_xyz, uint64_
       last_error = cage.message;
       return 200 + static_cast<int>(cage.status);
     }
-    return write_generated_output(cage.cage, target_segments, output);
+    return write_generated_output(cage.cage, nullptr, target_segments, output);
   } catch (const std::exception& error) {
     ywta_hair_tube_free(output);
     last_error = error.what();
@@ -181,6 +219,8 @@ void ywta_hair_tube_free(YwtaHairTubeOutput* output) {
   delete[] output->quad_indices;
   delete[] output->source_intervals;
   delete[] output->source_alphas;
+  delete[] output->source_vertex_pairs;
+  delete[] output->source_faces;
   clear_output(output);
 }
 

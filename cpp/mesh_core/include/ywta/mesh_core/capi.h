@@ -22,6 +22,8 @@ typedef struct YwtaHairTubeOutput {
   uint32_t* quad_indices;
   uint64_t* source_intervals;
   double* source_alphas;
+  uint32_t* source_vertex_pairs;
+  uint64_t* source_faces;
   uint64_t source_station_count;
   double max_fit_deviation;
   double max_source_distance;

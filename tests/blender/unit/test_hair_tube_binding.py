@@ -52,13 +52,24 @@ class FakeDLL:
         quad_values = (ctypes.c_uint32 * 4)(0, 1, 2, 3)
         interval_values = (ctypes.c_uint64 * 4)(0, 0, 0, 0)
         alpha_values = (ctypes.c_double * 4)(0.0, 0.0, 0.0, 0.0)
-        self._owned = [position_values, quad_values, interval_values, alpha_values]
+        source_vertex_values = (ctypes.c_uint32 * 8)(0, 4, 1, 5, 2, 6, 3, 7)
+        source_face_values = (ctypes.c_uint64 * 1)(3)
+        self._owned = [
+            position_values,
+            quad_values,
+            interval_values,
+            alpha_values,
+            source_vertex_values,
+            source_face_values,
+        ]
         output.vertex_count = 4
         output.quad_count = 1
         output.positions_xyz = position_values
         output.quad_indices = quad_values
         output.source_intervals = interval_values
         output.source_alphas = alpha_values
+        output.source_vertex_pairs = source_vertex_values
+        output.source_faces = source_face_values
         output.source_station_count = 2
         output.max_fit_deviation = 0.25
         output.max_source_distance = 0.5
@@ -117,6 +128,8 @@ class HairTubeBindingTests(unittest.TestCase):
         self.assertEqual(fake.input["segments"], 3)
         self.assertEqual(result.quads, [(0, 1, 2, 3)])
         self.assertEqual(result.source_station_count, 2)
+        self.assertEqual(result.source_vertex_pairs[0], (0, 4))
+        self.assertEqual(result.source_faces, [3])
         self.assertTrue(result.cubic_active)
         self.assertTrue(fake.freed)
 
