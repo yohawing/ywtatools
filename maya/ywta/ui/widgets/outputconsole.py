@@ -16,9 +16,12 @@ widget.write("SUCCESS: We did it!\n")
 
 import re
 
-from PySide2.QtGui import *
-from PySide2.QtCore import *
-from PySide2.QtWidgets import *
+try:
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QTextEdit
+except ImportError:
+    from PySide2.QtGui import QColor
+    from PySide2.QtWidgets import QTextEdit
 
 
 class OutputConsole(QTextEdit):
