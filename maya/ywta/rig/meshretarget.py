@@ -45,6 +45,10 @@ def retarget(
     :param radius: Smoothing parameter for the rbf
     :param stride: Vertex stride to sample on the source mesh.  Increase to speed up
     the calculation but less accurate.
+    :param max_control_points: Farthest-point samplingで選ぶ最大control point数。
+        指定時はstrideを使用しない。
+    :param progress: ``(phase, done, total)`` を受け取る進捗callback。
+    :param cancelled: キャンセル要求時にTrueを返すcallback。
     """
     start_time = time.time()
     source_points = points_to_np_array(source, stride if max_control_points is None else 1)
