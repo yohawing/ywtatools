@@ -48,7 +48,7 @@ def create_menu():
         parent=menu,
         label="Run Script",
         command="import ywta.pipeline.runscript; ywta.pipeline.runscript.show()",
-        annotation="スクリプト実行ツールを開きます",
+        annotation="Maya上でPythonスクリプトを入力・実行するツールを開きます",
     )
 
     cmds.menuItem(
@@ -80,7 +80,7 @@ def create_menu():
         label="Documentation",
         command="import ywta.menu; ywta.menu.documentation()",
         image="menuIconHelp.png",
-        annotation="ドキュメントを開きます",
+        annotation="YWTAの機能説明と使用手順をWebドキュメントで開きます",
     )
 
 

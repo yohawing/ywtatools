@@ -172,7 +172,7 @@ def create_deform_menu(parent_menu):
         label="Transfer Shape",
         command="import ywta.deform.transfer_shape as tbs;tbs.exec_from_menu()",
         image="exportSmoothSkin.png",
-        annotation="シェイプを別のメッシュに転送します",
+        annotation="選択したsource・targetの2メッシュ間で頂点シェイプを転送します（sourceを先、targetを後に選択）",
     )
 
     cmds.menuItem(
@@ -180,14 +180,14 @@ def create_deform_menu(parent_menu):
         insertAfter=transfer_shape_menu_item,
         optionBox=True,
         command="import ywta.deform.transfer_shape as tbs; tbs.display_menu_options()",
-        annotation="シェイプ転送のオプションを設定します",
+        annotation="2メッシュ間のシェイプ転送でColor Set使用とBlendShape target追加を設定します",
     )
 
     cmds.menuItem(
         parent=deform_menu,
         label="Duplicate Skinned Mesh",
         command="import ywta.rig.skin_duplicate as sd; sd.duplicate_skinned_mesh()",
-        annotation="スキンが適用されたメッシュを複製します",
+        annotation="選択したスキン済みメッシュを複製し、ウェイトを保持して元名へ置換します",
     )
 
     # デフォーマー関連
@@ -195,14 +195,14 @@ def create_deform_menu(parent_menu):
         parent=deform_menu,
         label="Bake Deformer to Blendshape",
         command="import ywta.deform.deformer as bd; bd.bake_deformed_to_blendshape()",
-        annotation="デフォーマーの効果をブレンドシェイプにベイクします",
+        annotation="選択メッシュをplayback範囲の各フレームへBlendShape targetとしてベイクします（2つ選択時は先をsource、後をtarget）",
     )
 
     cmds.menuItem(
         parent=deform_menu,
         label="Set Keyframe Blendshape Per Frame",
         command="import ywta.deform.deformer as bd; bd.set_keyframe_blendshape_per_frame()",
-        annotation="フレームごとにブレンドシェイプのキーフレームを設定します",
+        annotation="選択メッシュの既存BlendShape targetをplayback範囲の1フレームずつへキー設定します",
     )
 
     # ブレンドシェイプ関連
@@ -213,7 +213,7 @@ def create_deform_menu(parent_menu):
         label="BlendShape Target Renamer",
         command="import ywta.deform.target_renamer as tr; tr.show_blendshape_target_renamer()",
         image="blendShape.png",
-        annotation="ブレンドシェイプターゲットの名前を変更するツールを開きます",
+        annotation="選択または指定したBlendShape nodeのtarget名を検索置換するUIを開きます",
     )
 
     return deform_menu

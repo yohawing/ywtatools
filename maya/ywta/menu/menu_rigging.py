@@ -23,7 +23,7 @@ def create_rigging_menu(parent_menu):
         parent=rig_menu,
         label="Freeze to offsetParentMatrix",
         command="import ywta.rig.common; ywta.rig.common.freeze_to_parent_offset()",
-        annotation="トランスフォーム値をoffsetParentMatrixに転送します",
+        annotation="選択transformのTRSをoffsetParentMatrixへ移し、見た目を保ったまま値を初期化します",
     )
 
     # スケルトン関連
@@ -34,7 +34,7 @@ def create_rigging_menu(parent_menu):
         label="Joint Edit Tools",
         command="import ywta.rig.joint_edit_tools as oj; oj.JointEditToolsWindow()",
         image="orientJoint.png",
-        annotation="ジョイントの向きを編集するためのツールを開きます",
+        annotation="選択joint階層の向きや表示を編集するツールを開きます",
     )
 
     cmds.menuItem(
@@ -93,6 +93,7 @@ def create_rigging_menu(parent_menu):
             parent=create_menu,
             label=label,
             command="import ywta.rig.create_object as create_object; create_object.{}()".format(function),
+            annotation="選択全体の中心（未選択時は原点）へ{}を作成します".format(label),
         )
 
     constraint_menu = cmds.menuItem(
@@ -120,6 +121,9 @@ def create_rigging_menu(parent_menu):
             parent=constraint_menu,
             label=label,
             command="import ywta.rig.constraint_tools as constraints; constraints.create_selected('{}')".format(kind),
+            annotation="選択順の最後をdriven、それ以前をdriverとして{} constraintを作成します（transformを2つ以上選択）".format(
+                label.replace(" Constraint", "")
+            ),
         )
     cmds.menuItem(parent=constraint_menu, divider=True)
     cmds.menuItem(
@@ -151,7 +155,7 @@ def create_rigging_menu(parent_menu):
         label="Joint Size Tools",
         command="import ywta.rig.joint_size as js; js.set_joint_size_from_menu()",
         image="joint.png",
-        annotation="ジョイントのサイズを階層で一括設定します",
+        annotation="選択jointと子階層（またはUI指定の全joint）のradiusを一括設定します",
     )
 
     cmds.menuItem(
@@ -167,7 +171,7 @@ def create_rigging_menu(parent_menu):
         label="Import Skeleton",
         command="import ywta.rig.skeleton_io as skeleton_io; skeleton_io.load_dialog()",
         image="kinJoint.png",
-        annotation="versioned JSONから衝突を拒否してスケルトンをインポートします",
+        annotation="ファイルダイアログで選ぶversioned Skeleton JSONをnamespace指定で読み込みます",
     )
 
     cmds.menuItem(
@@ -242,7 +246,7 @@ def create_rigging_menu(parent_menu):
         parent=rig_menu,
         label="Connect Twist Joint",
         command="import ywta.rig.swingtwist as st; st.create_from_menu()",
-        annotation="ツイストジョイントを接続します",
+        annotation="2つのtransformをdriver、drivenの順に選択してswing/twist接続を作成します",
     )
 
     cmds.menuItem(
@@ -261,7 +265,7 @@ def create_rigging_menu(parent_menu):
         label="Control Creator",
         command="import ywta.rig.control_ui as control_ui; control_ui.show()",
         image="orientJoint.png",
-        annotation="コントロールカーブを作成するツールを開きます",
+        annotation="Control libraryから形状を選び、選択位置または原点へNURBSコントロールを作成するUIを開きます",
     )
 
     cmds.menuItem(
@@ -275,7 +279,7 @@ def create_rigging_menu(parent_menu):
         parent=rig_menu,
         label="Import Control Curves",
         command="import ywta.rig.control as control; control.import_curves()",
-        annotation="コントロールカーブをインポートします",
+        annotation="ファイルダイアログで選ぶcontrol JSONから保存済みtransformへNURBS形状を読み込みます",
     )
 
     cmds.menuItem(
@@ -313,7 +317,7 @@ def create_rigging_menu(parent_menu):
         parent=rig_menu,
         label="HumanIK Auto Setup",
         command="import ywta.rig.humanik as humanik; humanik.setup_hik_character()",
-        annotation="HumanIKキャラクターを自動セットアップします",
+        annotation="選択したroot joint階層からHumanIKキャラクターを自動設定します（rootを1つ選択）",
     )
 
     return rig_menu

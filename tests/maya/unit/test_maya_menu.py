@@ -9,6 +9,7 @@ import maya.cmds as cmds
 
 from ywta.menu import menu_animation
 from ywta.menu import menu_deform
+from ywta.menu import menu_mesh
 from ywta.menu import menu_rigging
 from ywta.menu import menu_utility
 from ywta.menu import core as menu_core
@@ -97,6 +98,27 @@ class MayaMenuTests(TestCase):
         for command in commands:
             MayaMenuTests._assert_command_targets_exist(command)
         return labels
+
+    @staticmethod
+    def _capture_menu_items(builder):
+        """メニュービルダーが登録したmenuItem引数を収集する。"""
+        calls = []
+
+        def menu_item(*_args, **kwargs):
+            item_id = "ywta{}AnnotationMenuItem{}".format(builder.__name__, len(calls))
+            call = dict(kwargs)
+            call["_item_id"] = item_id
+            calls.append(call)
+            return item_id
+
+        with mock.patch.object(cmds, "menuItem", side_effect=menu_item):
+            builder("ywtaTestMenu")
+        return calls
+
+    @staticmethod
+    def _contains_japanese(value):
+        """説明文に日本語文字が含まれるか確認する。"""
+        return any("ぁ" <= character <= "ゖ" or "ァ" <= character <= "ヺ" or "一" <= character <= "龯" for character in value)
 
     def test_rigging_adoption_entries_are_reachable(self):
         labels = self._build(menu_rigging.create_rigging_menu)
@@ -234,3 +256,57 @@ class MayaMenuTests(TestCase):
         for call in calls:
             if isinstance(call.get("command"), str):
                 self._assert_command_targets_exist(call["command"])
+
+    def test_all_actionable_menu_items_have_japanese_annotations(self):
+        """全メニューの実行項目に目的を示す日本語annotationがある。"""
+        builders = (
+            menu_animation.create_animation_menu,
+            menu_mesh.create_mesh_menu,
+            menu_rigging.create_rigging_menu,
+            menu_deform.create_deform_menu,
+            menu_utility.create_utility_menu,
+        )
+        calls = []
+        for builder in builders:
+            calls.extend(self._capture_menu_items(builder))
+
+        top_level_calls = []
+
+        def menu_item(*_args, **kwargs):
+            item_id = "ywtaTopAnnotationItem{}".format(len(top_level_calls))
+            call = dict(kwargs)
+            call["_item_id"] = item_id
+            top_level_calls.append(call)
+            return item_id
+
+        with (
+            mock.patch.object(cmds, "menu", return_value="ywtaTestMenu"),
+            mock.patch.object(cmds, "menuItem", side_effect=menu_item),
+            mock.patch.object(menu_core, "delete_menu"),
+            mock.patch.object(menu_core.mel, "eval", return_value="MayaWindow"),
+            mock.patch.object(menu_core.menu_animation, "create_animation_menu"),
+            mock.patch.object(menu_core.menu_mesh, "create_mesh_menu"),
+            mock.patch.object(menu_core.menu_rigging, "create_rigging_menu"),
+            mock.patch.object(menu_core.menu_deform, "create_deform_menu"),
+            mock.patch.object(menu_core.menu_utility, "create_utility_menu"),
+        ):
+            menu_core.create_menu()
+        calls.extend(top_level_calls)
+
+        labels_by_id = {call.get("_item_id"): call.get("label") for call in calls}
+        for call in calls:
+            if call.get("divider") or call.get("subMenu"):
+                continue
+            if not any(call.get(key) for key in ("command", "callback", "optionBox")):
+                continue
+            label = call.get("label")
+            if not label and call.get("insertAfter"):
+                label = "optionBox after {}".format(labels_by_id.get(call["insertAfter"], call["insertAfter"]))
+            label = label or "<unknown>"
+            annotation = call.get("annotation")
+            self.assertIsInstance(annotation, str, msg="{} のannotationがありません".format(label))
+            self.assertTrue(annotation.strip(), msg="{} のannotationが空です".format(label))
+            self.assertTrue(
+                self._contains_japanese(annotation),
+                msg="{} のannotationに日本語がありません: {}".format(label, annotation),
+            )
