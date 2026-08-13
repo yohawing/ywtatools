@@ -15,8 +15,8 @@ Pose / Animation Clip、FBX 書き出し、メッシュ処理などを `YWTA` �
 
 ### [Blender Tools](./blender/README.md)
 
-Blender 4.4 以降向けのアドオンです。Shape Key 名の一括置換、Geometry Nodes の補助、
-クアッドリメッシュ、形を保ちながら表面を整えるスムージングを収録しています。
+Blender 4.4 以降向けのアドオンです。Shape Key 名の一括置換、Hair Tube の Curve 編集、
+Geometry Nodes の補助、クアッドリメッシュ、形を保つスムージングを収録しています。
 
 ### [Photoshop Tools](./photoshop/README.md)
 
@@ -60,7 +60,7 @@ photoshop/   Photoshop UXP プラグイン
 cpp/         共有 C++ コア
 rust/        共有 Rust コア
 tests/       テスト
-docs/        設計資料
+docs/        Git管理外のローカル設計資料
 ```
 
 ## ライセンス
