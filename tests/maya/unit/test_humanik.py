@@ -74,9 +74,7 @@ class HumanIkTests(unittest.TestCase):
             ],
             select.call_args_list,
         )
-        list_relatives.assert_called_once_with(
-            "|rig|root", allDescendents=True, type="joint", fullPath=True
-        )
+        list_relatives.assert_called_once_with("|rig|root", allDescendents=True, type="joint", fullPath=True)
 
     def test_setup_restores_selection_when_mel_fails(self):
         with (
@@ -103,18 +101,32 @@ class HumanIkTests(unittest.TestCase):
             path = Path(directory) / "character.json"
             path.write_text(json.dumps({"LeftArm": {"target": 'joint"Left'}}), encoding="utf-8")
 
-            with mock.patch.object(
-                humanik.mel,
-                "eval",
-                side_effect=["Character1", 9, None],
-            ) as evaluate:
+            with (
+                mock.patch.object(
+                    humanik.mel,
+                    "eval",
+                    side_effect=["Character1", 9, None],
+                ) as evaluate,
+                mock.patch.object(
+                    humanik.cmds,
+                    "ls",
+                    side_effect=[['|rig|joint"Left'], ['|rig|joint"Left']],
+                ) as list_nodes,
+            ):
                 humanik.load_character_definition(path)
 
         self.assertEqual(evaluate.call_args_list[0].args[0], "hikGetCurrentCharacter()")
         self.assertEqual(evaluate.call_args_list[1].args[0], 'hikGetNodeIdFromName("LeftArm")')
         self.assertEqual(
             evaluate.call_args_list[2].args[0],
-            'setCharacterObject("joint\\"Left","Character1",9,0)',
+            'setCharacterObject("|rig|joint\\"Left","Character1",9,0)',
+        )
+        self.assertEqual(
+            [
+                mock.call('joint"Left', long=True),
+                mock.call('|rig|joint"Left', long=True, type="joint"),
+            ],
+            list_nodes.call_args_list,
         )
 
     def test_load_character_definition_validates_before_mel_mutation(self):
@@ -171,6 +183,132 @@ class HumanIkTests(unittest.TestCase):
             [call.args[0] for call in evaluate.call_args_list],
         )
         self.assertFalse(any(call.args[0].startswith("setCharacterObject") for call in evaluate.call_args_list))
+
+    def test_load_character_definition_resolves_all_targets_before_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid-target.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "format": "ywta.humanik-assignment",
+                        "version": 1,
+                        "assignments": [
+                            {"slot": "Hips", "target": "rig:hips"},
+                            {"slot": "Spine", "target": "rig:spine"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with (
+                mock.patch.object(
+                    humanik.mel,
+                    "eval",
+                    side_effect=["Character1", 1, 8],
+                ) as evaluate,
+                mock.patch.object(
+                    humanik.cmds,
+                    "ls",
+                    side_effect=[["|rig|hips"], ["|rig|hips"], []],
+                ) as list_nodes,
+            ):
+                with self.assertRaisesRegex(ValueError, "rig:spine"):
+                    humanik.load_character_definition(path)
+
+        self.assertEqual(
+            [
+                mock.call("rig:hips", long=True),
+                mock.call("|rig|hips", long=True, type="joint"),
+                mock.call("rig:spine", long=True),
+            ],
+            list_nodes.call_args_list,
+        )
+        self.assertFalse(any(call.args[0].startswith("setCharacterObject") for call in evaluate.call_args_list))
+
+    def test_load_character_definition_rejects_non_joint_target_before_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "non-joint-target.json"
+            path.write_text(json.dumps({"Hips": {"target": "hips_mesh"}}), encoding="utf-8")
+
+            with (
+                mock.patch.object(
+                    humanik.mel,
+                    "eval",
+                    side_effect=["Character1", 1],
+                ) as evaluate,
+                mock.patch.object(
+                    humanik.cmds,
+                    "ls",
+                    side_effect=[["|rig|hips_mesh"], []],
+                ),
+            ):
+                with self.assertRaisesRegex(ValueError, "Jointではありません"):
+                    humanik.load_character_definition(path)
+
+        self.assertFalse(any(call.args[0].startswith("setCharacterObject") for call in evaluate.call_args_list))
+
+    def test_load_character_definition_rejects_ambiguous_target_before_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ambiguous-target.json"
+            path.write_text(json.dumps({"Hips": {"target": "hips"}}), encoding="utf-8")
+
+            with (
+                mock.patch.object(
+                    humanik.mel,
+                    "eval",
+                    side_effect=["Character1", 1],
+                ) as evaluate,
+                mock.patch.object(
+                    humanik.cmds,
+                    "ls",
+                    return_value=["|first|hips", "|second|hips"],
+                ),
+            ):
+                with self.assertRaisesRegex(ValueError, "曖昧"):
+                    humanik.load_character_definition(path)
+
+        self.assertFalse(any(call.args[0].startswith("setCharacterObject") for call in evaluate.call_args_list))
+
+    def test_load_character_definition_applies_long_targets_in_slot_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ordered-targets.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "Spine": {"target": "spine"},
+                        "Hips": {"target": "hips"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with (
+                mock.patch.object(
+                    humanik.mel,
+                    "eval",
+                    side_effect=["Character1", 1, 8, None, None],
+                ) as evaluate,
+                mock.patch.object(
+                    humanik.cmds,
+                    "ls",
+                    side_effect=[
+                        ["|rig|hips"],
+                        ["|rig|hips"],
+                        ["|rig|spine"],
+                        ["|rig|spine"],
+                    ],
+                ),
+            ):
+                humanik.load_character_definition(path)
+
+        self.assertEqual(
+            [
+                'setCharacterObject("|rig|hips","Character1",1,0)',
+                'setCharacterObject("|rig|spine","Character1",8,0)',
+            ],
+            [call.args[0] for call in evaluate.call_args_list[3:]],
+        )
 
 
 if __name__ == "__main__":

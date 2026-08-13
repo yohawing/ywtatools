@@ -20,8 +20,9 @@ Lockします。途中でHipを一時選択しますが、成功・失敗にか�
 ## Assignment JSON
 
 `ywta.rig.humanik.load_character_definition()` は、現在のHumanIK Characterへversioned JSONの
-slot assignmentを適用します。ファイル全体の検証後に全slot IDを先に解決し、1件でも無効なら
-sceneを変更しません。assignmentはslot順に適用します。
+slot assignmentを適用します。ファイル全体の検証後に全slot IDと全target Jointを先に解決し、
+存在しないtarget、Jointでないtarget、曖昧な短名が1件でもあればsceneを変更しません。解決した
+targetはlong DAG pathへ正規化し、assignmentはslot順に適用します。
 
 ```json
 {
@@ -35,9 +36,9 @@ sceneを変更しません。assignmentはslot順に適用します。
 ```
 
 `slot` と `target` は空でない文字列、`slot` は一意です。未知のfieldやversionは受理しません。
-`target` はこの契約ではopaque identifierとして扱い、Maya scene内の解決やbind/rest poseの証明は
-後段のbuilderが担当します。旧形式の `{"Hips": {"target": "character:Hips"}}` も読み込み時に
-version 1へ正規化します。
+`target` はJSON契約ではopaque identifierとして扱います。MayaアダプターでJointへ解決しますが、
+bind/rest poseの証明は後段のbuilderが担当します。旧形式の
+`{"Hips": {"target": "character:Hips"}}` も読み込み時にversion 1へ正規化します。
 
 ## Known Limitations
 

@@ -94,22 +94,41 @@ def create_character(name):
 
 
 def load_character_definition(file_path):
-    """検証済みJSONから現在のHumanIK Characterへslotを割り当てる。"""
+    """検証済みJSONから現在のHumanIK Characterへslotを割り当てる。
+
+    全slot IDと全target Jointを読み取り専用で解決してから適用を始める。
+    targetが存在しない、Jointでない、または名前が曖昧な場合はsceneを
+    変更しない。
+    """
     character_config = humanik_assignment.load(file_path)
 
     hikChar = mel.eval("hikGetCurrentCharacter()")
 
-    resolved = []
+    resolved_slots = []
     for assignment in character_config["assignments"]:
         bone_id = mel.eval(f"hikGetNodeIdFromName({_mel_string(assignment['slot'])})")
         if not isinstance(bone_id, int) or isinstance(bone_id, bool) or bone_id < 0:
             raise ValueError("HumanIK slotを解決できません: {}".format(assignment["slot"]))
-        resolved.append((assignment, bone_id))
+        resolved_slots.append((assignment, bone_id))
 
-    for assignment, bone_id in resolved:
+    resolved = []
+    for assignment, bone_id in resolved_slots:
+        target = assignment["target"]
+        target_nodes = cmds.ls(target, long=True) or []
+        if not target_nodes:
+            raise ValueError("HumanIK targetが存在しません: {}".format(target))
+        if len(target_nodes) > 1:
+            raise ValueError("HumanIK target Jointが曖昧です: {}".format(target))
+
+        target_joints = cmds.ls(target_nodes[0], long=True, type="joint") or []
+        if len(target_joints) != 1 or target_joints[0] != target_nodes[0]:
+            raise ValueError("HumanIK targetはJointではありません: {}".format(target))
+        resolved.append((target_joints[0], bone_id))
+
+    for target_joint, bone_id in resolved:
         mel.eval(
             "setCharacterObject({},{},{},0)".format(
-                _mel_string(assignment["target"]),
+                _mel_string(target_joint),
                 _mel_string(hikChar),
                 bone_id,
             )
