@@ -282,6 +282,10 @@ def mesh_core_tests(session: nox.Session) -> None:
             external=True,
             env=build_environment,
         )
+        built_dll = build_dir / "ywta_mesh_core.dll"
+        out_dir = repo_root / "bin" / "windows"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(built_dll, out_dir / built_dll.name)
         return
 
     generator = "Visual Studio 17 2022"
@@ -320,6 +324,12 @@ def mesh_core_tests(session: nox.Session) -> None:
         "--output-on-failure",
         external=True,
     )
+    built_dll = build_dir / "Release" / "ywta_mesh_core.dll"
+    if generator == "Ninja":
+        built_dll = build_dir / "ywta_mesh_core.dll"
+    out_dir = repo_root / "bin" / "windows"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(built_dll, out_dir / built_dll.name)
 
 
 @nox.session(venv_backend="none")
