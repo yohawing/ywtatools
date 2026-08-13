@@ -119,6 +119,39 @@ class MeshDiagnosticsAddonTests(unittest.TestCase):
         self.assertAlmostEqual(weight, 0.75)
         self.assertEqual(json.loads(obj["ywta_manifold_split_source_vertex"]), [0, 1, 2, 3, 4, 0, 1])
 
+    def test_fills_only_fully_selected_boundary_loop(self):
+        bpy.ops.object.mode_set(mode="OBJECT")
+        mesh = bpy.data.meshes.new("BoundaryTube")
+        mesh.from_pydata(
+            [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)],
+            [],
+            [(0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)],
+        )
+        obj = bpy.data.objects.new("BoundaryTubeObject", mesh)
+        bpy.context.collection.objects.link(obj)
+        for selected in bpy.context.selected_objects:
+            selected.select_set(False)
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="DESELECT")
+        bm = bmesh.from_edit_mesh(mesh)
+        for edge in bm.edges:
+            edge.select = {vertex.index for vertex in edge.verts} in ({0, 1}, {1, 2}, {2, 3})
+        bmesh.update_edit_mesh(mesh)
+
+        with self.assertRaises(RuntimeError):
+            bpy.ops.ywta.fill_selected_boundary_loops()
+        self.assertEqual(len(mesh.polygons), 4)
+        bm = bmesh.from_edit_mesh(mesh)
+        for edge in bm.edges:
+            if {vertex.index for vertex in edge.verts} == {0, 3}:
+                edge.select = True
+        bmesh.update_edit_mesh(mesh)
+        self.assertEqual(bpy.ops.ywta.fill_selected_boundary_loops(), {"FINISHED"})
+        bpy.ops.object.mode_set(mode="OBJECT")
+        self.assertEqual(len(mesh.polygons), 5)
+
 
 if __name__ == "__main__":
     unittest.main()

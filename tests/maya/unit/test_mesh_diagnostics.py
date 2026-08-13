@@ -115,6 +115,47 @@ class MeshDiagnosticsMayaTests(unittest.TestCase):
         cmds.undo()
         self.assertEqual(cmds.polyEvaluate(transform, vertex=True), 5)
 
+    def test_fills_only_fully_selected_boundary_loop_and_undo(self):
+        transform = cmds.createNode("transform", name="BoundaryTube")
+        selection = om2.MSelectionList()
+        selection.add(transform)
+        parent = selection.getDependNode(0)
+        points = [
+            om2.MPoint(0, 0, 0),
+            om2.MPoint(1, 0, 0),
+            om2.MPoint(1, 1, 0),
+            om2.MPoint(0, 1, 0),
+            om2.MPoint(0, 0, 1),
+            om2.MPoint(1, 0, 1),
+            om2.MPoint(1, 1, 1),
+            om2.MPoint(0, 1, 1),
+        ]
+        om2.MFnMesh().create(
+            points,
+            [4, 4, 4, 4],
+            [0, 1, 5, 4, 1, 2, 6, 5, 2, 3, 7, 6, 3, 0, 4, 7],
+            parent=parent,
+        )
+        function = mesh_diagnostics._mesh_arrays(transform)[0]
+        iterator = om2.MItMeshEdge(function.object())
+        root_edges = []
+        while not iterator.isDone():
+            if {iterator.vertexId(0), iterator.vertexId(1)} in ({0, 1}, {1, 2}, {2, 3}, {0, 3}):
+                root_edges.append(f"{transform}.e[{iterator.index()}]")
+            iterator.next()
+        cmds.select(root_edges[:-1], replace=True)
+
+        with self.assertRaises(ValueError):
+            mesh_diagnostics.fill_selected_boundary_loops()
+        self.assertEqual(cmds.polyEvaluate(transform, face=True), 4)
+        cmds.select(root_edges, replace=True)
+
+        loops = mesh_diagnostics.fill_selected_boundary_loops()
+        self.assertEqual(len(loops), 1)
+        self.assertEqual(cmds.polyEvaluate(transform, face=True), 5)
+        cmds.undo()
+        self.assertEqual(cmds.polyEvaluate(transform, face=True), 4)
+
 
 if __name__ == "__main__":
     unittest.main()

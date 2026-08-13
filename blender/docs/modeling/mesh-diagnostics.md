@@ -40,3 +40,7 @@ meshデータを変更しません。結果が0件ならObject選択を維持し
 face/corner順を変えず、UVとcorner colorをそのまま、point colorとVertex Group weightを元頂点
 から複製します。元頂点の対応は`ywta_manifold_split_source_vertex`へJSONで保存され、操作全体は
 Undo対象です。Shape Key付きmeshはデータ損失を避けるため拒否します。穴は自動で埋めません。
+
+穴を閉じる場合は、先に`Boundary Loops`診断で対象loopを選択し、必要なloopだけを全edge選択した
+状態で`Mesh > Fill Selected Boundary Loops`を実行します。部分選択や分岐boundaryは拒否し、
+選択した閉ループだけをn-gonで追加します。この操作もUndoできます。

@@ -293,6 +293,38 @@ def split_to_manifold_selected(apply_changes=False):
     return plan
 
 
+def fill_selected_boundary_loops():
+    """完全に選択された診断済みboundary loopだけを明示的に閉じる。"""
+    transform = _selected_mesh()
+    function, positions, faces = _mesh_arrays(transform)
+    report = binding.diagnose(positions, faces)
+    selected_components = cmds.filterExpand(selectionMask=32, expand=True) or []
+    selected_indices = {int(component.rsplit("[", 1)[1][:-1]) for component in selected_components if component.endswith("]")}
+    iterator = om2.MItMeshEdge(function.object())
+    pair_to_edge = {}
+    while not iterator.isDone():
+        pair = tuple(sorted((iterator.vertexId(0), iterator.vertexId(1))))
+        pair_to_edge[pair] = iterator.index()
+        iterator.next()
+    selected_pairs = {pair for pair, edge in pair_to_edge.items() if edge in selected_indices}
+    selected_loops = [
+        loop
+        for loop in report.boundary_loops
+        if all(tuple(sorted((loop[index], loop[(index + 1) % len(loop)]))) in selected_pairs for index in range(len(loop)))
+    ]
+    if not selected_loops:
+        raise ValueError("閉じたboundary loopを1つ以上、全edge選択してください")
+    with _undo_chunk("Fill Selected Boundary Loops"):
+        for loop in selected_loops:
+            first_pair = tuple(sorted((loop[0], loop[1])))
+            cmds.polyCloseBorder(
+                f"{transform}.e[{pair_to_edge[first_pair]}]",
+                constructionHistory=False,
+            )
+        cmds.select(transform, replace=True)
+    return selected_loops
+
+
 def show_options():
     """診断分類を選択表示するwindowを開く。"""
     if cmds.window(_WINDOW_NAME, exists=True):
@@ -359,6 +391,19 @@ def show_options():
 
     cmds.button(label="Preview Split to Manifold", command=lambda *_args: run_split(False))
     cmds.button(label="Apply Split to Manifold", command=lambda *_args: run_split(True))
+
+    def run_fill(*_args):
+        try:
+            loops = fill_selected_boundary_loops()
+            cmds.inViewMessage(
+                assistMessage=f"Filled {len(loops)} selected boundary loops",
+                position="midCenterTop",
+                fade=True,
+            )
+        except (ValueError, FileNotFoundError, binding.MeshDiagnosticError) as error:
+            cmds.warning(str(error))
+
+    cmds.button(label="Fill Selected Boundary Loops", command=run_fill)
     cmds.text(label="診断はread-onlyです。ボタンで該当componentだけを選択します。")
     cmds.showWindow(window)
     return window

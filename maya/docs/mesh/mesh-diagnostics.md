@@ -40,3 +40,7 @@ face/corner順を変えず、UV、Color Set、Material、Skin Weightを元要素
 対応はtransformの`ywtaManifoldSplitSourceVertex`へJSONで保存され、操作全体は1回のUndo対象です。
 複数skinClusterまたはskinCluster以外のdeformerを持つmeshはデータ損失を避けるため拒否します。
 穴は自動で埋めません。
+
+穴を閉じる場合は、先に`Select Boundary Loops`で候補を確認し、必要なloopだけを全edge選択した
+状態で`Fill Selected Boundary Loops`を押します。部分選択や分岐boundaryは拒否し、選択した
+閉ループだけを閉じます。この操作も1回のUndo対象です。

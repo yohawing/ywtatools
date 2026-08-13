@@ -280,11 +280,59 @@ class YWTA_OT_split_mesh_manifold(Operator):
         return context.window_manager.invoke_props_dialog(self)
 
 
+class YWTA_OT_fill_selected_boundary_loops(Operator):
+    """完全に選択された閉boundary loopだけを明示的に穴埋めする。"""
+
+    bl_idname = "ywta.fill_selected_boundary_loops"
+    bl_label = "Fill Selected Boundary Loops"
+    bl_description = "完全に選択した診断済みboundary loopだけをUndo可能なn-gonで閉じます"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj is not None and obj.type == "MESH" and obj.mode == "EDIT"
+
+    def execute(self, context):
+        obj = context.active_object
+        bm = bmesh.from_edit_mesh(obj.data)
+        selected_edges = {tuple(sorted(vertex.index for vertex in edge.verts)) for edge in bm.edges if edge.select}
+        bpy.ops.object.mode_set(mode="OBJECT")
+        try:
+            report = binding.diagnose(*_mesh_arrays(obj.data))
+            selected_loops = [
+                loop
+                for loop in report.boundary_loops
+                if all(
+                    tuple(sorted((loop[index], loop[(index + 1) % len(loop)]))) in selected_edges for index in range(len(loop))
+                )
+            ]
+            if not selected_loops:
+                raise ValueError("閉じたboundary loopを1つ以上、全edge選択してください")
+            bpy.ops.object.mode_set(mode="EDIT")
+            bm = bmesh.from_edit_mesh(obj.data)
+            bm.verts.ensure_lookup_table()
+            for loop in selected_loops:
+                try:
+                    bm.faces.new([bm.verts[vertex] for vertex in reversed(loop)])
+                except ValueError as error:
+                    raise ValueError("選択boundaryをn-gonとして追加できません") from error
+            bmesh.update_edit_mesh(obj.data, loop_triangles=True, destructive=True)
+        except (ValueError, FileNotFoundError, binding.MeshDiagnosticError) as error:
+            if obj.mode != "EDIT":
+                bpy.ops.object.mode_set(mode="EDIT")
+            self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"{len(selected_loops)} boundary loopを穴埋めしました")
+        return {"FINISHED"}
+
+
 def _draw_mesh_menu(self, _context):
     self.layout.separator()
     self.layout.operator(YWTA_OT_select_mesh_diagnostics.bl_idname)
     self.layout.operator(YWTA_OT_safe_mesh_repair.bl_idname)
     self.layout.operator(YWTA_OT_split_mesh_manifold.bl_idname)
+    self.layout.operator(YWTA_OT_fill_selected_boundary_loops.bl_idname)
 
 
 def register():
@@ -292,12 +340,14 @@ def register():
     bpy.utils.register_class(YWTA_OT_select_mesh_diagnostics)
     bpy.utils.register_class(YWTA_OT_safe_mesh_repair)
     bpy.utils.register_class(YWTA_OT_split_mesh_manifold)
+    bpy.utils.register_class(YWTA_OT_fill_selected_boundary_loops)
     bpy.types.VIEW3D_MT_edit_mesh.append(_draw_mesh_menu)
 
 
 def unregister():
     """operatorとEdit Modeメニューを解除する。"""
     bpy.types.VIEW3D_MT_edit_mesh.remove(_draw_mesh_menu)
+    bpy.utils.unregister_class(YWTA_OT_fill_selected_boundary_loops)
     bpy.utils.unregister_class(YWTA_OT_split_mesh_manifold)
     bpy.utils.unregister_class(YWTA_OT_safe_mesh_repair)
     bpy.utils.unregister_class(YWTA_OT_select_mesh_diagnostics)
