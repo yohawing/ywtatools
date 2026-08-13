@@ -2,6 +2,7 @@
 
 import ast
 import importlib
+from pathlib import Path
 
 from unittest import mock
 
@@ -120,6 +121,16 @@ class MayaMenuTests(TestCase):
         """説明文に日本語文字が含まれるか確認する。"""
         return any("ぁ" <= character <= "ゖ" or "ァ" <= character <= "ヺ" or "一" <= character <= "龯" for character in value)
 
+    @staticmethod
+    def _assert_image_resolves(image_name):
+        """プロジェクト画像または Maya resource として解決できることを確認する。"""
+        project_icon = Path(__file__).resolve().parents[3] / "maya" / "icons" / image_name
+        if project_icon.is_file():
+            return
+        resources = cmds.resourceManager(nameFilter=image_name) or []
+        if image_name not in resources:
+            raise AssertionError("menu image が解決できません: {}".format(image_name))
+
     def test_rigging_adoption_entries_are_reachable(self):
         labels = self._build(menu_rigging.create_rigging_menu)
 
@@ -215,6 +226,21 @@ class MayaMenuTests(TestCase):
 
         self.assertEqual(images["Connect Twist Joint"], "swingTwist.png")
 
+    def test_all_specified_category_menu_icons_resolve(self):
+        """指定されたカテゴリメニュー画像が Maya 2024 または project に存在する。"""
+        for builder in (
+            menu_animation.create_animation_menu,
+            menu_mesh.create_mesh_menu,
+            menu_rigging.create_rigging_menu,
+            menu_deform.create_deform_menu,
+            menu_utility.create_utility_menu,
+        ):
+            for call in self._capture_menu_items(builder):
+                image_name = call.get("image")
+                if image_name:
+                    with self.subTest(builder=builder.__name__, image=image_name):
+                        self._assert_image_resolves(image_name)
+
     def test_deform_adoption_entries_are_reachable(self):
         labels = self._build(menu_deform.create_deform_menu)
 
@@ -304,6 +330,8 @@ class MayaMenuTests(TestCase):
         self.assertNotIn("imageOverlayLabel", by_label["Reload YWTA"])
         self.assertEqual(by_label["Run Script"].get("image"), "ywta_icon_02_run.png")
         for call in calls:
+            if call.get("image"):
+                self._assert_image_resolves(call["image"])
             if isinstance(call.get("command"), str):
                 self._assert_command_targets_exist(call["command"])
 

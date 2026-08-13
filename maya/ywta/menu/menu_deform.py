@@ -25,7 +25,7 @@ def create_deform_menu(parent_menu):
         parent=deform_menu,
         label="Save Skin Weights",
         command="import ywta.deform.skin_io as skin_io; skin_io.save_selected()",
-        image="exportSmoothSkin.png",
+        image="menuIconSkinning.png",
         annotation="複数選択はvirtual結合し、1つの検証可能なSkin JSONへ保存します",
     )
 
@@ -33,7 +33,7 @@ def create_deform_menu(parent_menu):
         parent=deform_menu,
         label="Load Skin Weights (Same Topology)",
         command="import ywta.deform.skin_io as skin_io; skin_io.load_selected()",
-        image="smoothSkin.png",
+        image="menuIconSkinning.png",
         annotation="同一トポロジーの選択メッシュへスキンウェイトを復元します",
     )
 
@@ -41,7 +41,7 @@ def create_deform_menu(parent_menu):
         parent=deform_menu,
         label="Load Skin Weights to Selected Vertices",
         command="import ywta.deform.skin_io as skin_io; skin_io.load_selected_subset()",
-        image="smoothSkin.png",
+        image="menuIconSkinning.png",
         annotation="同一トポロジーJSONから選択頂点だけのウェイトを復元します",
     )
 
@@ -49,7 +49,7 @@ def create_deform_menu(parent_menu):
         parent=deform_menu,
         label="Transfer Skin Weights (Configured)",
         command="import ywta.deform.skin_io as skin_io; skin_io.load_selected_transfer()",
-        image="copySkinWeight.png",
+        image="menuIconCopy.png",
         annotation="保存sourceを再構築して設定済みsurface associationで転送します",
     )
     cmds.menuItem(
@@ -171,7 +171,7 @@ def create_deform_menu(parent_menu):
         parent=deform_menu,
         label="Transfer Shape",
         command="import ywta.deform.transfer_shape as tbs;tbs.exec_from_menu()",
-        image="exportSmoothSkin.png",
+        image="falloff_transfer.png",
         annotation="選択したsource・targetの2メッシュ間で頂点シェイプを転送します（sourceを先、targetを後に選択）",
     )
 
@@ -212,7 +212,7 @@ def create_deform_menu(parent_menu):
         parent=deform_menu,
         label="BlendShape Target Renamer",
         command="import ywta.deform.target_renamer as tr; tr.show_blendshape_target_renamer()",
-        image="blendShape.png",
+        image="menuIconModify.png",
         annotation="選択または指定したBlendShape nodeのtarget名を検索置換するUIを開きます",
     )
 

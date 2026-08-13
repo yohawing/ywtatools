@@ -48,7 +48,7 @@ def create_rigging_menu(parent_menu):
         parent=joint_editing_menu,
         label="Joint Edit Tools",
         command="import ywta.rig.joint_edit_tools as oj; oj.JointEditToolsWindow()",
-        image="orientJoint.png",
+        image="out_joint.png",
         annotation="選択joint階層の向きや表示を編集するツールを開きます",
     )
 
@@ -56,7 +56,7 @@ def create_rigging_menu(parent_menu):
         parent=joint_editing_menu,
         label="Create Joint",
         command="import ywta.rig.create_joint as cj; cj.create_joint_at_selection()",
-        image="joint.png",
+        image="out_joint.png",
         annotation="選択全体の中心、空選択では原点へjointを単一Undoで作成します",
     )
 
@@ -64,7 +64,7 @@ def create_rigging_menu(parent_menu):
         parent=joint_editing_menu,
         label="Insert Joints Between Selected...",
         command="import ywta.rig.joint_insert as joint_insert; joint_insert.show_options()",
-        image="joint.png",
+        image="out_joint.png",
         annotation="未skinの隣接親子joint間へ指定数を均等挿入します",
     )
 
@@ -93,7 +93,7 @@ def create_rigging_menu(parent_menu):
         parent=joint_editing_menu,
         label="Joint Size Tools",
         command="import ywta.rig.joint_size as js; js.set_joint_size_from_menu()",
-        image="joint.png",
+        image="out_joint.png",
         annotation="選択jointと子階層（またはUI指定の全joint）のradiusを一括設定します",
     )
 
@@ -186,7 +186,7 @@ def create_rigging_menu(parent_menu):
         parent=rig_menu,
         label="Export Skeleton",
         command="import ywta.rig.skeleton_io as skeleton_io; skeleton_io.save_selected()",
-        image="kinJoint.png",
+        image="out_joint.png",
         annotation="選択rootのスケルトン構造を検証可能なJSONへエクスポートします",
     )
 
@@ -194,7 +194,7 @@ def create_rigging_menu(parent_menu):
         parent=rig_menu,
         label="Import Skeleton",
         command="import ywta.rig.skeleton_io as skeleton_io; skeleton_io.load_dialog()",
-        image="kinJoint.png",
+        image="out_joint.png",
         annotation="ファイルダイアログで選ぶversioned Skeleton JSONをnamespace指定で読み込みます",
     )
 
@@ -202,7 +202,7 @@ def create_rigging_menu(parent_menu):
         parent=rig_menu,
         label="Import Skeleton (Bake Rotate to Joint Orient)",
         command="import ywta.rig.skeleton_io as skeleton_io; skeleton_io.load_dialog(bake_to_joint_orient=True)",
-        image="kinJoint.png",
+        image="out_joint.png",
         annotation="world姿勢を維持してrotateをjointOrientへ統合してインポートします",
     )
 
@@ -210,7 +210,7 @@ def create_rigging_menu(parent_menu):
         parent=rig_menu,
         label="Import Skeleton (Clean Joint TRS)",
         command="import ywta.rig.skeleton_io as skeleton_io; skeleton_io.load_dialog(bake_to_joint_orient=True, zero_joint_scales=True)",
-        image="kinJoint.png",
+        image="out_joint.png",
         annotation="world位置・回転を維持し、rotateをjointOrientへ統合してjoint scaleを1にします",
     )
 
@@ -289,7 +289,7 @@ def create_rigging_menu(parent_menu):
         parent=rig_menu,
         label="Control Creator",
         command="import ywta.rig.control_ui as control_ui; control_ui.show()",
-        image="orientJoint.png",
+        image="menuIconCurves.png",
         annotation="Control libraryから形状を選び、選択位置または原点へNURBSコントロールを作成するUIを開きます",
     )
 
