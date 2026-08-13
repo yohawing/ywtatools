@@ -29,3 +29,14 @@ windingを整合します。
 適用は1回のUndo対象です。保持FaceのUV、Color、Material、Skin WeightはMayaのcomponent編集で
 維持されます。元Faceから新Faceへの対応はtransformの`ywtaMeshRepairOldFaceToNew`へJSONで
 保存します。3面以上の共有edgeやnon-orientableな面接続は変更せず拒否します。
+
+## Split Mesh to Manifold
+
+同じwindowの`Preview Split to Manifold`は、3面以上で共有されるedge fanと、複数に分かれた
+vertex fanを選択するだけです。確認後に`Apply Split to Manifold`を押すと、頂点複製だけで
+各fanを分離します。
+
+face/corner順を変えず、UV、Color Set、Material、Skin Weightを元要素から復元します。元頂点の
+対応はtransformの`ywtaManifoldSplitSourceVertex`へJSONで保存され、操作全体は1回のUndo対象です。
+複数skinClusterまたはskinCluster以外のdeformerを持つmeshはデータ損失を避けるため拒否します。
+穴は自動で埋めません。

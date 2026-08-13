@@ -71,6 +71,50 @@ class MeshDiagnosticsMayaTests(unittest.TestCase):
         cmds.undo()
         self.assertEqual(cmds.polyEvaluate(transform, face=True), 2)
 
+    def test_manifold_split_preserves_uv_color_skin_and_undo(self):
+        transform = cmds.createNode("transform", name="SplitMesh")
+        selection = om2.MSelectionList()
+        selection.add(transform)
+        parent = selection.getDependNode(0)
+        points = [
+            om2.MPoint(0, 0, 0),
+            om2.MPoint(1, 0, 0),
+            om2.MPoint(0, 1, 0),
+            om2.MPoint(0, -1, 0),
+            om2.MPoint(0, 0, 1),
+        ]
+        function = om2.MFnMesh()
+        function.create(points, [3, 3, 3], [0, 1, 2, 1, 0, 3, 0, 1, 4], parent=parent)
+        function.setUVs([index / 10.0 for index in range(9)], [0.25] * 9, "map1")
+        function.assignUVs([3, 3, 3], list(range(9)), "map1")
+        function.createColorSet("SplitColor", False, om2.MFnMesh.kRGBA)
+        function.setColors([om2.MColor((index / 10.0, 0.2, 0.3, 1.0)) for index in range(9)], "SplitColor")
+        function.assignColors(list(range(9)), "SplitColor")
+        joint_a = cmds.createNode("joint", name="SplitJointA")
+        joint_b = cmds.createNode("joint", name="SplitJointB")
+        cluster = cmds.skinCluster([joint_a, joint_b], transform, toSelectedBones=True)[0]
+        cmds.skinPercent(cluster, f"{transform}.vtx[0]", transformValue=[(joint_a, 0.75), (joint_b, 0.25)])
+        cmds.select(transform, replace=True)
+
+        plan = mesh_diagnostics.split_to_manifold_selected(False)
+        self.assertEqual(plan.split_edges, [(0, 1)])
+        self.assertEqual(cmds.polyEvaluate(transform, vertex=True), 5)
+        cmds.select(transform, replace=True)
+        mesh_diagnostics.split_to_manifold_selected(True)
+        self.assertEqual(cmds.polyEvaluate(transform, vertex=True), 7)
+        output = mesh_diagnostics._mesh_arrays(transform)[0]
+        self.assertAlmostEqual(output.getUVs("map1")[0][6], 0.6)
+        self.assertAlmostEqual(output.getColors("SplitColor")[6].r, 0.6)
+        cluster = cmds.ls(cmds.listHistory(transform), type="skinCluster")[0]
+        weight = cmds.skinPercent(cluster, f"{transform}.vtx[5]", query=True, value=True)
+        self.assertAlmostEqual(weight[0], 0.75)
+        self.assertEqual(
+            json.loads(cmds.getAttr(f"{transform}.ywtaManifoldSplitSourceVertex")),
+            [0, 1, 2, 3, 4, 0, 1],
+        )
+        cmds.undo()
+        self.assertEqual(cmds.polyEvaluate(transform, vertex=True), 5)
+
 
 if __name__ == "__main__":
     unittest.main()

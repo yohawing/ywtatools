@@ -10,17 +10,20 @@ from bpy.props import BoolProperty, EnumProperty, FloatProperty
 from bpy.types import Operator
 
 try:
+    from ywta_mesh_core import manifold_split as split_binding
     from ywta_mesh_core import mesh_diagnostics as binding
     from ywta_mesh_core import mesh_repair as repair_binding
 except ImportError:
     _modules_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "modules"))
     if _modules_dir not in sys.path:
         sys.path.append(_modules_dir)
+    from ywta_mesh_core import manifold_split as split_binding
     from ywta_mesh_core import mesh_diagnostics as binding
     from ywta_mesh_core import mesh_repair as repair_binding
 
 
 _REPAIR_MAPPING_PROPERTY = "ywta_mesh_repair_old_face_to_new"
+_SPLIT_MAPPING_PROPERTY = "ywta_manifold_split_source_vertex"
 
 
 _ISSUES = (
@@ -178,21 +181,123 @@ class YWTA_OT_safe_mesh_repair(Operator):
         return context.window_manager.invoke_props_dialog(self)
 
 
+def _copy_mesh_for_split(obj, plan):
+    """頂点写像を使ってUV・カラー・weightを保持した新meshを作る。"""
+    source = obj.data
+    if source.shape_keys is not None:
+        raise ValueError("Shape Key付きmeshは分離できません。適用または複製してから実行してください")
+    positions = [tuple(source.vertices[index].co) for index in plan.source_vertex_by_output]
+    weights = [
+        [(membership.group, membership.weight) for membership in source.vertices[index].groups]
+        for index in plan.source_vertex_by_output
+    ]
+    group_names = [group.name for group in obj.vertex_groups]
+    output = bpy.data.meshes.new(f"{source.name}_manifold")
+    output.from_pydata(positions, [], plan.faces)
+    for material in source.materials:
+        output.materials.append(material)
+    for source_face, output_face in zip(source.polygons, output.polygons):
+        output_face.material_index = source_face.material_index
+        output_face.use_smooth = source_face.use_smooth
+    for source_layer in source.uv_layers:
+        output_layer = output.uv_layers.new(name=source_layer.name)
+        for index, source_uv in enumerate(source_layer.data):
+            output_layer.data[index].uv = source_uv.uv
+    for source_color in source.color_attributes:
+        output_color = output.color_attributes.new(
+            name=source_color.name,
+            type=source_color.data_type,
+            domain=source_color.domain,
+        )
+        source_indices = plan.source_vertex_by_output if source_color.domain == "POINT" else range(len(output_color.data))
+        for output_index, source_index in enumerate(source_indices):
+            output_color.data[output_index].color = source_color.data[source_index].color
+    obj.data = output
+    for name in group_names:
+        obj.vertex_groups.new(name=name)
+    for vertex, memberships in enumerate(weights):
+        for group, weight in memberships:
+            obj.vertex_groups[group].add([vertex], weight, "REPLACE")
+    obj[_SPLIT_MAPPING_PROPERTY] = json.dumps(plan.source_vertex_by_output)
+
+
+class YWTA_OT_split_mesh_manifold(Operator):
+    """edge fanとvertex fanを属性保持した頂点複製で分離する。"""
+
+    bl_idname = "ywta.split_mesh_manifold"
+    bl_label = "Split Mesh to Manifold"
+    bl_description = "dry-run確認後、非多様体edge fanとvertex fanを属性保持してUndo可能に分離します"
+    bl_options = {"REGISTER", "UNDO"}
+
+    apply_changes: BoolProperty(name="Apply Changes", default=False)
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj is not None and obj.type == "MESH" and obj.mode in {"OBJECT", "EDIT"}
+
+    def execute(self, context):
+        obj = context.active_object
+        if obj.mode == "EDIT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        try:
+            _positions, faces = _mesh_arrays(obj.data)
+            plan = split_binding.plan(len(obj.data.vertices), faces)
+            if not self.apply_changes:
+                report = binding.diagnose(*_mesh_arrays(obj.data))
+                bpy.ops.object.mode_set(mode="EDIT")
+                bm = bmesh.from_edit_mesh(obj.data)
+                split_edges = {tuple(sorted(edge)) for edge in report.non_manifold_edges}
+                split_vertices = set(report.bow_tie_vertices)
+                for edge in bm.edges:
+                    edge.select = tuple(sorted(vertex.index for vertex in edge.verts)) in split_edges
+                for vertex in bm.verts:
+                    vertex.select = vertex.index in split_vertices
+                bmesh.update_edit_mesh(obj.data)
+                self.report(
+                    {"INFO"},
+                    f"Dry-run: split {len(plan.split_edges)} edges、{len(plan.split_vertices)} vertex fans",
+                )
+                return {"FINISHED"}
+            if plan.changed:
+                _copy_mesh_for_split(obj, plan)
+        except (
+            ValueError,
+            FileNotFoundError,
+            binding.MeshDiagnosticError,
+            split_binding.ManifoldSplitError,
+        ) as error:
+            self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}
+        self.report(
+            {"INFO"},
+            f"split {len(plan.split_edges)} edges、{len(plan.split_vertices)} vertex fansを適用しました",
+        )
+        return {"FINISHED"}
+
+    def invoke(self, context, _event):
+        """既定dry-runで分離対象を確認する。"""
+        return context.window_manager.invoke_props_dialog(self)
+
+
 def _draw_mesh_menu(self, _context):
     self.layout.separator()
     self.layout.operator(YWTA_OT_select_mesh_diagnostics.bl_idname)
     self.layout.operator(YWTA_OT_safe_mesh_repair.bl_idname)
+    self.layout.operator(YWTA_OT_split_mesh_manifold.bl_idname)
 
 
 def register():
     """operatorとEdit Modeメニューを登録する。"""
     bpy.utils.register_class(YWTA_OT_select_mesh_diagnostics)
     bpy.utils.register_class(YWTA_OT_safe_mesh_repair)
+    bpy.utils.register_class(YWTA_OT_split_mesh_manifold)
     bpy.types.VIEW3D_MT_edit_mesh.append(_draw_mesh_menu)
 
 
 def unregister():
     """operatorとEdit Modeメニューを解除する。"""
     bpy.types.VIEW3D_MT_edit_mesh.remove(_draw_mesh_menu)
+    bpy.utils.unregister_class(YWTA_OT_split_mesh_manifold)
     bpy.utils.unregister_class(YWTA_OT_safe_mesh_repair)
     bpy.utils.unregister_class(YWTA_OT_select_mesh_diagnostics)

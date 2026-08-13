@@ -8,22 +8,26 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import maya.api.OpenMaya as om2
+import maya.api.OpenMayaAnim as oma2
 import maya.cmds as cmds
 from ywta.core import undo_utils
 
 try:
+    from ywta_mesh_core import manifold_split as split_binding
     from ywta_mesh_core import mesh_diagnostics as binding
     from ywta_mesh_core import mesh_repair as repair_binding
 except ImportError:
     _modules_dir = Path(__file__).resolve().parents[3] / "blender" / "modules"
     if str(_modules_dir) not in sys.path:
         sys.path.append(str(_modules_dir))
+    from ywta_mesh_core import manifold_split as split_binding
     from ywta_mesh_core import mesh_diagnostics as binding
     from ywta_mesh_core import mesh_repair as repair_binding
 
 
 _WINDOW_NAME = "ywta_meshDiagnosticsWindow"
 _REPAIR_MAPPING_ATTRIBUTE = "ywtaMeshRepairOldFaceToNew"
+_SPLIT_MAPPING_ATTRIBUTE = "ywtaManifoldSplitSourceVertex"
 
 
 @contextmanager
@@ -145,6 +149,150 @@ def safe_repair_selected(apply_changes=False, area_epsilon=1.0e-12):
     return plan
 
 
+def _mesh_path(node):
+    """node名からmesh shapeのDagPathを返す。"""
+    shapes = cmds.listRelatives(node, shapes=True, noIntermediate=True, type="mesh", fullPath=True)
+    selection = om2.MSelectionList()
+    selection.add(shapes[0])
+    return selection.getDagPath(0)
+
+
+def _capture_skin(shape_path, source_vertices):
+    """skinClusterとoutput頂点順のweightを取得する。"""
+    clusters = cmds.ls(cmds.listHistory(shape_path.fullPathName()) or [], type="skinCluster") or []
+    if not clusters:
+        return None
+    if len(clusters) > 1:
+        raise ValueError("複数skinClusterを持つmeshは分離できません")
+    cluster = clusters[0]
+    selection = om2.MSelectionList()
+    selection.add(cluster)
+    function = oma2.MFnSkinCluster(selection.getDependNode(0))
+    component_function = om2.MFnSingleIndexedComponent()
+    component = component_function.create(om2.MFn.kMeshVertComponent)
+    component_function.addElements(list(range(om2.MFnMesh(shape_path).numVertices)))
+    weights, influence_count = function.getWeights(shape_path, component)
+    output_weights = om2.MDoubleArray()
+    for source in source_vertices:
+        begin = source * influence_count
+        for influence in range(influence_count):
+            output_weights.append(weights[begin + influence])
+    return {
+        "name": cluster,
+        "influences": cmds.skinCluster(cluster, query=True, influence=True),
+        "weights": output_weights,
+        "influence_count": influence_count,
+    }
+
+
+def _replace_mesh_for_split(transform, plan):
+    """UV・カラー・material・skin weightを保持して分離済みshapeへ置換する。"""
+    source, positions, _faces = _mesh_arrays(transform)
+    source_shape = source.fullPathName()
+    history = cmds.listHistory(source_shape) or []
+    unsupported = [
+        node
+        for node in history
+        if "geometryFilter" in (cmds.nodeType(node, inherited=True) or []) and cmds.nodeType(node) != "skinCluster"
+    ]
+    if unsupported:
+        raise ValueError(f"未対応deformerがあります: {', '.join(unsupported)}")
+    output_points = [om2.MPoint(*positions[index]) for index in plan.source_vertex_by_output]
+    counts = [len(face) for face in plan.faces]
+    connects = [vertex for face in plan.faces for vertex in face]
+    uv_payload = [(name, *source.getUVs(name), *source.getAssignedUVs(name)) for name in source.getUVSetNames()]
+    color_payload = [
+        (
+            name,
+            source.getColors(name),
+            [
+                source.getColorIndex(face, local_vertex, name)
+                for face in range(source.numPolygons)
+                for local_vertex in range(len(source.getPolygonVertices(face)))
+            ],
+        )
+        for name in source.getColorSetNames()
+    ]
+    shaders, shader_indices = source.getConnectedShaders(0)
+    shader_names = [om2.MFnDependencyNode(shader).name() for shader in shaders]
+    skin = _capture_skin(source.getPath(), plan.source_vertex_by_output)
+
+    temporary = cmds.createNode("transform", name="ywtaManifoldSplitTemp#")
+    selection = om2.MSelectionList()
+    selection.add(temporary)
+    output = om2.MFnMesh()
+    output.create(output_points, counts, connects, parent=selection.getDependNode(0))
+    for name, u_values, v_values, uv_counts, uv_ids in uv_payload:
+        if name not in output.getUVSetNames():
+            output.createUVSetWithName(name)
+        output.setUVs(u_values, v_values, name)
+        output.assignUVs(uv_counts, uv_ids, name)
+    for name, colors, color_ids in color_payload:
+        if name not in output.getColorSetNames():
+            output.createColorSet(name, False, om2.MFnMesh.kRGBA)
+        output.setColors(colors, name)
+        output.assignColors(color_ids, name)
+
+    output_shape = output.fullPathName()
+    short_shape = source.name()
+    cmds.delete(source_shape)
+    output_shape = cmds.parent(output_shape, transform, shape=True, relative=True)[0]
+    cmds.delete(temporary)
+    output_shape = cmds.rename(output_shape, short_shape)
+    for face, shader_index in enumerate(shader_indices):
+        if shader_index >= 0:
+            cmds.sets(f"{output_shape}.f[{face}]", edit=True, forceElement=shader_names[shader_index])
+
+    if skin:
+        cluster = cmds.skinCluster(
+            skin["influences"],
+            transform,
+            toSelectedBones=True,
+            normalizeWeights=1,
+            name=skin["name"],
+        )[0]
+        selection = om2.MSelectionList()
+        selection.add(cluster)
+        skin_function = oma2.MFnSkinCluster(selection.getDependNode(0))
+        path = _mesh_path(transform)
+        component_function = om2.MFnSingleIndexedComponent()
+        component = component_function.create(om2.MFn.kMeshVertComponent)
+        component_function.addElements(list(range(len(plan.source_vertex_by_output))))
+        influences = om2.MIntArray(range(skin["influence_count"]))
+        skin_function.setWeights(path, component, influences, skin["weights"], False)
+
+    if not cmds.attributeQuery(_SPLIT_MAPPING_ATTRIBUTE, node=transform, exists=True):
+        cmds.addAttr(transform, longName=_SPLIT_MAPPING_ATTRIBUTE, dataType="string")
+    cmds.setAttr(
+        f"{transform}.{_SPLIT_MAPPING_ATTRIBUTE}",
+        json.dumps(plan.source_vertex_by_output),
+        type="string",
+    )
+
+
+def split_to_manifold_selected(apply_changes=False):
+    """非多様体edge fanとvertex fanをpreviewし、明示時だけ分離する。"""
+    transform = _selected_mesh()
+    function, positions, faces = _mesh_arrays(transform)
+    plan = split_binding.plan(len(positions), faces)
+    if not apply_changes:
+        edge_pairs = {tuple(sorted(edge)) for edge in plan.split_edges}
+        iterator = om2.MItMeshEdge(function.object())
+        components = [f"{transform}.vtx[{vertex}]" for vertex in plan.split_vertices]
+        while not iterator.isDone():
+            pair = tuple(sorted((iterator.vertexId(0), iterator.vertexId(1))))
+            if pair in edge_pairs:
+                components.append(f"{transform}.e[{iterator.index()}]")
+            iterator.next()
+        cmds.select(components or transform, replace=True)
+        return plan
+    if plan.changed:
+        with _undo_chunk("Split Mesh to Manifold"):
+            _replace_mesh_for_split(transform, plan)
+            cmds.select(transform, replace=True)
+    return plan
+
+
 def show_options():
     """診断分類を選択表示するwindowを開く。"""
     if cmds.window(_WINDOW_NAME, exists=True):
@@ -195,6 +343,23 @@ def show_options():
 
     cmds.button(label="Preview Safe Repair", command=lambda *_args: run_repair(False))
     cmds.button(label="Apply Safe Repair", command=lambda *_args: run_repair(True))
+    cmds.separator(height=8, style="in")
+
+    def run_split(apply_changes):
+        try:
+            plan = split_to_manifold_selected(apply_changes)
+            action = "Applied" if apply_changes else "Dry-run"
+            cmds.inViewMessage(
+                assistMessage=(f"{action}: split {len(plan.split_edges)} edges, {len(plan.split_vertices)} vertex fans"),
+                position="midCenterTop",
+                fade=True,
+            )
+        except (ValueError, FileNotFoundError, split_binding.ManifoldSplitError) as error:
+            cmds.warning(str(error))
+
+    cmds.button(label="Preview Split to Manifold", command=lambda *_args: run_split(False))
+    cmds.button(label="Apply Split to Manifold", command=lambda *_args: run_split(True))
     cmds.text(label="診断はread-onlyです。ボタンで該当componentだけを選択します。")
     cmds.showWindow(window)
     return window
+    from ywta_mesh_core import manifold_split as split_binding

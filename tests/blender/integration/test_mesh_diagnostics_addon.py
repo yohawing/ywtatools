@@ -80,6 +80,45 @@ class MeshDiagnosticsAddonTests(unittest.TestCase):
         self.assertEqual(len(obj.data.uv_layers["RepairUV"].data), 3)
         self.assertEqual(json.loads(obj["ywta_mesh_repair_old_face_to_new"]), [None, 0])
 
+    def test_manifold_split_preserves_uv_color_and_weights(self):
+        bpy.ops.object.mode_set(mode="OBJECT")
+        mesh = bpy.data.meshes.new("SplitMesh")
+        mesh.from_pydata(
+            [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1)],
+            [],
+            [(0, 1, 2), (1, 0, 3), (0, 1, 4)],
+        )
+        uv_layer = mesh.uv_layers.new(name="SplitUV")
+        for index, datum in enumerate(uv_layer.data):
+            datum.uv = (index / 10.0, 0.25)
+        colors = mesh.color_attributes.new(name="SplitColor", type="FLOAT_COLOR", domain="POINT")
+        for index, datum in enumerate(colors.data):
+            datum.color = (index / 10.0, 0.2, 0.3, 1.0)
+        obj = bpy.data.objects.new("SplitObject", mesh)
+        bpy.context.collection.objects.link(obj)
+        group = obj.vertex_groups.new(name="SplitWeights")
+        group.add([0], 0.75, "REPLACE")
+        for selected in bpy.context.selected_objects:
+            selected.select_set(False)
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+
+        self.assertEqual(bpy.ops.ywta.split_mesh_manifold(apply_changes=False), {"FINISHED"})
+        self.assertEqual(len(obj.data.vertices), 5)
+        self.assertEqual(bpy.ops.ywta.split_mesh_manifold(apply_changes=True), {"FINISHED"})
+        bpy.ops.object.mode_set(mode="OBJECT")
+        self.assertEqual(len(obj.data.vertices), 7)
+        for actual, expected in zip(obj.data.uv_layers["SplitUV"].data[6].uv, (0.6, 0.25)):
+            self.assertAlmostEqual(actual, expected)
+        for actual, expected in zip(
+            obj.data.color_attributes["SplitColor"].data[5].color,
+            (0.0, 0.2, 0.3, 1.0),
+        ):
+            self.assertAlmostEqual(actual, expected)
+        weight = obj.vertex_groups["SplitWeights"].weight(5)
+        self.assertAlmostEqual(weight, 0.75)
+        self.assertEqual(json.loads(obj["ywta_manifold_split_source_vertex"]), [0, 1, 2, 3, 4, 0, 1])
+
 
 if __name__ == "__main__":
     unittest.main()

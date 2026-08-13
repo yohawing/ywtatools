@@ -30,3 +30,13 @@ meshデータを変更しません。結果が0件ならObject選択を維持し
 適用は1回のUndo対象です。保持FaceのUV、Color、Material、Vertex GroupはBlenderのBMesh編集で
 維持されます。元Faceから新Faceへの対応はObjectの`ywta_mesh_repair_old_face_to_new`へJSONで
 保存します。3面以上の共有edgeやnon-orientableな面接続は変更せず拒否します。
+
+## Split Mesh to Manifold
+
+`Mesh > Split Mesh to Manifold`は、3面以上で共有されるedge fanと、複数に分かれたvertex fanを
+頂点複製だけで分離します。既定はdry-runで、対象edgeとvertexを選択するだけです。確認後に
+`Apply Changes`を有効にして実行します。
+
+face/corner順を変えず、UVとcorner colorをそのまま、point colorとVertex Group weightを元頂点
+から複製します。元頂点の対応は`ywta_manifold_split_source_vertex`へJSONで保存され、操作全体は
+Undo対象です。Shape Key付きmeshはデータ損失を避けるため拒否します。穴は自動で埋めません。
