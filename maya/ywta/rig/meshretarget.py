@@ -1,6 +1,8 @@
 """Retarget meshes fit on a source mesh to a modified version of the source mesh.
 
-Most of this was taken from http://mathlab.github.io/PyGeM/_modules/pygem/radial.html#RBF
+The RBF formulation is adapted from PyGeM's MIT-licensed RBF implementation:
+https://github.com/mathLab/PyGeM/blob/1daf6f0ec47eff05f66b6c10cba046c2c6a8deee/pygem/rbf.py
+See ``PyGeM-LICENSE.rst`` in this directory.
 
 Example Usage
 =============
@@ -121,9 +123,8 @@ class RBF(object):
         result = matrix / radius
         result *= matrix
 
-        np.warnings.filterwarnings("ignore")
-        result = np.where(result > 0, np.log(result), result)
-        np.warnings.filterwarnings("always")
+        with np.errstate(divide="ignore", invalid="ignore"):
+            result = np.where(result > 0, np.log(result), result)
 
         return result
 
