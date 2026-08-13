@@ -651,8 +651,8 @@ class VolumeSmoothingBrushContext(omui.MPxContext):
         )
         mesh_fn = om2.MFnMesh(dag_path)
         hit = mesh_fn.closestIntersection(
-            origin,
-            direction,
+            om2.MFloatPoint(origin.x, origin.y, origin.z),
+            om2.MFloatVector(direction.x, direction.y, direction.z),
             om2.MSpace.kObject,
             1.0e6,
             False,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -298,6 +299,26 @@ class TestVolumeSmoothing(unittest.TestCase):
         context = VolumeSmoothingBrushContext()
         context.toolOnSetup(None)
         self.assertIsNone(context.apply_stroke_for_test([], face_index=0))
+
+    def test_event_hit_uses_float_ray_types_required_by_maya_2024(self):
+        """closestIntersectionへMFloatPoint/MFloatVectorを渡す。"""
+        mesh, _ = cmds.polyCube(name="brushRayCube")
+        cmds.select(mesh, replace=True)
+        context = VolumeSmoothingBrushContext()
+        context.toolOnSetup(None)
+
+        class FakeView:
+            @staticmethod
+            def viewToObjectSpace(_x, _y, _matrix, origin, direction):
+                origin.x, origin.y, origin.z = 0.0, 0.0, 5.0
+                direction.x, direction.y, direction.z = 0.0, 0.0, -1.0
+
+        fake_view_type = SimpleNamespace(active3dView=mock.Mock(return_value=FakeView()))
+        with mock.patch("ywta.mesh.volume_smoothing.omui.M3dView", fake_view_type):
+            hit = context._event_hit(SimpleNamespace(position=(10, 20)))
+
+        self.assertIsNotNone(hit)
+        self.assertIsInstance(hit[0], om2.MFloatPoint)
 
     def test_activate_brush_creates_named_context_and_selects_it(self):
         """GUIで使うhelperが名前付きcontextを生成して切り替える。"""
