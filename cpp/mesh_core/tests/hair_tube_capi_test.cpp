@@ -55,11 +55,28 @@ void test_invalid_input_has_no_partial_output() {
   expect(std::string(ywta_mesh_core_last_error()).size() > 0, "failure should expose a diagnostic");
 }
 
+void test_generate_from_edited_rails() {
+  const std::vector<double> rails{
+      -0.5, -0.5, 0.0, -0.5, -0.5, 1.0, 0.5,  -0.5, 0.0, 0.5,  -0.5, 1.0,
+      0.5,  0.5,  0.0, 0.5,  0.5,  1.0, -0.5, 0.5,  0.0, -0.5, 0.5,  1.0,
+  };
+  YwtaHairTubeOutput output{};
+  const int status = ywta_hair_tube_generate_from_rails(rails.data(), 2, 2, 0.0, &output);
+  expect(status == 0,
+         std::string("edited rails should regenerate: ") + ywta_mesh_core_last_error());
+  expect(output.vertex_count == 12 && output.quad_count == 8,
+         "edited rails should honor target density");
+  expect(output.positions_xyz[0] == -0.5 && output.positions_xyz[35] == 1.0,
+         "edited rail endpoints should be preserved");
+  ywta_hair_tube_free(&output);
+}
+
 }  // namespace
 
 int main() {
   test_round_trip_and_free();
   test_invalid_input_has_no_partial_output();
+  test_generate_from_edited_rails();
   if (failures != 0) {
     std::cerr << failures << " test(s) failed\n";
     return EXIT_FAILURE;

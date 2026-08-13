@@ -42,6 +42,13 @@ YWTA_MESH_CORE_API int ywta_hair_tube_generate(uint32_t vertex_count, const doub
                                                uint64_t target_segments, double fit_tolerance,
                                                YwtaHairTubeOutput* output);
 
+/** rail-majorな4本の編集済みpoint列から固定密度tubeを再生成する。 */
+YWTA_MESH_CORE_API int ywta_hair_tube_generate_from_rails(const double* rail_positions_xyz,
+                                                          uint64_t station_count,
+                                                          uint64_t target_segments,
+                                                          double fit_tolerance,
+                                                          YwtaHairTubeOutput* output);
+
 /** ywta_hair_tube_generate()が確保した配列を解放し、outputをゼロ初期化する。 */
 YWTA_MESH_CORE_API void ywta_hair_tube_free(YwtaHairTubeOutput* output);
 

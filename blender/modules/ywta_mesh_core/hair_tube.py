@@ -88,6 +88,14 @@ def _load_dll():
         ctypes.POINTER(HairTubeOutput),
     ]
     dll.ywta_hair_tube_generate.restype = ctypes.c_int
+    dll.ywta_hair_tube_generate_from_rails.argtypes = [
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.c_double,
+        ctypes.POINTER(HairTubeOutput),
+    ]
+    dll.ywta_hair_tube_generate_from_rails.restype = ctypes.c_int
     dll.ywta_hair_tube_free.argtypes = [ctypes.POINTER(HairTubeOutput)]
     dll.ywta_hair_tube_free.restype = None
     dll.ywta_mesh_core_last_error.argtypes = []
@@ -131,6 +139,38 @@ def _validate_inputs(positions, faces, root_vertices, target_segments, fit_toler
     return points, offsets, flat_faces, root, segments, tolerance
 
 
+def _raise_status(dll, status: int) -> None:
+    """非zero statusを診断付き例外へ変換する。"""
+    if status == 0:
+        return
+    message = dll.ywta_mesh_core_last_error()
+    diagnostic = message.decode("utf-8", errors="replace") if message else "診断なし"
+    raise HairTubeError(status, diagnostic)
+
+
+def _copy_output(dll, output: HairTubeOutput) -> GeneratedHairTube:
+    """C所有配列をPythonへコピーし、例外時も必ず解放する。"""
+    try:
+        positions = [tuple(output.positions_xyz[index * 3 + axis] for axis in range(3)) for index in range(output.vertex_count)]
+        quads = [
+            tuple(int(output.quad_indices[index * 4 + corner]) for corner in range(4)) for index in range(output.quad_count)
+        ]
+        mapping = [
+            (int(output.source_intervals[index]), float(output.source_alphas[index])) for index in range(output.vertex_count)
+        ]
+        return GeneratedHairTube(
+            positions,
+            quads,
+            mapping,
+            int(output.source_station_count),
+            float(output.max_fit_deviation),
+            float(output.max_source_distance),
+            bool(output.cubic_active),
+        )
+    finally:
+        dll.ywta_hair_tube_free(ctypes.pointer(output))
+
+
 def generate(positions, faces, root_vertices, *, target_segments=8, fit_tolerance=0.0):
     """root loopから別object用の固定密度quad tubeデータを生成する。"""
     points, offsets, flat_faces, root, segments, tolerance = _validate_inputs(
@@ -157,28 +197,36 @@ def generate(positions, faces, root_vertices, *, target_segments=8, fit_toleranc
             ctypes.pointer(output),
         )
     )
-    if status != 0:
-        message = dll.ywta_mesh_core_last_error()
-        diagnostic = message.decode("utf-8", errors="replace") if message else "診断なし"
-        raise HairTubeError(status, diagnostic)
-    try:
-        output_positions = [
-            tuple(output.positions_xyz[index * 3 + axis] for axis in range(3)) for index in range(output.vertex_count)
-        ]
-        quads = [
-            tuple(int(output.quad_indices[index * 4 + corner]) for corner in range(4)) for index in range(output.quad_count)
-        ]
-        mapping = [
-            (int(output.source_intervals[index]), float(output.source_alphas[index])) for index in range(output.vertex_count)
-        ]
-        return GeneratedHairTube(
-            output_positions,
-            quads,
-            mapping,
-            int(output.source_station_count),
-            float(output.max_fit_deviation),
-            float(output.max_source_distance),
-            bool(output.cubic_active),
-        )
-    finally:
-        dll.ywta_hair_tube_free(ctypes.pointer(output))
+    _raise_status(dll, status)
+    return _copy_output(dll, output)
+
+
+def generate_from_rails(rails, *, target_segments=8, fit_tolerance=0.0):
+    """同数pointを持つ4本の編集済みrailからquad tubeを再生成する。"""
+    rail_points = [list(rail) for rail in rails]
+    if len(rail_points) != 4 or len(rail_points[0]) < 2:
+        raise ValueError("railsは2点以上を持つ4本で指定してください")
+    station_count = len(rail_points[0])
+    if any(len(rail) != station_count for rail in rail_points):
+        raise ValueError("4本のrailsは同じpoint数で指定してください")
+    flat = []
+    for rail in rail_points:
+        for point in rail:
+            if len(point) != 3:
+                raise ValueError("rail pointはxyzで指定してください")
+            values = [float(component) for component in point]
+            if any(not math.isfinite(component) for component in values):
+                raise ValueError("rail pointには有限値だけを指定してください")
+            flat.extend(values)
+    segments = int(target_segments)
+    tolerance = float(fit_tolerance)
+    if segments < 1:
+        raise ValueError("target_segmentsは1以上で指定してください")
+    if not math.isfinite(tolerance) or tolerance < 0.0:
+        raise ValueError("fit_toleranceは有限な0以上で指定してください")
+    rail_array = (ctypes.c_double * len(flat))(*flat)
+    output = HairTubeOutput()
+    dll = _load_dll()
+    status = int(dll.ywta_hair_tube_generate_from_rails(rail_array, station_count, segments, tolerance, ctypes.pointer(output)))
+    _raise_status(dll, status)
+    return _copy_output(dll, output)

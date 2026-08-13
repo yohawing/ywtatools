@@ -68,6 +68,28 @@ class FakeDLL:
     def ywta_hair_tube_free(self, _output_pointer):
         self.freed = True
 
+    def ywta_hair_tube_generate_from_rails(self, rails, station_count, segments, tolerance, output_pointer):
+        self.input = {
+            "rails": list(rails[: station_count * 4 * 3]),
+            "station_count": station_count,
+            "segments": segments,
+            "tolerance": tolerance,
+        }
+        if self.status:
+            return self.status
+        return self.ywta_hair_tube_generate(
+            4,
+            (ctypes.c_double * 12)(*([0.0] * 12)),
+            (ctypes.c_uint64 * 1)(0),
+            0,
+            (ctypes.c_uint32 * 0)(),
+            0,
+            (ctypes.c_uint32 * 4)(0, 1, 2, 3),
+            segments,
+            tolerance,
+            output_pointer,
+        )
+
     def ywta_mesh_core_last_error(self):
         return b"fake diagnostic"
 
@@ -115,6 +137,15 @@ class HairTubeBindingTests(unittest.TestCase):
         self.assertEqual(context.exception.status, 105)
         self.assertIn("fake diagnostic", str(context.exception))
         self.assertFalse(fake.freed)
+
+    def test_generate_from_edited_rails(self):
+        fake = FakeDLL()
+        hair_tube._load_dll = lambda: fake
+        rails = [[(rail, 0, 0), (rail, 0, 1)] for rail in range(4)]
+        result = hair_tube.generate_from_rails(rails, target_segments=5)
+        self.assertEqual(fake.input["segments"], 5)
+        self.assertEqual(result.quads, [(0, 1, 2, 3)])
+        self.assertTrue(fake.freed)
 
     def test_default_path_targets_shared_core_dll(self):
         self.assertTrue(str(hair_tube.default_dll_path()).replace("\\", "/").endswith("bin/windows/ywta_mesh_core.dll"))
