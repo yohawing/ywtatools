@@ -19,11 +19,30 @@ import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 import nox
 
 nox.options.sessions = ["lint"]
+
+
+MAYA_PLUGIN_VERSIONS = (2025, 2026, 2027)
+
+
+def _resolve_maya_plugin_versions(posargs: Sequence[str]) -> tuple[int, ...]:
+    """Mayaプラグインビルド対象を検証して整数のタプルへ変換する。"""
+    requested = tuple(posargs) or tuple(str(version) for version in MAYA_PLUGIN_VERSIONS)
+    versions: list[int] = []
+    for raw_version in requested:
+        if not raw_version.isdecimal():
+            raise ValueError(f"Mayaバージョンは数字で指定してください: {raw_version}")
+        version = int(raw_version)
+        if version not in MAYA_PLUGIN_VERSIONS:
+            supported = ", ".join(str(item) for item in MAYA_PLUGIN_VERSIONS)
+            raise ValueError(f"未対応のMayaバージョンです: {version}（対応: {supported}）")
+        versions.append(version)
+    return tuple(versions)
 
 
 @nox.session(venv_backend="none")
@@ -53,6 +72,37 @@ def maya_tests(session: nox.Session) -> None:
         *session.posargs,
         external=True,
     )
+
+
+@nox.session(venv_backend="none")
+def maya_plugin_build(session: nox.Session) -> None:
+    """Maya 2025以降のC++プラグインをバージョンごとに順番にビルドする。
+
+    引数を省略すると2025、2026、2027を順にビルドする。明示した場合は
+    対応済みのバージョンだけを受け付ける。
+
+    Examples:
+        uvx nox -s maya_plugin_build
+        uvx nox -s maya_plugin_build -- 2026
+        uvx nox -s maya_plugin_build -- 2025 2027
+    """
+    try:
+        versions = _resolve_maya_plugin_versions(session.posargs)
+    except ValueError as error:
+        session.error(str(error))
+
+    build_script = Path(__file__).parent / "maya" / "cpp" / "build.bat"
+    if not build_script.is_file():
+        session.error(f"Mayaプラグインのビルドスクリプトが見つかりません: {build_script}")
+
+    for version in versions:
+        session.run(
+            "cmd",
+            "/c",
+            str(build_script),
+            str(version),
+            external=True,
+        )
 
 
 @nox.session(venv_backend="none")

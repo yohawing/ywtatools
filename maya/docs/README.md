@@ -1,7 +1,8 @@
 # YWTA Maya Manual
 
 YWTA Maya Toolsは、リギング、スキニング、アニメーション、メッシュ編集、書き出しを
-支援するMaya 2024向けツールセットです。
+支援するMayaツールセットです。実行環境とC++プラグインの対象は
+[Mayaバージョンサポート](maya-version-support.md)を参照してください。
 
 このマニュアルは、ツールの目的と使い方を説明します。インストールについては
 [Maya README](../README.md)を参照してください。
