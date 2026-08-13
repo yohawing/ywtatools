@@ -7,6 +7,8 @@ RBF control point として、衣装などの follower mesh を複製して変�
 
 ## Current contract
 
+- `retarget` は実行前に source / target / follower 全てを検証します。mesh以外、存在しない名前、曖昧な短縮名、参照node、空のfollower、重複入力、source / target のfollower混入を拒否します。
+- source と target は頂点数だけでなく、各faceのvertex connectivity（順序を含む）が一致している必要があります。全inputのworld matrixも完全一致が必要です。object-space頂点を別のworld transformへ誤適用する可能性がある入力はfail-closedとなります。
 - source と target は同一トポロジー、同一頂点順、同一頂点数が必要です。
 - `stride` は両方へ同じ間隔で適用されます。大きくすると control point 数は減りますが、
   局所変形の精度も下がります。
@@ -45,5 +47,7 @@ RBF の拡大行列と kernel は PyGeM の RBF 実装を基にしています�
 
 ## Undo
 
-元の follower は変更せず、変形結果を duplicate として作成します。作成直後の Maya
-Undo で duplicate を取り消せます。
+solverのfitと全followerの変形計算はscene編集前に完了します。計算に失敗した場合はduplicateを
+作成しません。編集段階は単一のUndo chunkでduplicateとsetPointsを行い、途中で失敗した場合は
+そのchunkを一度Undoしてrollbackします。成功時の戻り値は作成したduplicateの名前リストです。
+元のsource / target / followerは変更せず、成功後のMaya Undo一回で全duplicateを取り消せます。

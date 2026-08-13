@@ -33,6 +33,11 @@ except ImportError:
 
 from ywta.rig import meshretarget
 
+try:
+    import maya.cmds as maya_cmds
+except ImportError:
+    maya_cmds = None
+
 
 class RbfCharacterizationTests(unittest.TestCase):
     """既存RBF solverの精度と失敗条件を固定する。"""
@@ -129,6 +134,12 @@ class RbfCharacterizationTests(unittest.TestCase):
                 create=True,
             ),
             mock.patch.object(
+                meshretarget,
+                "_preflight_inputs",
+                return_value=("source", "target", ["follower_a", "follower_b"]),
+            ),
+            mock.patch.object(meshretarget, "_maya_cmd_available", return_value=False),
+            mock.patch.object(
                 meshretarget.cmds,
                 "duplicate",
                 side_effect=lambda object_name, **_kwargs: [object_name + "_copy"],
@@ -148,6 +159,117 @@ class RbfCharacterizationTests(unittest.TestCase):
             self.assertTrue(call.args[0].endswith("_copy"))
             expected = original @ self.affine + self.offset
             np.testing.assert_allclose(np.asarray(call.args[1]), expected, atol=2e-14)
+
+
+@unittest.skipUnless(maya_cmds is not None and hasattr(maya_cmds, "polyCube"), "Mayaが必要です")
+class MeshRetargetTransactionMayaTests(unittest.TestCase):
+    """実Mayaで複数follower、Undo、途中失敗rollbackを検証する。"""
+
+    def setUp(self):
+        maya_cmds.file(new=True, force=True)
+        maya_cmds.undoInfo(state=True)
+
+    def tearDown(self):
+        maya_cmds.file(new=True, force=True)
+
+    @staticmethod
+    def _cube(name):
+        return maya_cmds.polyCube(name=name, constructionHistory=False)[0]
+
+    @staticmethod
+    def _points(mesh):
+        return np.asarray(
+            [[point.x, point.y, point.z] for point in meshretarget.get_points(mesh)],
+            dtype=np.float64,
+        )
+
+    def test_batch_preserves_followers_and_undo_removes_all_duplicates(self):
+        source = self._cube("rbf_source")
+        target = self._cube("rbf_target")
+        follower_a = self._cube("rbf_follower_a")
+        follower_b = self._cube("rbf_follower_b")
+        maya_cmds.xform("{}.vtx[0]".format(target), objectSpace=True, translation=(0.2, 0.0, 0.0))
+        original_followers = [self._points(mesh) for mesh in (follower_a, follower_b)]
+        expected_points = self._points(target)
+
+        created = meshretarget.retarget(
+            source,
+            target,
+            [follower_a, follower_b],
+            max_control_points=8,
+        )
+
+        self.assertEqual(2, len(created))
+        for mesh, original in zip((follower_a, follower_b), original_followers):
+            np.testing.assert_allclose(self._points(mesh), original)
+        for duplicate in created:
+            self.assertTrue(maya_cmds.objExists(duplicate))
+            np.testing.assert_allclose(self._points(duplicate), expected_points, atol=1e-10)
+
+        maya_cmds.undo()
+        self.assertFalse(any(maya_cmds.objExists(duplicate) for duplicate in created))
+
+    def test_batch_rolls_back_when_a_follower_fails(self):
+        source = self._cube("rbf_source")
+        target = self._cube("rbf_target")
+        follower_a = self._cube("rbf_follower_a")
+        follower_b = self._cube("rbf_follower_b")
+        maya_cmds.xform("{}.vtx[0]".format(target), objectSpace=True, translation=(0.2, 0.0, 0.0))
+        marker = maya_cmds.createNode("transform", name="unrelated_before_failure")
+        before = set(maya_cmds.ls(type="transform", long=True) or [])
+        real_set_points = meshretarget.set_points
+        calls = {"count": 0}
+
+        def fail_on_second(mesh, points):
+            calls["count"] += 1
+            if calls["count"] == 2:
+                raise RuntimeError("fixture failure")
+            return real_set_points(mesh, points)
+
+        with mock.patch.object(meshretarget, "set_points", side_effect=fail_on_second):
+            with self.assertRaisesRegex(RuntimeError, "fixture failure"):
+                meshretarget.retarget(source, target, [follower_a, follower_b], max_control_points=8)
+
+        after = set(maya_cmds.ls(type="transform", long=True) or [])
+        self.assertEqual(before, after)
+        self.assertTrue(maya_cmds.objExists(marker))
+        maya_cmds.undo()
+        self.assertFalse(maya_cmds.objExists(marker))
+        self.assertFalse(any("_0.5_linear" in node.rsplit("|", 1)[-1] for node in maya_cmds.ls(type="transform") or []))
+        maya_cmds.redo()
+        self.assertTrue(maya_cmds.objExists(marker))
+
+    def test_undo_disabled_rejects_before_duplicate(self):
+        source = self._cube("rbf_source")
+        target = self._cube("rbf_target")
+        follower = self._cube("rbf_follower")
+        maya_cmds.xform("{}.vtx[0]".format(target), objectSpace=True, translation=(0.2, 0.0, 0.0))
+        maya_cmds.undoInfo(state=False)
+        with self.assertRaisesRegex(RuntimeError, "Undoを有効"):
+            meshretarget.retarget(source, target, [follower], max_control_points=8)
+        self.assertFalse(maya_cmds.objExists("rbf_follower_0.5_linear"))
+
+    def test_preflight_rejects_follower_duplicates_and_world_mismatch(self):
+        source = self._cube("rbf_source")
+        target = self._cube("rbf_target")
+        follower_a = self._cube("rbf_follower_a")
+        follower_b = self._cube("rbf_follower_b")
+        incompatible = maya_cmds.polyCube(
+            name="rbf_incompatible_target",
+            constructionHistory=False,
+            subdivisionsX=2,
+        )[0]
+        maya_cmds.xform("{}.vtx[0]".format(target), objectSpace=True, translation=(0.2, 0.0, 0.0))
+
+        with self.assertRaisesRegex(ValueError, "重複"):
+            meshretarget.retarget(source, target, [follower_a, follower_a], max_control_points=8)
+
+        with self.assertRaisesRegex(ValueError, "topology"):
+            meshretarget.retarget(source, incompatible, [follower_a], max_control_points=8)
+
+        maya_cmds.xform(follower_b, worldSpace=True, translation=(1.0, 0.0, 0.0))
+        with self.assertRaisesRegex(ValueError, "world matrix"):
+            meshretarget.retarget(source, target, [follower_a, follower_b], max_control_points=8)
 
 
 if __name__ == "__main__":
