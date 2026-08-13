@@ -85,6 +85,3 @@ artifacts/
 cpp/autoremesher_core/build*/
 cpp/mesh_core/build*/
 
-# ローカルの共通メッシュコア作業ツリー
-/cpp/mesh_core/
-
