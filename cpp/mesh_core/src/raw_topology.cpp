@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <map>
 #include <numeric>
 #include <sstream>
 #include <unordered_map>
@@ -204,6 +205,100 @@ BowTieSplitResult plan_bow_tie_vertex_splits(const RawTopologyView& topology) {
   }
 
   plan.output_vertex_count = next_vertex;
+  return result;
+}
+
+ManifoldSplitResult plan_manifold_splits(const RawTopologyView& topology) {
+  const BowTieSplitResult validation = validate(topology);
+  if (!validation.ok()) {
+    ManifoldSplitResult result;
+    result.status = validation.status;
+    result.message = validation.message;
+    return result;
+  }
+
+  ManifoldSplitResult result;
+  ManifoldSplitPlan& plan = result.plan;
+  plan.original_vertex_count = topology.vertex_count;
+  plan.output_vertex_count = topology.vertex_count;
+  if (topology.face_vertex_count > 0) {
+    plan.rewritten_face_vertices.assign(topology.face_vertices,
+                                        topology.face_vertices + topology.face_vertex_count);
+  }
+  plan.source_vertex_by_output.resize(topology.vertex_count);
+  std::iota(plan.source_vertex_by_output.begin(), plan.source_vertex_by_output.end(), 0);
+
+  struct EdgeUse {
+    std::uint64_t face;
+    std::uint64_t first_corner;
+    std::uint64_t second_corner;
+  };
+  std::map<std::pair<std::uint32_t, std::uint32_t>, std::vector<EdgeUse>> uses_by_edge;
+  for (std::uint64_t face = 0; face < topology.face_count; ++face) {
+    const std::uint64_t begin = topology.face_offsets[face];
+    const std::uint64_t end = topology.face_offsets[face + 1];
+    for (std::uint64_t corner = begin; corner < end; ++corner) {
+      const std::uint64_t next = corner + 1 == end ? begin : corner + 1;
+      const std::uint32_t first = topology.face_vertices[corner];
+      const std::uint32_t second = topology.face_vertices[next];
+      uses_by_edge[{std::min(first, second), std::max(first, second)}].push_back(
+          {face, corner, next});
+    }
+  }
+
+  std::map<std::pair<std::uint64_t, std::uint32_t>, std::uint32_t> duplicate_by_face_vertex;
+  std::uint64_t next_vertex = topology.vertex_count;
+  for (const auto& [edge, uses] : uses_by_edge) {
+    if (uses.size() <= 2) {
+      continue;
+    }
+    plan.split_non_manifold_edges.insert(plan.split_non_manifold_edges.end(),
+                                         {edge.first, edge.second});
+    for (std::size_t use_index = 2; use_index < uses.size(); ++use_index) {
+      const EdgeUse& use = uses[use_index];
+      for (const std::uint64_t corner : {use.first_corner, use.second_corner}) {
+        const std::uint32_t source = topology.face_vertices[corner];
+        const auto key = std::make_pair(use.face, source);
+        auto duplicate = duplicate_by_face_vertex.find(key);
+        if (duplicate == duplicate_by_face_vertex.end()) {
+          if (next_vertex > std::numeric_limits<std::uint32_t>::max()) {
+            result.status = TopologyStatus::kOutputVertexOverflow;
+            result.message = "manifold split exceeds the uint32 vertex index range";
+            result.plan = {};
+            return result;
+          }
+          const std::uint32_t output = static_cast<std::uint32_t>(next_vertex++);
+          duplicate = duplicate_by_face_vertex.emplace(key, output).first;
+          plan.source_vertex_by_output.push_back(source);
+        }
+        plan.rewritten_face_vertices[corner] = duplicate->second;
+      }
+    }
+  }
+
+  const std::vector<std::uint64_t> offsets(topology.face_offsets,
+                                           topology.face_offsets + topology.face_count + 1);
+  const BowTieSplitResult fan_result = plan_bow_tie_vertex_splits(
+      {static_cast<std::uint32_t>(next_vertex), offsets.data(), topology.face_count,
+       plan.rewritten_face_vertices.data(), topology.face_vertex_count});
+  if (!fan_result.ok()) {
+    result.status = fan_result.status;
+    result.message = fan_result.message;
+    result.plan = {};
+    return result;
+  }
+
+  std::vector<std::uint32_t> composed_sources;
+  composed_sources.reserve(fan_result.plan.source_vertex_by_output.size());
+  for (const std::uint32_t intermediate : fan_result.plan.source_vertex_by_output) {
+    composed_sources.push_back(plan.source_vertex_by_output[intermediate]);
+  }
+  plan.rewritten_face_vertices = fan_result.plan.rewritten_face_vertices;
+  plan.source_vertex_by_output = std::move(composed_sources);
+  plan.output_vertex_count = fan_result.plan.output_vertex_count;
+  for (const BowTieVertexSplit& split : fan_result.plan.splits) {
+    plan.split_source_vertices.push_back(plan.source_vertex_by_output[split.output_vertices[0]]);
+  }
   return result;
 }
 

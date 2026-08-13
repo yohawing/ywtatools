@@ -10,6 +10,7 @@ namespace {
 
 using ywta::mesh_core::BowTieSplitResult;
 using ywta::mesh_core::plan_bow_tie_vertex_splits;
+using ywta::mesh_core::plan_manifold_splits;
 using ywta::mesh_core::RawTopologyView;
 using ywta::mesh_core::TopologyStatus;
 
@@ -144,6 +145,42 @@ void test_empty_topology_is_supported() {
          "isolated vertex attributes should retain identity mapping");
 }
 
+void test_non_manifold_edge_uses_are_split() {
+  const std::vector<std::uint64_t> offsets{0, 3, 6, 9};
+  const std::vector<std::uint32_t> vertices{0, 1, 2, 1, 0, 3, 0, 1, 4};
+  const auto result = plan_manifold_splits({5, offsets.data(), 3, vertices.data(), 9});
+
+  expect(result.ok(), "non-manifold edge should be splittable");
+  expect(result.plan.split_non_manifold_edges == std::vector<std::uint32_t>({0, 1}),
+         "split plan should report the source non-manifold edge");
+  expect(result.plan.output_vertex_count == 7, "third edge use should duplicate both endpoints");
+  expect(result.plan.rewritten_face_vertices ==
+             std::vector<std::uint32_t>({0, 1, 2, 1, 0, 3, 5, 6, 4}),
+         "first two edge uses should stay together and later uses should split");
+  expect(result.plan.source_vertex_by_output ==
+             std::vector<std::uint32_t>({0, 1, 2, 3, 4, 0, 1}),
+         "duplicated point attributes should map to source endpoints");
+  const auto second = plan_manifold_splits(
+      {7, offsets.data(), 3, result.plan.rewritten_face_vertices.data(), 9});
+  expect(second.ok() && second.plan.output_vertex_count == 7,
+         "split topology should be idempotent");
+}
+
+void test_edge_and_vertex_fans_are_split_together() {
+  const std::vector<std::uint64_t> offsets{0, 3, 6, 9, 12};
+  const std::vector<std::uint32_t> vertices{0, 1, 2, 1, 0, 3, 0, 1, 4, 0, 5, 6};
+  const auto result = plan_manifold_splits({7, offsets.data(), 4, vertices.data(), 12});
+
+  expect(result.ok(), "combined edge and vertex fans should be splittable");
+  expect(result.plan.output_vertex_count == 10,
+         "edge endpoints and disconnected vertex fan should each duplicate");
+  expect(result.plan.split_source_vertices == std::vector<std::uint32_t>({0}),
+         "plan should report the source vertex fan split");
+  for (const std::uint32_t source : result.plan.source_vertex_by_output) {
+    expect(source < 7, "every output vertex should retain an original source mapping");
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -153,6 +190,8 @@ int main() {
   test_three_fans_are_deterministic();
   test_invalid_inputs_are_rejected_without_a_plan();
   test_empty_topology_is_supported();
+  test_non_manifold_edge_uses_are_split();
+  test_edge_and_vertex_fans_are_split_together();
 
   if (failures != 0) {
     std::cerr << failures << " test(s) failed\n";

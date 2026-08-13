@@ -64,11 +64,38 @@ struct BowTieSplitResult {
   [[nodiscard]] bool ok() const noexcept { return status == TopologyStatus::kOk; }
 };
 
+/** 非多様体edgeと複数vertex fanを頂点複製だけで分離する計画。 */
+struct ManifoldSplitPlan {
+  std::uint32_t original_vertex_count = 0;
+  std::uint64_t output_vertex_count = 0;
+  std::vector<std::uint32_t> rewritten_face_vertices;
+  std::vector<std::uint32_t> source_vertex_by_output;
+  std::vector<std::uint32_t> split_non_manifold_edges;
+  std::vector<std::uint32_t> split_source_vertices;
+};
+
+/** split-to-manifold計画の作成結果。 */
+struct ManifoldSplitResult {
+  TopologyStatus status = TopologyStatus::kOk;
+  std::string message;
+  ManifoldSplitPlan plan;
+
+  [[nodiscard]] bool ok() const noexcept { return status == TopologyStatus::kOk; }
+};
+
 /**
  * 頂点周りのface fanを共有edgeで連結し、複数fanを持つ頂点の分離計画を作る。
  *
  * 頂点位置やface数は変更しない。構造的に不正な入力は部分結果を返さず拒否する。
  */
 [[nodiscard]] BowTieSplitResult plan_bow_tie_vertex_splits(const RawTopologyView& topology);
+
+/**
+ * 3面以上で共有されるedge useと、分離したvertex fanを頂点複製で分離する。
+ *
+ * face/corner順は変更しないため、corner属性は同じindexからコピーできる。
+ * source_vertex_by_outputを使うとpoint属性を元頂点から複製できる。
+ */
+[[nodiscard]] ManifoldSplitResult plan_manifold_splits(const RawTopologyView& topology);
 
 }  // namespace ywta::mesh_core

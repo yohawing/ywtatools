@@ -68,6 +68,18 @@ typedef struct YwtaMeshRepairOutput {
   uint64_t* flipped_source_faces;
 } YwtaMeshRepairOutput;
 
+/** C ABIが所有するsplit-to-manifold plan。 */
+typedef struct YwtaManifoldSplitOutput {
+  uint64_t output_vertex_count;
+  uint64_t corner_count;
+  uint32_t* face_vertices;
+  uint32_t* source_vertex_by_output;
+  uint64_t split_edge_count;
+  uint32_t* split_edges;
+  uint64_t split_vertex_count;
+  uint32_t* split_vertices;
+} YwtaManifoldSplitOutput;
+
 /**
  * flat topologyと4頂点root loopから固定密度のopen quad tubeを生成する。
  *
@@ -130,6 +142,15 @@ YWTA_MESH_CORE_API int ywta_mesh_repair_plan(
 
 /** ywta_mesh_repair_plan()が確保した配列を解放し、outputをゼロ初期化する。 */
 YWTA_MESH_CORE_API void ywta_mesh_repair_free(YwtaMeshRepairOutput* output);
+
+/** edge fanとvertex fanを頂点複製で分離するplanを返す。 */
+YWTA_MESH_CORE_API int ywta_mesh_manifold_split_plan(
+    uint32_t vertex_count, const uint64_t* face_offsets, uint64_t face_count,
+    const uint32_t* face_vertices, uint64_t face_vertex_count,
+    YwtaManifoldSplitOutput* output);
+
+/** ywta_mesh_manifold_split_plan()が確保した配列を解放する。 */
+YWTA_MESH_CORE_API void ywta_mesh_manifold_split_free(YwtaManifoldSplitOutput* output);
 
 /** 現在のthreadで最後に発生したエラー説明。次のAPI呼び出しまで有効。 */
 YWTA_MESH_CORE_API const char* ywta_mesh_core_last_error(void);

@@ -10,6 +10,7 @@
 #include "ywta/mesh_core/hair_tube_topology.h"
 #include "ywta/mesh_core/mesh_diagnostics.h"
 #include "ywta/mesh_core/mesh_repair.h"
+#include "ywta/mesh_core/raw_topology.h"
 
 namespace {
 
@@ -38,6 +39,12 @@ void clear_output(YwtaMeshDiagnosticOutput* output) {
 }
 
 void clear_output(YwtaMeshRepairOutput* output) {
+  if (output != nullptr) {
+    *output = {};
+  }
+}
+
+void clear_output(YwtaManifoldSplitOutput* output) {
   if (output != nullptr) {
     *output = {};
   }
@@ -446,6 +453,55 @@ void ywta_mesh_repair_free(YwtaMeshRepairOutput* output) {
   delete[] output->removed_zero_area_faces;
   delete[] output->removed_duplicate_faces;
   delete[] output->flipped_source_faces;
+  clear_output(output);
+}
+
+int ywta_mesh_manifold_split_plan(uint32_t vertex_count, const uint64_t* face_offsets,
+                                  uint64_t face_count, const uint32_t* face_vertices,
+                                  uint64_t face_vertex_count,
+                                  YwtaManifoldSplitOutput* output) {
+  last_error.clear();
+  if (output == nullptr) {
+    last_error = "output must not be null";
+    return 1;
+  }
+  clear_output(output);
+  try {
+    const auto result = ywta::mesh_core::plan_manifold_splits(
+        {vertex_count, face_offsets, face_count, face_vertices, face_vertex_count});
+    if (!result.ok()) {
+      last_error = result.message;
+      return 600 + static_cast<int>(result.status);
+    }
+    const auto& plan = result.plan;
+    output->output_vertex_count = plan.output_vertex_count;
+    output->corner_count = plan.rewritten_face_vertices.size();
+    output->face_vertices = copy_array(plan.rewritten_face_vertices);
+    output->source_vertex_by_output = copy_array(plan.source_vertex_by_output);
+    output->split_edge_count = plan.split_non_manifold_edges.size() / 2;
+    output->split_edges = copy_array(plan.split_non_manifold_edges);
+    output->split_vertex_count = plan.split_source_vertices.size();
+    output->split_vertices = copy_array(plan.split_source_vertices);
+    return 0;
+  } catch (const std::exception& error) {
+    ywta_mesh_manifold_split_free(output);
+    last_error = error.what();
+    return 3;
+  } catch (...) {
+    ywta_mesh_manifold_split_free(output);
+    last_error = "unknown C++ exception";
+    return 4;
+  }
+}
+
+void ywta_mesh_manifold_split_free(YwtaManifoldSplitOutput* output) {
+  if (output == nullptr) {
+    return;
+  }
+  delete[] output->face_vertices;
+  delete[] output->source_vertex_by_output;
+  delete[] output->split_edges;
+  delete[] output->split_vertices;
   clear_output(output);
 }
 

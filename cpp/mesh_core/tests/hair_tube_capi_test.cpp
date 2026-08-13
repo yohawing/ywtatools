@@ -137,6 +137,20 @@ void test_mesh_repair_capi() {
          "repair free should clear output");
 }
 
+void test_manifold_split_capi() {
+  const std::uint64_t offsets[]{0, 3, 6, 9};
+  const std::uint32_t faces[]{0, 1, 2, 1, 0, 3, 0, 1, 4};
+  YwtaManifoldSplitOutput output{};
+  const int status = ywta_mesh_manifold_split_plan(5, offsets, 3, faces, 9, &output);
+  expect(status == 0 && output.output_vertex_count == 7 && output.split_edge_count == 1,
+         "C ABI should expose manifold edge split plan");
+  expect(output.source_vertex_by_output[5] == 0 && output.source_vertex_by_output[6] == 1,
+         "C ABI should expose output-to-source vertex mapping");
+  ywta_mesh_manifold_split_free(&output);
+  expect(output.output_vertex_count == 0 && output.face_vertices == nullptr,
+         "manifold split free should clear output");
+}
+
 }  // namespace
 
 int main() {
@@ -146,6 +160,7 @@ int main() {
   test_generate_from_five_edited_rails();
   test_mesh_diagnostic_capi();
   test_mesh_repair_capi();
+  test_manifold_split_capi();
   if (failures != 0) {
     std::cerr << failures << " test(s) failed\n";
     return EXIT_FAILURE;
