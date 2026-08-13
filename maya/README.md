@@ -5,6 +5,15 @@
 Maya 2024 でよく行うリギング、スキニング、アニメーション、メッシュ編集をまとめた
 ツールセットです。インストールすると、Maya のメインメニューに `YWTA` が追加されます。
 
+## ツールカタログ
+
+メニュー項目ごとの前提条件、最小手順、成功確認、Undo/ロールバック、既知の制限は
+[Maya ツールカタログ](docs/README.md) にまとめています。目的別に直接読む場合は、
+[Rigging](docs/rigging.md)、[Deform](docs/deform.md)、[Animation](docs/animation.md)、
+[Mesh](docs/mesh.md)、[Pipeline / Export](docs/pipeline-export.md)、[Utility](docs/utility.md)
+を選んでください。この README は導入・初回利用と開発者向け配置を扱い、機能の詳細は
+カタログを正本とします。
+
 ## インストール
 
 1. このリポジトリを任意の場所へ配置します。
@@ -70,8 +79,9 @@ AutoRemesher とボリューム保持スムージングだけは、初回にネ�
 Batch Runner、FBX 書き出し、Scene Audit、Dependency Visualizer、Resource Browser
 などがあります。
 
-各機能の詳しい操作条件は
-[`Maya ツール拡充`](../docs/maya-tool-expansion.md) にまとめています。
+各機能の操作条件は [Maya ツールカタログ](docs/README.md) を参照してください。新しい
+ツール群を追加した経緯、検証記録、意図的に採用しなかった範囲は、開発資料の
+[`Maya ツール拡充`](../docs/maya-tool-expansion.md) に残しています。
 
 ## C++ プラグインを使う場合
 
