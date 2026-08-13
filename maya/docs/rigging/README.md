@@ -20,4 +20,5 @@ Joint、Constraint、Skeleton、Control Curveを扱うツールです。
 - [Swing/Twist](swing-twist.md) — Twist Joint接続
 - [HumanIK Auto Setup](humanik.md) — 限定的なHumanIK Character作成
 - [HumanIK Auto Assignment 出力境界](humanik-auto-assignment-boundary.md) — `yw-retarget`との未実装の受け渡し仕様
+- [HumanIK donor 移植境界](humanik-donor-boundary.md) — donorから採用する安全性と移植しないMMD固有責務
 - [RBF Mesh Retarget](mesh-retarget.md) — 対応ボディ間の変形を衣装などへ転送（Workbench UIを含む）
