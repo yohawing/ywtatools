@@ -40,7 +40,8 @@
 | 既存current CharacterへのJSON適用 | `load_character_definition()` で実装済み。全slot/targetを事前解決するが、適用後readbackと途中失敗rollbackは未実装 |
 | 新規Character builder | `create_character_definition()` で実装済み。事前解決、slot順適用、readback、所有Character cleanupを行う |
 | bind/rest pose証明後のLock | 未実装 |
-| current Character/Sourceのsnapshotと復元 | 未実装 |
+| current Character/Sourceのsnapshot | `capture_humanik_current_state()`で実装済み。global選択とCharacter-scoped input/lockを読み取り専用で取得する |
+| current Character/Sourceの復元 | 未実装 |
 | HumanIK MEL procedure loader | `ensure_humanik_mel_loaded()`で実装済み。入口ごとの必須procedureを確認し、不足時だけMaya標準plugin/scriptを準備する |
 
 既存の`setup_hik_character()`はHip/Pelvisを限定的に割り当ててLockする旧来の入口です。
@@ -89,8 +90,8 @@ CharacterのLockは次をすべて満たした後だけ許可します。
 
 ## 実装sliceとテスト
 
-1. **current state snapshot**
-   - current Character、Source、input type、lock状態をpureな値へcapture/restoreする
+1. **current state restore**
+   - 取得済みsnapshotからcurrent Character、Source、input type、lock状態を明示復元する
    - 成功・例外の両方で元状態へ戻ること、外部Characterを削除しないことをMaya testで確認する
 2. **既存Character assignment transaction**
    - 全件適用後readbackを追加し、途中失敗時は変更対象slotをsnapshotから復元する

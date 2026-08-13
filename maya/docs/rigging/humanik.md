@@ -64,6 +64,17 @@ bind/rest poseの証明は後段のbuilderが担当します。旧形式の
 sceneから消えたことも確認します。`HumanIkCharacterCreationError`の`creation_error`と
 `cleanup_error`で、元の失敗とcleanupの失敗を個別に確認できます。
 
+## 現在状態の取得
+
+`ywta.rig.humanik.capture_humanik_current_state()` は、HumanIK UIが参照する現在の
+Character、Source、入力種別、Definition Lock、Retarget Sourceを、不変な
+`HumanIkCurrentState`として返します。取得中にscene nodeやselectionは変更しません。
+
+現在Characterが空の場合、Character単位の3項目は`None`です。Character名が残っていても
+対応する`HIKCharacterNode`を一意に確認できない場合や、Maya標準MELの戻り値が契約外の型だった
+場合は、古いUI状態を利用せず`RuntimeError`で停止します。このAPIは読み取り専用であり、
+Sourceの接続、DefinitionのLock、Characterの切り替えは行いません。
+
 ## Known Limitations
 
 汎用的な全身自動マッピングではありません。Hip / Pelvis中心の限定的な設定で、Character名も

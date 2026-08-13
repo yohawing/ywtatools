@@ -9,6 +9,8 @@ Functions:
 
 import json
 import re
+from dataclasses import dataclass
+from typing import Optional
 
 import maya.cmds as cmds
 import maya.mel as mel
@@ -24,6 +26,7 @@ _HIK_MEL_SCRIPTS = (
     "hikDefinitionOperations.mel",
     "hikCharacterControlsUI.mel",
     "hikCharacterControlsUtils.mel",
+    "hikInputSourceUtils.mel",
 )
 _HIK_PLUGINS = ("mayaHIK", "mayaCharacterization")
 _CREATE_CHARACTER_PROCEDURES = (
@@ -50,6 +53,13 @@ _SETUP_PROCEDURES = _CREATE_CHARACTER_PROCEDURES + (
     "hikSetCharacterObject",
     "hikUpdateDefinitionUI",
     "hikCharacterLock",
+)
+_CURRENT_STATE_PROCEDURES = (
+    "hikGetCurrentCharacter",
+    "hikGetCurrentSource",
+    "hikGetInputType",
+    "hikIsDefinitionLocked",
+    "hikGetRetargetCharacterInput",
 )
 _MEL_PROCEDURE_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -108,9 +118,71 @@ class HumanIkCharacterCreationError(RuntimeError):
         super().__init__(message)
 
 
+@dataclass(frozen=True)
+class HumanIkCurrentState:
+    """HumanIK UIが参照する現在状態の読み取り専用snapshot。"""
+
+    current_character: str
+    current_source: str
+    input_type: Optional[int]
+    definition_locked: Optional[bool]
+    retarget_source: Optional[str]
+
+
 def _mel_string(value):
     """Python文字列をMELの文字列literalとして安全に表現する。"""
     return json.dumps(str(value), ensure_ascii=False)
+
+
+def capture_humanik_current_state(mel_module=mel, cmds_module=cmds):
+    """HumanIKの現在Characterと入力状態をscene変更なしで取得する。
+
+    Args:
+        mel_module: テスト差し替え用のMEL互換module。
+        cmds_module: テスト差し替え用のmaya.cmds互換module。
+
+    Returns:
+        現在状態を保持する不変snapshot。Characterが未選択なら、Character単位の
+        ``input_type``、``definition_locked``、``retarget_source`` は ``None``。
+
+    Raises:
+        RuntimeError: Maya標準procedureの戻り値や現在Characterを安全に確認できない場合。
+    """
+    ensure_humanik_mel_loaded(_CURRENT_STATE_PROCEDURES, mel_module, cmds_module)
+
+    current_character = mel_module.eval("hikGetCurrentCharacter()")
+    current_source = mel_module.eval("hikGetCurrentSource()")
+    if not isinstance(current_character, str):
+        raise RuntimeError("HumanIKの現在Character名が文字列ではありません")
+    if not isinstance(current_source, str):
+        raise RuntimeError("HumanIKの現在Source名が文字列ではありません")
+
+    if not current_character:
+        return HumanIkCurrentState(current_character, current_source, None, None, None)
+
+    matches = cmds_module.ls(current_character, type="HIKCharacterNode") or []
+    if len(matches) != 1:
+        raise RuntimeError("HumanIKの現在Characterを一意に確認できません: {} ({}件)".format(current_character, len(matches)))
+
+    character_literal = _mel_string(current_character)
+    input_type = mel_module.eval("hikGetInputType({})".format(character_literal))
+    locked = mel_module.eval("hikIsDefinitionLocked({})".format(character_literal))
+    retarget_source = mel_module.eval("hikGetRetargetCharacterInput({})".format(character_literal))
+
+    if isinstance(input_type, bool) or not isinstance(input_type, int):
+        raise RuntimeError("HumanIKのInput Typeが整数ではありません")
+    if not isinstance(locked, (bool, int)) or isinstance(locked, int) and locked not in (0, 1):
+        raise RuntimeError("HumanIKのDefinition Lock状態が0または1ではありません")
+    if not isinstance(retarget_source, str):
+        raise RuntimeError("HumanIKのRetarget Source名が文字列ではありません")
+
+    return HumanIkCurrentState(
+        current_character=current_character,
+        current_source=current_source,
+        input_type=input_type,
+        definition_locked=bool(locked),
+        retarget_source=retarget_source,
+    )
 
 
 # 選択したJointの階層からバインドポーズのリストを取得してすべてバインドポーズにする。

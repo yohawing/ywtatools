@@ -115,6 +115,107 @@ class HumanIkMelLoaderTests(unittest.TestCase):
         create_character.assert_not_called()
 
 
+class HumanIkCurrentStateTests(unittest.TestCase):
+    def test_capture_requires_all_current_state_procedures(self):
+        mel_module = mock.Mock()
+        mel_module.eval.side_effect = ["", ""]
+        cmds_module = mock.Mock()
+
+        with mock.patch.object(humanik, "ensure_humanik_mel_loaded") as ensure_loaded:
+            humanik.capture_humanik_current_state(mel_module, cmds_module)
+
+        ensure_loaded.assert_called_once_with(
+            humanik._CURRENT_STATE_PROCEDURES,
+            mel_module,
+            cmds_module,
+        )
+
+    def test_empty_character_skips_character_scoped_queries(self):
+        mel_module = mock.Mock()
+        mel_module.eval.side_effect = ["", ""]
+        cmds_module = mock.Mock()
+
+        with mock.patch.object(humanik, "ensure_humanik_mel_loaded"):
+            state = humanik.capture_humanik_current_state(mel_module, cmds_module)
+
+        self.assertEqual(
+            state,
+            humanik.HumanIkCurrentState("", "", None, None, None),
+        )
+        self.assertEqual(
+            [mock.call("hikGetCurrentCharacter()"), mock.call("hikGetCurrentSource()")],
+            mel_module.eval.call_args_list,
+        )
+        cmds_module.ls.assert_not_called()
+
+    def test_valid_state_is_normalized_without_scene_mutation(self):
+        character = 'Hero"A\\B'
+
+        def evaluate(command):
+            return {
+                "hikGetCurrentCharacter()": character,
+                "hikGetCurrentSource()": "Control Rig",
+                'hikGetInputType("Hero\\"A\\\\B")': 3,
+                'hikIsDefinitionLocked("Hero\\"A\\\\B")': 1,
+                'hikGetRetargetCharacterInput("Hero\\"A\\\\B")': "SourceCharacter",
+            }[command]
+
+        mel_module = mock.Mock()
+        mel_module.eval.side_effect = evaluate
+        cmds_module = mock.Mock()
+        cmds_module.ls.return_value = [character]
+
+        with mock.patch.object(humanik, "ensure_humanik_mel_loaded"):
+            state = humanik.capture_humanik_current_state(mel_module, cmds_module)
+
+        self.assertEqual(state.current_character, character)
+        self.assertEqual(state.current_source, "Control Rig")
+        self.assertEqual(state.input_type, 3)
+        self.assertIs(state.definition_locked, True)
+        self.assertEqual(state.retarget_source, "SourceCharacter")
+        cmds_module.ls.assert_called_once_with(character, type="HIKCharacterNode")
+        for mutation in ("createNode", "delete", "setAttr", "connectAttr", "select"):
+            getattr(cmds_module, mutation).assert_not_called()
+
+    def test_stale_or_ambiguous_current_character_fails_closed(self):
+        for matches in ([], ["HeroA", "HeroB"]):
+            with self.subTest(matches=matches):
+                mel_module = mock.Mock()
+                mel_module.eval.side_effect = ["Hero", ""]
+                cmds_module = mock.Mock()
+                cmds_module.ls.return_value = matches
+
+                with (
+                    mock.patch.object(humanik, "ensure_humanik_mel_loaded"),
+                    self.assertRaisesRegex(RuntimeError, "一意に確認"),
+                ):
+                    humanik.capture_humanik_current_state(mel_module, cmds_module)
+
+                self.assertEqual(2, mel_module.eval.call_count)
+
+    def test_invalid_query_types_fail_closed(self):
+        cases = (
+            ([None, ""], "現在Character名"),
+            (["", None], "現在Source名"),
+            (["Hero", "", True, 0, ""], "Input Type"),
+            (["Hero", "", "3", 0, ""], "Input Type"),
+            (["Hero", "", 3, 2, ""], "Definition Lock"),
+            (["Hero", "", 3, 0, None], "Retarget Source"),
+        )
+        for values, message in cases:
+            with self.subTest(values=values):
+                mel_module = mock.Mock()
+                mel_module.eval.side_effect = values
+                cmds_module = mock.Mock()
+                cmds_module.ls.return_value = ["Hero"]
+
+                with (
+                    mock.patch.object(humanik, "ensure_humanik_mel_loaded"),
+                    self.assertRaisesRegex(RuntimeError, message),
+                ):
+                    humanik.capture_humanik_current_state(mel_module, cmds_module)
+
+
 class HumanIkTests(unittest.TestCase):
     def setUp(self):
         """既存のcommand順テストではloaderの観測commandを分離する。"""
