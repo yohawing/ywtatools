@@ -9,8 +9,36 @@ import logging
 import os
 import runpy
 
-from PySide2.QtCore import *
-from PySide2.QtWidgets import *
+try:
+    from PySide6.QtCore import QDir, Qt
+    from PySide6.QtGui import QAction
+    from PySide6.QtWidgets import (
+        QAbstractItemView,
+        QFileSystemModel,
+        QListView,
+        QMainWindow,
+        QMenu,
+        QSizePolicy,
+        QSplitter,
+        QTreeView,
+        QVBoxLayout,
+        QWidget,
+    )
+except ImportError:
+    from PySide2.QtCore import QDir, Qt
+    from PySide2.QtWidgets import (
+        QAbstractItemView,
+        QAction,
+        QFileSystemModel,
+        QListView,
+        QMainWindow,
+        QMenu,
+        QSizePolicy,
+        QSplitter,
+        QTreeView,
+        QVBoxLayout,
+        QWidget,
+    )
 
 from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 from ywta.ui.widgets.filepathwidget import FilePathWidget

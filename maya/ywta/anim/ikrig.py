@@ -10,9 +10,46 @@ import os
 
 from maya.app.general.mayaMixin import MayaQWidgetBaseMixin
 
-from PySide2.QtCore import *
-from PySide2.QtGui import *
-from PySide2.QtWidgets import *
+try:
+    from PySide6.QtCore import QDir, Qt
+    from PySide6.QtGui import QAction
+    from PySide6.QtWidgets import (
+        QAbstractItemView,
+        QFileSystemModel,
+        QFormLayout,
+        QLabel,
+        QLineEdit,
+        QMainWindow,
+        QMenu,
+        QProgressDialog,
+        QPushButton,
+        QScrollArea,
+        QSizePolicy,
+        QSplitter,
+        QTreeView,
+        QVBoxLayout,
+        QWidget,
+    )
+except ImportError:
+    from PySide2.QtCore import QDir, Qt
+    from PySide2.QtWidgets import (
+        QAbstractItemView,
+        QAction,
+        QFileSystemModel,
+        QFormLayout,
+        QLabel,
+        QLineEdit,
+        QMainWindow,
+        QMenu,
+        QProgressDialog,
+        QPushButton,
+        QScrollArea,
+        QSizePolicy,
+        QSplitter,
+        QTreeView,
+        QVBoxLayout,
+        QWidget,
+    )
 
 from ywta.ui.widgets.mayanodewidget import MayaNodeWidget
 from ywta.ui.widgets.filepathwidget import FilePathWidget
@@ -357,8 +394,6 @@ class FBXFileBrowser(QWidget):
         path = self.file_model.fileInfo(index).absoluteFilePath()
         if not os.path.isfile(path) or not path.lower().endswith(".fbx"):
             return
-
-        sel = cmds.ls(sl=True)
 
         menu = QMenu()
         menu.addAction(self.retarget_selected_action)

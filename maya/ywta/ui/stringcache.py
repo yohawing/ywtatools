@@ -1,6 +1,9 @@
 import json
 
-from PySide2.QtCore import QStringListModel
+try:
+    from PySide6.QtCore import QStringListModel
+except ImportError:
+    from PySide2.QtCore import QStringListModel
 
 from ywta import shortcuts as shortcuts
 

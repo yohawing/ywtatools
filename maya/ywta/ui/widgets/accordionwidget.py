@@ -22,9 +22,14 @@ Example Usage
 
 """
 
-from PySide2.QtCore import Qt, QRect, QPoint
-from PySide2.QtGui import QBrush, QColor, QPolygon, QPainter, QPalette, QPen
-from PySide2.QtWidgets import QGroupBox, QVBoxLayout, QScrollArea, QSizePolicy, QWidget
+try:
+    from PySide6.QtCore import QPoint, QRect, Qt
+    from PySide6.QtGui import QBrush, QColor, QPainter, QPalette, QPen, QPolygon
+    from PySide6.QtWidgets import QGroupBox, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+except ImportError:
+    from PySide2.QtCore import QPoint, QRect, Qt
+    from PySide2.QtGui import QBrush, QColor, QPainter, QPalette, QPen, QPolygon
+    from PySide2.QtWidgets import QGroupBox, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 
 class AccordionItem(QGroupBox):

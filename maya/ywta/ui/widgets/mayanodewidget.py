@@ -20,15 +20,12 @@ from __future__ import absolute_import
 from __future__ import print_function
 
 
-from PySide2.QtCore import Signal
-from PySide2.QtWidgets import (
-    QWidget,
-    QHBoxLayout,
-    QLabel,
-    QComboBox,
-    QSizePolicy,
-    QPushButton,
-)
+try:
+    from PySide6.QtCore import Signal
+    from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QWidget
+except ImportError:
+    from PySide2.QtCore import Signal
+    from PySide2.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QWidget
 
 import maya.cmds as cmds
 
