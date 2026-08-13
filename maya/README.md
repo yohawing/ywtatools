@@ -70,9 +70,8 @@ AutoRemesher とボリューム保持スムージングだけは、初回にネ�
 Batch Runner、FBX 書き出し、Scene Audit、Dependency Visualizer、Resource Browser
 などがあります。
 
-各機能を採用した背景と詳しい操作条件は
-[`Fabricator 機能を参考にした Maya ツール拡充`](../docs/fabricator-maya-adoption.md) に
-まとめています。
+各機能の詳しい操作条件は
+[`Maya ツール拡充`](../docs/maya-tool-expansion.md) にまとめています。
 
 ## C++ プラグインを使う場合
 

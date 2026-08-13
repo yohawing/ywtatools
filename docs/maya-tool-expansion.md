@@ -1,12 +1,7 @@
-# Fabricator 機能を参考にした Maya ツール拡充
+# Maya ツール拡充
 
-Fabricator v1.4.2 の公開ドキュメントにあるワークフローを機能要件の参考にし、
-YWTA の既存構成と安全方針に合わせて独自実装した Maya ツール群です。
-
-Fabricator 本体は Business Source License 1.1、YWTA は MIT License です。
-ライセンスを混在させないため、Fabricator の Python ソース、アイコン、画像、JSON、
-固有リグ実装はコピーしていません。このリポジトリの実装とテストは YWTA 側で
-新規作成したものです。
+YWTA の既存構成と安全方針に合わせて実装した Maya ツール群です。
+このリポジトリの実装、テスト、UI資産は YWTA 側で作成しています。
 
 単一Undoと失敗時rollbackを契約にする変更操作は、Maya Undoが無効な場合はsceneを
 編集せずに拒否します。
@@ -340,12 +335,12 @@ standalone/offscreenを実Maya GUIの代替証拠にせず、Maya 2024 GUI上の
 
 ## 意図的に未採用の範囲
 
-- Fabricator 固有の modular rig / component binding / Armature blueprint
-- Fabricator Bridge toolbar / shelf / installerの置換（YWTA既存メニューを正本とする）
+- modular rig / component binding / Armature blueprint
+- toolbar / shelf / installerの置換（YWTA既存メニューを正本とする）
 - ML AutoSkin と追加依存の自動インストール
 - AI bridge / assistant
 - Project Setup の engine template
-- Armature / Fabricator blueprintを埋め込むUSD importとUsdSkel delivery
+- Armature blueprintを埋め込むUSD importとUsdSkel delivery
 - scene networkとproject mappingに永続化するmodel / animation export queue
 - Joint Aimer の viewport preview と mirror workflow
 - deprecated Smart Joint Mirror のlive DG network
@@ -353,9 +348,9 @@ standalone/offscreenを実Maya GUIの代替証拠にせず、Maya 2024 GUI上の
 - Scene Audit の自動修復
 - thumbnail 付き Pose / Animation library UI
 - per-control channel mirror mapを持たない汎用mirrored pose
-- Fabricator component address / `FAB_RigBinding` / `world_ctrl` roleに依存するroot motion自動除外とIK→FK比率差fallback
+- component address / rig binding / world control roleに依存するroot motion自動除外とIK→FK比率差fallback
 - UE5固定名のEngine IK reference joint自動生成
-- Fabricator component / Limb / Moduleの複製（汎用joint hierarchy複製のみ採用）
+- component / Limb / Moduleの複製（汎用joint hierarchy複製のみ採用）
 - Joint Offset / Spread のlive slider（axisのlocal/world契約と分岐hierarchyの評価順が未定義）
 - Paint on Select の常駐selection callback（scene-wide scriptJobとtool context状態の設計が必要）
 

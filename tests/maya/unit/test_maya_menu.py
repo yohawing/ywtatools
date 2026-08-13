@@ -1,4 +1,4 @@
-"""Fabricator参考Maya機能のメニュー到達性テスト。"""
+"""Maya機能のメニュー到達性テスト。"""
 
 import ast
 import importlib
@@ -15,7 +15,7 @@ from ywta.menu import core as menu_core
 from ywta.test import TestCase
 
 
-class FabricatorMenuTests(TestCase):
+class MayaMenuTests(TestCase):
     """主要機能のmenu labelとPython command構文を固定する。"""
 
     ADOPTION_MODULES = {
@@ -53,7 +53,7 @@ class FabricatorMenuTests(TestCase):
         if isinstance(node, ast.Name):
             return namespace[node.id]
         if isinstance(node, ast.Attribute):
-            return getattr(FabricatorMenuTests._resolve_reference(node.value, namespace), node.attr)
+            return getattr(MayaMenuTests._resolve_reference(node.value, namespace), node.attr)
         raise TypeError("解決できないmenu command参照です: {}".format(ast.dump(node)))
 
     @classmethod
@@ -95,7 +95,7 @@ class FabricatorMenuTests(TestCase):
         labels = {call.get("label") for call in calls if call.get("label")}
         commands = [call["command"] for call in calls if isinstance(call.get("command"), str)]
         for command in commands:
-            FabricatorMenuTests._assert_command_targets_exist(command)
+            MayaMenuTests._assert_command_targets_exist(command)
         return labels
 
     def test_rigging_adoption_entries_are_reachable(self):
