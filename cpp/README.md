@@ -40,3 +40,5 @@ external/autoremesher/                固定された外部 submodule
 
 Maya 固有の C++ ノードとコマンドは [`maya/cpp/README.md`](../maya/cpp/README.md) を参照して
 ください。
+
+キャンセル対応の実装方針は [AutoRemesher キャンセル方式](docs/autoremesher-cancellation.md) を参照してください。
