@@ -16,7 +16,12 @@
 4. 確定し、処理の完了を待ちます。
 
 元Objectと同じTransform、Collectionを持つ`<元の名前>_remeshed`が作られ、結果が選択
-されます。実行後は`F9`のRedoパネルから設定を変更できます。
+されます。元Objectは`YWTA AutoRemesh Sources` Collectionへ移動し、Viewport/Renderから
+非表示になります。生成Objectを選んでもう一度`AutoRemesh`を実行すると、保持元から同じ
+生成Objectを更新できます。前回設定がdialogへ復元されます。
+
+元Objectを直接確認するときは、生成Objectを選んで`Object > Reveal AutoRemesh Source`を
+実行します。保持Collectionを表示して元Objectを選択します。いずれの操作もUndoできます。
 
 ## Main Settings
 
@@ -38,5 +43,5 @@ uvx nox -s autoremesher_build
 
 ## Known Limitations
 
-UV、Material、Vertex Group、Shape Keyは結果へ転送されません。元Objectは変更されませんが、
+UV、Material、Vertex Group、Shape Keyは結果へ転送されません。元Objectのmeshデータは変更されませんが、
 大きなMeshでは処理に時間がかかるため、最初は低い目標数で確認してください。

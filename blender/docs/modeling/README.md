@@ -11,8 +11,8 @@ Curveを編集したあと、密度を変えてMeshを再生成できます。
 
 ## Topologyを作り直す
 
-[AutoRemesh](autoremesh.md)は、選択MeshからQuad主体の別Objectを生成します。元Objectは
-残るため、結果を比較してから採用できます。
+[AutoRemesh](autoremesh.md)は、選択MeshからQuad主体の別Objectを生成します。元Objectを
+非表示Collectionへ保持し、生成Objectを選んで設定を変えながら再生成できます。
 
 ## 表面を滑らかにする
 
