@@ -1,94 +1,73 @@
-# Animation
+# Animation ツール
 
-メニューは `YWTA > Animation` です。Pose/Clip は JSON として保存し、現在の Maya シーンへ
-適用します。保存・読み込みのファイル操作は Maya Undo では戻りません。適用前にシーンを
-保存し、適用操作には **Undo** を使えるものがあります。
+[← ツールガイドへ戻る](README.md)
 
-## Selection Sets
+メニュー: `YWTA > Animation`
 
-### `YWTA > Animation > Selection Sets`
+## Control の選択セットを作る
 
-objectSet を作成・選択し、portable JSON に書き出し／読み込みします。
+### Selection Sets
 
-- **準備**: セットにしたい transform、joint、control を選択。参照シーンの set は削除や
-  reference edit を作らないため、編集対象を自分のシーンへ用意します。
-- **最小手順**: ウィンドウで set 名を入力して Create/Capture、必要なら Export。別シーンで
-  Import または Import to Selected を選びます。
-- **確認**: 一覧からセットを選ぶと同じメンバーが Maya の選択へ戻ること。JSON の `version`
-  と member 名が検証されます。
-- **安全**: set の作成・削除・JSON 適用は **Undo**（Undo 無効時は拒否）。JSON はファイル
-  書き込みのため別途バックアップ。同名候補や参照 set の曖昧な操作は拒否されます。
+よく使うControlの組み合わせを保存し、あとからまとめて選択できます。
 
-## Pose
+1. Controlを選択します。
+2. `YWTA > Animation > Selection Sets` を開きます。
+3. 名前を付けて `Create from Selection` を実行します。
+4. 一覧から `Select Members` を押し、同じControlが選ばれることを確認します。
 
-### `Set Pose ID...`
+Setの作成とImportは **Undo 1回**。ExportしたJSONは **ファイル保存**です。
+参照Setの削除や、同名候補が複数あるImportは拒否されます。
 
-選択した control 1つに `ywtaPoseId` を設定します。改名や namespace 変更に強い明示アドレス
-です。参照 control、lock 済み／接続済み属性には設定できません。
+## Pose を保存・適用する
 
-### `Save Selected Pose` / `Save Temporary Pose`
+### 名前変更に強いIDを付ける
 
-選択 control の keyable scalar 属性を Pose JSON へ保存します。`Save Selected Pose` は保存先を
-選び、`Save Temporary Pose` は Maya ユーザー用の一時 clipboard を更新します。
+`Set Pose ID...` は、選択したControl 1つへ `ywtaPoseId` を設定します。Control名や
+Namespaceが変わる可能性がある場合に使用します。設定は **Undo 1回**です。
 
-- **準備**: control transform を選択。現在値を保存したい frame に移動します。
-- **確認**: JSON が作成され、別名の同じ control を後で解決できること。
-- **安全**: シーンは変更しません（**シーン変更なし / ファイル書き込み**）。ファイルまたは一時 clipboard は
-  Undo 対象外です。
+### Poseを保存する
 
-### `Load Pose`、option box、`Load Pose to Selected`、`Load Temporary Pose (Configured)`
+- `Save Selected Pose` — 保存先を選んでJSONへ保存
+- `Save Temporary Pose` — ユーザー用の一時JSONへ保存
 
-`Load Pose` は保存 JSON、`Load Temporary Pose (Configured)` は一時 JSON を読み込みます。
-option box（`Load Pose` の右側の□）で Blend と Selected-only を設定し、Configured コマンド
-は保存設定を使用します。`Load Pose to Selected` は現在選択中の同名 control だけへ適用します。
+保存したいFrameへ移動し、Controlを選択して実行します。シーンは変更しませんが、
+どちらも **ファイル保存**です。
 
-- **最小手順**: JSON を指定（Temporary は不要）、Blend/Selected-only を設定、現在 frame で
-  実行します。enum は label で再解決され、欠落・重複候補は編集前に拒否されます。
-- **確認**: 対象 control の値と key が期待値になり、0% Blend なら値も key も増えないこと。
-- **安全**: 値の適用は **Undo**。JSON 読み込み・一時データの更新はファイル操作として
-  別管理です。linear/angle/time unit の不一致は値を自動変換せず警告します。
+### Poseを適用する
 
-## Animation Clip
+- `Load Pose` — JSONを選んで適用
+- `Load Pose to Selected` — 現在選択中のControlだけへ適用
+- `Load Temporary Pose (Configured)` — 一時Poseを保存済み設定で適用
 
-### `Save Selected Animation Clip` / `Save Temporary Animation Clip`
+`Load Pose` の option box では、Blend率とSelected-onlyを設定できます。適用後はControl値と
+現在FrameのKeyを確認してください。適用は **Undo 1回**です。Blend 0%は何も変更しません。
 
-選択 control の highlight（なければ playback range）にある key、tangent、fixed angle/weight
-を Clip JSON へ保存します。一時版は file dialog を使わないユーザー clipboard です。
+## Animation Clip を保存・適用する
 
-- **準備**: control を選択し、time slider の範囲を設定。
-- **確認**: JSON の開始・終了 frame と channel 数が期待値で、後続の Load で再現できること。
-- **安全**: **シーン変更なし / ファイル書き込み**。ファイル書き込みは Maya Undo 外です。
+### Clipを保存する
 
-### `Load Animation Clip (Configured)`、option box
+- `Save Selected Animation Clip`
+- `Save Temporary Animation Clip`
 
-Configured は option box で保存した Mode（Replace/Place/Insert）、Selected-only、開始 offset、
-anchor 設定を使います。右側の□で設定を開きます。
+Controlを選択し、Time Sliderの範囲をHighlightして実行します。Highlightがない場合は
+Playback Rangeが使われます。KeyとTangentがJSONへ保存されます。**ファイル保存**です。
 
-### `Load Animation Clip (Replace)` / `(Place)` / `(Insert)`
+### Clipを適用する
 
-現在 frame を起点に適用します。
+現在Frameを開始位置として、次のいずれかを実行します。
 
-- **Replace**: clip 占有範囲の既存 key を置換。
-- **Place**: 既存 key を削除せず、新しい key を配置。
-- **Insert**: 解決できた control の後続 key を clip 長だけずらして挿入。
+| ツール | 動作 |
+| --- | --- |
+| `Load Animation Clip (Replace)` | Clip範囲の既存Keyを置き換える |
+| `Load Animation Clip (Place)` | 範囲を消さず、ClipのKeyを配置する |
+| `Load Animation Clip (Insert)` | 後続Keyを後ろへ移動してClipを挿入する |
+| `Load Animation Clip to Selected (Replace)` | 選択ControlだけへReplaceする |
+| `Load Temporary Animation Clip (Configured)` | 一時Clipを保存済み設定で適用する |
 
-### `Load Animation Clip to Selected (Replace)`
+`Load Animation Clip (Configured)` は、option boxで保存したMode、Selected-only、Anchor設定を
+使います。適用は **Undo 1回**です。
 
-Replace を現在選択中の control に限定して実行します。別キャラクターに同名 control がある
-場合は選択 scope を明示し、候補が一意でない場合は拒否します。
-
-### `Load Temporary Animation Clip (Configured)`
-
-一時 clipboard を Configured 設定で適用します。Temporary であっても適用はシーン変更です。
-
-**共通の確認と安全**: animCurve の weighted tangent mode が既存と異なる channel は副作用を
-避けて skip されます。非 keyable／constraint 駆動属性は上書きしません。全 channel が欠落・
-skip のときは no-op で Undo chunk を作りません。実キーがない端点の評価値 anchor は設定で
-除外可能です。適用は **Undo** ですが、Clip JSON と一時 clipboard の書き込みは戻りません。
-unit 不一致は警告して retime/値変換しません。
-
-## 既知の範囲
-
-現在は JSON 保存・適用と set 管理が中心です。thumbnail 付きライブラリ、カテゴリ検索、
-mirrored pose はメニューにありません。Maya GUI の実機表示は利用者のセッションで確認して
-ください。
+> [!NOTE]
+> Constraint駆動や非KeyableのChannelは上書きされません。SceneとClipのUnitが異なる場合も
+> 自動変換せず警告します。Insertは、解決されたControlの開始Frame以降にあるKeyをまとめて
+> 移動します。

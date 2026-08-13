@@ -1,150 +1,135 @@
-# Rigging
+# Rigging ツール
 
-メニューは `YWTA > Rigging` です。joint、constraint、control、skeleton の編集は、明記した
-ものを除き事前検証と単一 Undo を使います。参照ノード、lock、既存接続を含む入力は編集前に
-拒否されることがあります。
+[← ツールガイドへ戻る](README.md)
 
-## Transform と joint の基本操作
+メニュー: `YWTA > Rigging`
 
-### `Joint Edit Tools`
+## ジョイントを編集する
 
-`YWTA > Rigging > Joint Edit Tools` は joint の追加、挿入、side mirror、child 方向への orient、
-display size などをまとめた既存ウィンドウです。対象 joint を選択して1つのボタンだけを実行し、
-階層・world pose・接続を確認してください。`Add Joint`、`Mirror Joint`、`Align with Child` など
-の編集は対応する上記コマンドと同じ検証経路を使うものがありますが、ウィンドウ全体を一括操作の
-transactionとはみなさず、**Legacy / limited** として作業コピーで確認します。
+### Joint Edit Tools
 
-| コマンド | 使いどころと最小手順 | 安全メモ |
+ジョイントの作成、挿入、向き、Side、表示軸などをまとめたウィンドウです。
+
+1. 編集するジョイントを選択します。
+2. `YWTA > Rigging > Joint Edit Tools` を開きます。
+3. 一度に1つの操作だけを実行し、階層と姿勢を確認します。
+
+ウィンドウ内には新しい安全な処理と従来処理が混在しています。Create、Insert、Mirror、
+Align などを含め、ウィンドウ全体を1回の Undo で戻せるとは限りません。
+**要バックアップ**として扱ってください。
+
+### よく使うジョイント操作
+
+| ツール | 選択するもの | 結果 |
 | --- | --- | --- |
-| `Freeze to offsetParentMatrix` | transform を選択し、現在の TRS を offsetParentMatrix へ移す | **Legacy / limited**。接続や既存 OPM を含む rig は複製シーンで確認。単一 transaction/rollback を前提にしない |
-| `Create Joint` | mesh/component を選択して中心に1 joint（空選択は原点）を作成 | **Undo**。最後に選択した joint を parent にする。参照 parent は拒否 |
-| `Insert Joints Between Selected...` | 隣接する親子 joint を選択し、挿入数（1–99）を指定 | **Undo**。分岐、skin/constraint/IK 接続、lock/参照 joint は拒否 |
-| `Orient Selected Joints to Children` | joint 階層を選択して子方向へ +X orient | **Undo**。leaf、分岐、接続・lock のある階層は拒否 |
-| `Duplicate Joint Hierarchy...` | root を選び Find/Replace 名を入力して複製 | **Undo**。joint 以外の子 DAG、参照、名前衝突を事前拒否 |
-| `Mirror Joint Hierarchy (Static YZ)` | L/R、Left/Right、lf/rt token を含む root を選択 | **Undo**。world YZ の静的複製。live network ではない |
-| `Joint Size Tools` | joint 階層（または UI の全 joint）を選び display radius を設定 | **Undo**。正の有限値、非参照・未lockのみ |
+| `Create Joint` | 任意のオブジェクトやコンポーネント | 選択範囲の中心へジョイントを作成。空選択なら原点。**Undo 1回** |
+| `Insert Joints Between Selected...` | 直接つながった親子ジョイント | 間に1～99本のジョイントを均等挿入。**Undo 1回** |
+| `Orient Selected Joints to Children` | 子を1つ持つ未リグのジョイント階層 | +X軸を子へ向ける。**Undo 1回** |
+| `Duplicate Joint Hierarchy...` | ルートジョイント1つ | Find / Replace した名前で階層を複製。**Undo 1回** |
+| `Mirror Joint Hierarchy (Static YZ)` | 左右名を持つルートジョイント1つ | YZ面で反対側の静的階層を作成。**Undo 1回** |
+| `Joint Size Tools` | ジョイントまたは階層 | Viewport上の表示半径を変更。**Undo 1回** |
 
-### `Create at Selection Center > Null / Locator / Poly Cube / Poly Sphere / Poly Cylinder / Poly Plane`
+挿入や向き変更は、Skin、Constraint、IK、Animation、Lock がある階層を事前に拒否します。
+Mirror には `L/R`、`Left/Right`、`lf/rt` のいずれかの名前が必要です。
 
-各 primitive は `YWTA > Rigging > Create at Selection Center` の leaf です。選択全体の world
-bounding-box 中心（空選択は原点）へ作成します。**Undo** で作成・選択を戻せます。名前を
-指定する API 経路では current namespace に依存せず、既存名や Maya 自動変換名を拒否します。
+### Create at Selection Center
 
-## Constraints
+`YWTA > Rigging > Create at Selection Center` から、選択範囲の中心へ次を作成できます。
 
-### `YWTA > Rigging > Constraints > Create Constraint...`
+`Null` / `Locator` / `Poly Cube` / `Poly Sphere` / `Poly Cylinder` / `Poly Plane`
 
-種別（Parent/Point/Orient/Scale/Aim）、Maintain Offset、Aim/Up 軸を設定します。driver を
-先、driven を最後に選択し、Create を押します。Aim/Up のゼロ長・平行ベクトル、参照 node、
-重複 driver、lock/animCurve 接続 channel は拒否します。作成は **Undo** です。
+空選択では原点へ作成されます。いずれも **Undo 1回** です。
 
-### `Parent Constraint` / `Point Constraint` / `Orient Constraint` / `Scale Constraint` / `Aim Constraint`
+### Freeze to offsetParentMatrix
 
-Maintain Offset がオンの既定値で作るショートカットです。driver→driven の順で選択し、実行後に
-driven の constraint node と offset を確認します。作成失敗時は rollback、成功時は
-**1回 Undo** です。種類や Aim / Up 軸を変える場合は `Create Constraint...` を使います。
+選択した Transform の現在姿勢を `offsetParentMatrix` へ移し、TRS などを整理します。
+既存の接続や OPM がある Rig では想定外の結果になり得ます。単一処理としての復元保証が
+ないため、**要バックアップ**です。
 
-### `Delete Constraints`
+## Constraint を作る
 
-選択 transform を駆動する constraint だけを削除します。削除対象と選択を確認してから実行し、
-**Undo** で戻します。参照ノード由来の編集は拒否されます。
+driver を先、driven を最後に選択します。
 
-## 命名、選択、スナップ
+- `Create Constraint...` — 種類、Maintain Offset、Aim / Up 軸を設定して作成
+- `Parent Constraint`
+- `Point Constraint`
+- `Orient Constraint`
+- `Scale Constraint`
+- `Aim Constraint`
+- `Delete Constraints` — 選択した Transform を駆動する Constraint を削除
 
-### `Name Tools` / `Rename Chain`
+ショートカット5種は Maintain Offset がオンの既定値で作成します。Aim / Up 軸などを
+変えたい場合は `Create Constraint...` を使ってください。作成と削除は **Undo 1回** です。
 
-`Name Tools` は連番（`#` 桁）、検索置換、prefix/suffix、末尾番号、wildcard、namespace 保持、
-親子 rename をまとめて実行します。`Rename Chain` は互換性のため残している入口で、現在は
-`Name Tools` と同じウィンドウを開きます。対象を選択し、preview/検証後に Apply します。
+## 名前を整理する
 
-- **確認**: 競合・曖昧な短名・参照 node がないこと、期待した full name になったこと。
-- **安全**: どちらの入口も、検証成功後に **Undo/rollback**。参照を変更する rename や namespace
-  自動作成は拒否します。
+### Name Tools / Rename Chain
 
-### Selection Navigation
+選択ノードの連番、検索置換、Prefix / Suffix、番号付けをまとめて行います。
+`Rename Chain` は互換用の入口で、現在は `Name Tools` と同じウィンドウを開きます。
 
-以下は **シーン変更なし / 選択のみ**（ただし Snap はシーン変更）です。
+名前の衝突や参照ノードは変更前に拒否されます。適用は **Undo 1回** です。
 
-- `Select Child Joints`: 選択 root の子孫 joint。
-- `Select Child Meshes`: 選択階層下の表示 mesh transform。
-- `Select Influencing Joints`: 選択 mesh の skinCluster influence。
-- `Select Influenced Meshes`: 選択 joint を influence に持つ mesh。
+## 関連ノードを選択する
 
-複数 skinCluster/output geometry は重複除外されます。結果の選択を Outliner/viewport で確認します。
+次の4項目はシーンを編集せず、選択だけを変更します。
 
-`Snap A to B (Position)` は複数 transform を「最後に選択した target」の world pivot へ位置だけ
-移動します。親子順を解決して **1回 Undo**、参照 source は拒否。回転・scale は変わりません。
+- `Select Child Joints` — 選択階層の子ジョイント
+- `Select Child Meshes` — 選択階層下の表示メッシュ
+- `Select Influencing Joints` — 選択メッシュを変形するジョイント
+- `Select Influenced Meshes` — 選択ジョイントが変形するメッシュ
 
-## Skeleton I/O
+`Snap A to B (Position)` は、最後に選んだ Transform の位置へ、それ以前の Transform を
+移動します。回転と Scale は変更しません。**Undo 1回**です。
 
-### Export
+## Skeleton を保存・読み込みする
 
-`Export Skeleton`（`YWTA > Rigging > Export Skeleton`）は選択 root から versioned JSON を保存。
-**シーン変更なし / ファイル書き込み**で、JSON の変更は Undo 外です。保存後、version と joint
-階層・属性が期待通りか確認します。
+### JSONへ保存
 
-### Import
+- `Export Skeleton` — 選択したルート階層を保存
+- `Save Temporary Skeleton` — ユーザー用の一時JSONへ保存
 
-`Import Skeleton`、`Import Skeleton (Bake Rotate to Joint Orient)`、
-`Import Skeleton (Clean Joint TRS)` は JSON を検証して namespace へ新規階層を作成します。
+どちらもシーンは変更しませんが、**ファイル保存**は Maya Undo の対象外です。
 
-- **準備**: 既存 root と衝突しない namespace、同じ linear/angle unit と up axis（不一致は既定で拒否）。
-- **Bake**: world 姿勢を維持して rotate を jointOrient へ統合。
-- **Clean Joint TRS**: Bake に加えて joint scale=1、rotate=0 を目標にする。
-- **確認/安全**: 新 root、world pose、属性を確認。作成は **単一 Undo/rollback**、既存 root・
-  不正名・schema/enum 不備はシーン変更前に拒否。JSON 自体は Undo 外。
+### JSONから読み込む
 
-### Temporary Skeleton
+- `Import Skeleton` — 保存状態のまま作成
+- `Import Skeleton (Bake Rotate to Joint Orient)` — Rotate を Joint Orient へ統合
+- `Import Skeleton (Clean Joint TRS)` — Joint Orient へ統合し、Rotate 0 / Scale 1 で作成
+- `Load Temporary Skeleton`
+- `Load Temporary Skeleton (Clean Joint TRS)`
 
-`Save Temporary Skeleton` は選択 joint の top root を一時 JSON へ保存（**シーン変更なし /
-ファイル書き込み**）。
-`Load Temporary Skeleton`、`Load Temporary Skeleton (Clean Joint TRS)` はそれぞれ通常 import／
-Clean import を一時 JSON から行います。適用は **Undo**、一時 JSON は別管理です。
+既存名との衝突がない Namespace を指定します。Scene Unit や Up Axis が保存時と異なる場合は
+拒否されます。読み込みは **Undo 1回**です。
 
-## Control Creator と shape
+## Control Curve を作る
 
-### `Control Creator`
+### Control Creator
 
-ウィンドウで curve primitive/library を選び、Build at Origin または Build at Selection を実行。
-色変更、Smart Mirror、CV 編集、Combine を同じ UI から行えます。選択 transform/component の
-world bounds を準備し、作成後に shape の表示色・visibility・接続を確認します。新規作成や
-shape 編集は通常 **単一 Undo/rollback**。参照 control、子 transform を持つ source の Combine
-は拒否されます。library の保存・rename・delete は JSON/ファイル操作で Maya Undo 外なので、
-上書き確認とバックアップを必ず行います。
+Curve の作成、ライブラリ、色、Mirror、CV編集、Shape結合をまとめたウィンドウです。
+作成やShape編集は基本的に **Undo 1回**。ライブラリの保存・改名・削除は
+**ファイル保存**のため Maya Undo では戻りません。
 
-### Curve leaf commands
+### 個別メニュー
 
-- `Export Selected Control Curves`: 選択 control の multi-shape curve JSON を保存（**シーン変更なし /
-  ファイル書き込み**）。
-- `Import Control Curves`: 保存された名前で新しい control transform を作成（**Undo**、schema/名前検証）。
-- `Swap Selected Control Shapes`: transform、key、constraint を維持して shape だけ交換（**Undo**）。
-- `Mirror Selected Control Shape`: side token/namespace から反対側を解決し world YZ 反転（**Undo**）。
-- `Edit Selected Control CVs`: 選択 control 直下の NURBS curve CV だけを編集選択（**シーン変更なし /
-  選択のみ**）。
-- `Combine Selected Control Shapes`: 最後に選択した control へ world shape を結合し、他 source
-  transform を削除（**Undo**だが破壊的。子 transform・参照 source は拒否）。
+- `Export Selected Control Curves` — 選択CurveをJSON保存。**シーン変更なし / ファイル保存**
+- `Import Control Curves` — JSONから新しいControlを作成。**Undo 1回**
+- `Swap Selected Control Shapes` — Transformを残してShapeだけ交換。**Undo 1回**
+- `Mirror Selected Control Shape` — 反対側ControlへYZ反転したShapeを設定。**Undo 1回**
+- `Edit Selected Control CVs` — 直下のCurve CVを選択。**シーン変更なし**
+- `Combine Selected Control Shapes` — 最後に選んだControlへShapeを集約し、他のTransformを削除。**Undo 1回**
 
-## Swing/Twist
+## Swing / Twist を接続する
 
-### `Connect Twist Joint` と option box
+`Connect Twist Joint` は、driver、driven の順で選択し、option box で軸とWeightを設定します。
+Pluginと複数のDG Nodeを作る従来処理で、既存接続を含めた一括復元は保証されません。
+**要バックアップ**です。
 
-driver、driven の順で選択し、option box で twist axis/weight 等を設定して network を作成。
-作成後、driven が期待する twist/swing に追従するかを確認します。既存 network/plug を確認
-してから使ってください。実装は Maya plugin と DG node を追加する **Legacy / limited** 操作で、
-すべてを1 transactionで戻せる契約ではありません。rig のコピーで行い、必要なら node/network
-を手動で削除できるよう記録します。
+## HumanIK を設定する
 
-## HumanIK
+`HumanIK Auto Setup` は、Hip / Pelvis を中心に限定的なHumanIK Characterを作成します。
+汎用的な全身自動マッピングではありません。
 
-### `HumanIK Auto Setup`
-
-選択 character/rig を基に HumanIK を自動設定します。hip/pelvis 中心の限定的な mapping と固定
-character 挙動で、汎用 retargeter ではありません。現在の環境では PyMEL import が必要で、
-`ModuleNotFoundError: No module named 'pymel'` になる既知の問題があります。依存が解決しても
-結果を Character Controls で確認し、作業コピーで手動修正・rollback できる状態を保ってください。
-
-## 既知の範囲
-
-live mirror network、汎用 mirrored pose、component blueprint などは現行メニューにありません。
-各操作の implementation/test は Maya 2024 を対象とし、ここで実 GUI smoke を保証するものでは
-ありません。
+> [!WARNING]
+> 現在は PyMEL が見つからず起動できない環境があります。固定Character名などの制約も
+> あるため、依存解決後も作業シーンのコピーで結果を確認してください。

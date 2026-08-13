@@ -1,71 +1,58 @@
-# Pipeline / Export
+# Pipeline / Export ツール
 
-トップレベル `YWTA` の実行・書き出し機能です。シーンの Undo とファイルの rollback は別物
-です。書き出し先や保存設定を確認し、重要な scene/FBX は事前に別名保存してください。
+[← ツールガイドへ戻る](README.md)
 
-## `Run Script`
+トップレベルの `YWTA` メニューにあります。
 
-### `YWTA > Run Script`
+## Python Script を実行する
 
-選択した Python ファイルを現在の Maya process で実行します。
+### Run Script
 
-- **準備**: 内容をレビューし、対象 scene を保存。信頼できる script だけを指定します。
-- **最小手順**: Open で `.py` を選ぶ → 実行 → Script Editor の出力と scene を確認。
-- **安全**: **開発者専用 / 破壊的**。sandbox、Undo transaction、権限制限はありません。script は
-  任意の node、ファイル、外部プロセスを変更でき、失敗時の自動 rollback もありません。
+指定したFolderから `.py` を選び、現在のMaya内で実行します。実行したScriptはRecentへ
+記録されます。
 
-## `Batch Runner`
+> [!CAUTION]
+> Sandboxも自動Undoもありません。ScriptはScene、File、外部Processを自由に変更できます。
+> 内容を確認した信頼できるScriptだけを、保存済みSceneで実行してください。
 
-### `YWTA > Batch Runner`
+## 複数Sceneを一括処理する
 
-scene ごとに子 `mayapy` を起動し、headless Maya で同じ script を処理します。scene list、script、
-Save checkbox、Cancel、timeout、結果ログを UI で確認できます。
+### Batch Runner
 
-- **準備**: 入力 scene と script を保存。起動前に全 script の構文検証を通します。
-- **最小手順**: scene を追加 → script を指定 → Save の必要性を明示 → Run。各 scene の結果と
-  child stdout を確認。
-- **保存の挙動**: Save を明示的に有効にした場合だけ、同じ directory の一時 scene へ完了後に
-  保存し、成功時に元 file を原子的に置換します。Save 無効でも script 自身の file/scene 書込み
-  は制限されません。
-- **確認**: scene ごとの success/error、保存済み file、script が scene を rename/open していない
-  ことを確認。Cancel は処理中 scene の完了を待ち、次を起動しません。hung child は既定 timeout
-  後に終了して次へ進みます。
-- **安全**: **開発者専用 / 破壊的**。Maya の親 process Undo はなく、子 script の副作用を
-  rollback しません。必ずコピーと信頼できる script を使います。
+Sceneごとに別の `mayapy` を起動し、同じPython Scriptを実行します。
 
-## FBX export
+1. `Add Scenes` で `.ma` / `.mb` を追加します。
+2. 実行するScriptを入力します。
+3. 上書きが必要な場合だけ `Save each scene in place` をオンにします。
+4. `Run` を押し、Sceneごとの結果Logを確認します。
 
-### `Export Selected FBX`
+Saveをオンにした場合、処理完了後に一時Sceneから元Fileへ置き換えます。失敗時は元Fileを
+保護します。ただし、Script自身が行うFile書き込みは制限されません。Maya Undoも使えないため、
+**開発者向け / 要バックアップ**です。
 
-選択 mesh、skinned mesh、または asset group を静的 FBX として保存します。skinned mesh だけを
-選んだ場合は skinCluster の top influence root を自動追加します。
+## FBX を書き出す
 
-### `Export Animation FBX`
+### Export Selected FBX
 
-最上位 joint root を選び、time-slider highlight（未指定時は playback range）を bake して
-animation FBX を保存します。chain 途中の joint は root として許可されません。
+Mesh、Skinned Mesh、Asset Group、Jointを選択してFBXへ書き出します。Skinned Meshを選んだ
+場合は、必要な最上位Influence Jointも自動で含めます。
 
-**共通手順**
+### Export Animation FBX
 
-1. Export 対象を選択（Animation は最上位 root だけ）。
-2. 出力先 `.fbx` と range を指定。
-3. FBX plugin が load され、書き出し後に対象 file を Maya/別 viewer で確認。
+最上位のRoot Jointを1つ選択し、AnimationをBakeしてFBXへ書き出します。Time Sliderの
+Highlightがあればその範囲、なければPlayback Rangeが使われます。
 
-実装は Maya selection と FBX settings を push/pop して復元し、同じ directory の一時 FBX へ
-書き出して成功時だけ置換します。失敗時は既存 target を保護します。scene の選択と FBX 設定は
-復元されますが、成功した target file の上書きは Maya Undo ではありません。元 FBX を残し、
-書き出し後の skeleton rename/duplicate/namespace 移動がないことも確認します。
+どちらも一時FBXへの書き出しが成功した場合だけ、出力先を置き換えます。失敗時は既存FBXを
+保護し、Mayaの選択とFBX設定も復元します。ただし、成功した上書きは **ファイル保存**であり、
+Maya Undoでは戻りません。
 
-## Documentation と reload
+## ドキュメントを開く
 
-### `Documentation`
+`Documentation` は、設定された `DOCUMENTATION_ROOT` をブラウザで開きます。
+シーンは変更しません。ローカルではこの [ツールガイド](README.md) を参照してください。
 
-YWTA の `DOCUMENTATION_ROOT` をブラウザで開きます（**シーン変更なし**）。
-オフラインではこのローカル [ツールカタログ](README.md) を参照してください。
+## 開発中のコードを再読み込みする
 
-### `Reload YWTA`
-
-トップレベルの reload command は YWTA package を unload して再 import します。作業中の scene
-データは通常変更しませんが、既存 module の参照が古くなったり UI state が失われることがあり
-ます。未保存 scene を保存し、**開発者専用**として使用してください。より広い `Reload All
-Modules` の制限は [Utility](utility.md) を参照します。
+`Reload YWTA` は、読み込まれているYWTA Packageを再読み込みしてメニューを作り直します。
+Sceneを直接編集する機能ではありませんが、既存UIや古いModule参照が残る可能性があります。
+**開発者向け**として、Sceneを保存してから使用してください。

@@ -1,57 +1,55 @@
-# Mesh
+# Mesh ツール
 
-メニューは `YWTA > Mesh`。頂点ロックは選択状態だけを変更し、merge/remesh/smoothing は
-メッシュを変更します。ネイティブ plugin が見つからない場合は処理を続行せず、Maya 2024 の
-ビルド済み plugin を用意してください。
+[← ツールガイドへ戻る](README.md)
 
-## 頂点ロック
+メニュー: `YWTA > Mesh`
 
-### `Lock Selected Vertices` / `Unlock Selected Vertices`
+## 頂点をロックする
 
-component mode で vertex を選択し、Lock または Unlock を実行します。ロックされた vertex は
-後続の編集で保護されます。geometry は変わりませんが、vertex 属性は変更されます。単一
-transaction や失敗時 rollback を持たない **Legacy / limited** 操作なので、まず少数の頂点で
-試し、通常の Maya Undo で戻ることを確認してください。頂点を選んでいない場合の事前検証も
-ないため、必ず polygon vertex を選択してから実行します。
+`Lock Selected Vertices` / `Unlock Selected Vertices`
 
-## Merge と skin
+Polygon Vertexを選択して実行します。Geometryは変わりませんが、頂点のLock属性は変更されます。
+一括Undoや失敗時の復元を持たない従来処理なので、少数の頂点でMaya Undoを確認してから
+使ってください。頂点を選ばずに実行するとエラーになる場合があります。
 
-### `Merge Objects and Skinning`
+## 階層をJointとSkinned Meshへ変換する
 
-複数 transform を選択すると geometry を merge し、階層から joint を作成して Bind Skin します。
+### Merge Objects and Skinning
 
-- **準備**: 同じ asset の mesh だけを選択し、必要な rest pose を保存。
-- **最小手順**: 選択して実行、生成された joint hierarchy と skinCluster を確認。
-- **安全**: **Legacy / limited**。元 object の扱い、bind 状態、階層変更を scene copy で確認し、
-  単一 transaction/rollback を仮定しないでください。
+選択したTransform階層をJoint化し、子孫Meshを結合してBindします。
 
-## AutoRemesher
+1. 変換したい階層のRoot Transformを選択します。
+2. `YWTA > Mesh > Merge Objects and Skinning` を実行します。
+3. 生成されたJoint、結合Mesh、SkinClusterを確認します。
 
-### `AutoRemesher Node`
+最初に選択したTransformだけを使う従来処理です。名前の衝突や途中失敗に対する一括復元が
+ないため、**要バックアップ**です。
 
-選択 mesh を入力に、オプション（target density 等）を設定して別 output object を作るノードを
-追加します。`external/autoremesher` submodule と Maya plugin build が必要です。
+## クアッドへリメッシュする
 
-- **最小手順**: mesh を選択 → options → Create → output mesh の topology/UV を確認。
-- **安全**: node/output の作成は **Legacy / limited**。元 mesh を保持しますが、ノードを削除する
-  操作や再計算を含めて作業コピーで確認してください。キャンセル、UV/weight transfer、
-  Blender の擬似非破壊化は未実装（TODO）です。
+### AutoRemesher Node
 
-## Volume Preserving Smoothing
+元Meshを入力にしたNodeと、別の出力Meshを作ります。元Meshは残り、NodeのParameterを
+変更すると再計算されます。
 
-### `Volume Preserving Smoothing`
+利用前に AutoRemesher を含むMaya C++ Pluginをビルドしてください。Meshを1つ選択し、
+option windowでTarget Countなどを設定して実行します。
 
-選択 mesh を HC 方式で smoothing し、閉メッシュの volume を補正します。
+Node作成は一括Transactionを持たないため **要バックアップ**です。UVやSkin Weightは
+転送されません。
 
-- **準備**: 頂点 lock/edge boundary と smoothing 設定を確認。閉 mesh で体積評価が有効です。
-- **最小手順**: mesh を選択 → 実行（必要な native/python plugin が自動 load されます）。
-- **確認**: vertex position、volume、境界が意図どおりであること。
-- **安全**: `VolumeSmoothingCommand` は座標の前後を保持する undoable command で、**1回 Undo**
-  できます。失敗時は変更を残しません。プラグイン未配置や topology 不正は実行前に解決します。
+## 表面を滑らかにする
 
-### `Volume Smooth Brush`
+### Volume Preserving Smoothing
 
-viewport をドラッグして局所 smoothing（半径は object-space）を行う brush context です。通常は
-stroke 単位で **Undo** になりますが、現在 `MPoint`/`MFloatPoint` TypeError の既知 blocker が
-あり、利用不可として扱います。修正確認までは本番で実行せず、代わりに上記の全体 smoothing を
-使用してください。
+選択Meshを滑らかにし、閉じたMeshでは元のVolumeへ近づけます。Mesh、Vertex、Edge、Faceの
+いずれかを、1つのMesh内で選択して実行します。Hard Edge、Crease、選択Edgeは輪郭として
+保持されます。**Undo 1回**です。
+
+利用前に `ywta_mesh_smoothing.dll` とMaya Pluginが必要です。
+
+### Volume Smooth Brush
+
+> [!WARNING]
+> 現在、Maya APIの `MPoint` / `MFloatPoint` 型不一致により操作できない既知の問題があります。
+> 修正されるまでは使用せず、`Volume Preserving Smoothing` を使ってください。
