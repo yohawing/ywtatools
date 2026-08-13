@@ -151,6 +151,10 @@ class MeshDiagnosticsAddonTests(unittest.TestCase):
         self.assertEqual(bpy.ops.ywta.fill_selected_boundary_loops(), {"FINISHED"})
         bpy.ops.object.mode_set(mode="OBJECT")
         self.assertEqual(len(mesh.polygons), 5)
+        from ywta_mesh_core import mesh_diagnostics as diagnostics_binding
+
+        report = diagnostics_binding.diagnose(*ywtatools_addon.mesh_diagnostics._mesh_arrays(mesh))
+        self.assertEqual(report.winding_conflict_edges, [])
 
 
 if __name__ == "__main__":

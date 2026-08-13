@@ -261,6 +261,7 @@ class YWTA_OT_split_mesh_manifold(Operator):
                 return {"FINISHED"}
             if plan.changed:
                 _copy_mesh_for_split(obj, plan)
+            bpy.ops.object.mode_set(mode="EDIT")
         except (
             ValueError,
             FileNotFoundError,
@@ -311,12 +312,13 @@ class YWTA_OT_fill_selected_boundary_loops(Operator):
                 raise ValueError("閉じたboundary loopを1つ以上、全edge選択してください")
             bpy.ops.object.mode_set(mode="EDIT")
             bm = bmesh.from_edit_mesh(obj.data)
-            bm.verts.ensure_lookup_table()
-            for loop in selected_loops:
-                try:
-                    bm.faces.new([bm.verts[vertex] for vertex in reversed(loop)])
-                except ValueError as error:
-                    raise ValueError("選択boundaryをn-gonとして追加できません") from error
+            edge_by_pair = {tuple(sorted(vertex.index for vertex in edge.verts)): edge for edge in bm.edges}
+            fill_edges = [
+                edge_by_pair[tuple(sorted((loop[index], loop[(index + 1) % len(loop)])))]
+                for loop in selected_loops
+                for index in range(len(loop))
+            ]
+            bmesh.ops.holes_fill(bm, edges=fill_edges)
             bmesh.update_edit_mesh(obj.data, loop_triangles=True, destructive=True)
         except (ValueError, FileNotFoundError, binding.MeshDiagnosticError) as error:
             if obj.mode != "EDIT":
