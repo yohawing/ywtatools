@@ -2,7 +2,10 @@
 
 import unittest
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError as error:
+    raise unittest.SkipTest("RBF tests require numpy and scipy") from error
 
 from ywta.rig.rbf_solver import CancelledError, RbfSolver, sample_spatial_indices
 

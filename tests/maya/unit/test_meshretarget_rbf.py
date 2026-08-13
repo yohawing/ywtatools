@@ -5,7 +5,10 @@ import types
 import unittest
 from unittest import mock
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError as error:
+    raise unittest.SkipTest("RBF tests require numpy and scipy") from error
 
 
 try:
