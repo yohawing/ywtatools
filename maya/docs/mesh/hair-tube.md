@@ -24,7 +24,7 @@ Maya起動前に`YWTA_MESH_CORE_DLL`へ絶対パスを設定します。
 
 ## Curve Cageを作る
 
-1. 全区間がquad 4面で構成されたopen tubeを用意します。
+1. 全区間がquad 4面で構成されたtubeを用意します。root/tipのquad capは付いていても構いません。
 2. Component Modeで、根元の四角形を囲む4辺だけを選択します。
 3. `YWTA > Mesh > Hair Tube Curve Cage...`を開きます。
 4. `Segments`を長手方向の分割数に設定します。
@@ -32,6 +32,7 @@ Maya起動前に`YWTA_MESH_CORE_DLL`へ絶対パスを設定します。
 
 元Meshは変更されません。`<元名>_HairTube`と4本のdegree-1 Curveが作られ、生成Meshが
 選択されれば成功です。結果が不適切なら1回のUndoでMeshと4 Curveをまとめて削除できます。
+rootまたはtipのquad capは、再生成とLODでも同じ端を閉じたまま保持します。
 
 UV seam、face-vertex color、Material assignment、Skin Weightはsource mappingで補間されます。
 Skin Weightは生成頂点ごとに正規化され、同じInfluenceで新しいskinClusterを作ります。
@@ -58,7 +59,8 @@ Skin Weightは生成頂点ごとに正規化され、同じInfluenceで新しい
 
 ## Known Limitations
 
-- 分岐、cap、triangle、non-manifold、自己交差を含む入力はfail-closedで拒否します。
+- 分岐、triangle、ngon、途中のcap、non-manifold、自己交差を含む入力はfail-closedで拒否します。
+- capはroot/tipにある1枚のquadだけを保持します。
 - Custom Normal、BlendShapeは生成Meshへ転送しません。
 - 4本のCurveは同じCV数とdegree 1を保つ必要があります。
 - 極端に大きい`Segments`では自己交差検査の計算量が増えます。

@@ -8,6 +8,8 @@
 
 namespace ywta::mesh_core {
 
+inline constexpr std::uint64_t kNoHairTubeFace = UINT64_MAX;
+
 /** 髪チューブのトポロジー抽出結果。 */
 enum class HairTubeStatus {
   kOk = 0,
@@ -44,6 +46,8 @@ struct HairTubeTopology {
   std::vector<std::uint32_t> rings;
   std::vector<std::uint32_t> rails;
   std::vector<std::uint64_t> side_faces;
+  std::uint64_t root_cap_face = kNoHairTubeFace;
+  std::uint64_t tip_cap_face = kNoHairTubeFace;
 };
 
 /** 髪チューブ抽出の状態と診断。 */
@@ -59,8 +63,8 @@ struct HairTubeTopologyResult {
 /**
  * 単一のopen quad tubeから4 railと共有ring列をread-onlyで抽出する。
  *
- * root_loopの巡回順をrail ID 0〜3の正本とする。cap、triangle、分岐、再訪、
- * non-manifold、余分なcomponentは修復せず、部分結果を返さず拒否する。
+ * root_loopの巡回順をrail ID 0〜3の正本とする。root/tipのquad capは保持する。
+ * triangle、分岐、再訪、non-manifold、余分なcomponentは修復せず、部分結果を返さず拒否する。
  */
 [[nodiscard]] HairTubeTopologyResult extract_hair_tube_topology(
     const RawTopologyView& topology, const HairTubeRootLoopView& root_loop);

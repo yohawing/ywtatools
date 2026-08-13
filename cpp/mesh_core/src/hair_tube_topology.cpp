@@ -93,6 +93,14 @@ bool opposite_vertices(const std::array<std::uint32_t, 4>& face, std::uint32_t f
   return false;
 }
 
+bool face_matches_ring(const RawTopologyView& topology, std::uint64_t face,
+                       const std::array<std::uint32_t, 4>& ring) {
+  const auto vertices = face_vertices(topology, face);
+  return std::all_of(vertices.begin(), vertices.end(), [&ring](std::uint32_t vertex) {
+    return std::find(ring.begin(), ring.end(), vertex) != ring.end();
+  });
+}
+
 }  // namespace
 
 HairTubeTopologyResult extract_hair_tube_topology(const RawTopologyView& topology,
@@ -111,6 +119,8 @@ HairTubeTopologyResult extract_hair_tube_topology(const RawTopologyView& topolog
 
   std::array<std::uint32_t, 4> root{};
   std::unordered_set<std::uint32_t> root_vertices;
+  std::uint64_t root_cap_face = kNoHairTubeFace;
+  bool root_has_boundary_edge = false;
   for (std::size_t rail = 0; rail < root.size(); ++rail) {
     const std::uint32_t vertex = root_loop.vertices[rail];
     if (vertex >= topology.vertex_count) {
@@ -172,16 +182,33 @@ HairTubeTopologyResult extract_hair_tube_topology(const RawTopologyView& topolog
       return error_result(HairTubeStatus::kRootEdgeMissing,
                           "root loop contains an edge absent from the topology");
     }
-    if (found->second.size() != 1) {
-      return error_result(HairTubeStatus::kRootNotBoundary,
-                          "root loop must be an open boundary loop");
+    if (found->second.size() == 1) {
+      root_has_boundary_edge = true;
+      continue;
     }
+    const auto cap = std::find_if(found->second.begin(), found->second.end(),
+                                  [&topology, &root](const EdgeUse& use) {
+                                    return face_matches_ring(topology, use.face, root);
+                                  });
+    if (cap == found->second.end() ||
+        (root_cap_face != kNoHairTubeFace && root_cap_face != cap->face)) {
+      return error_result(HairTubeStatus::kRootNotBoundary,
+                          "root loop must be a boundary loop or share one quad cap");
+    }
+    root_cap_face = cap->face;
+  }
+  if (root_cap_face != kNoHairTubeFace && root_has_boundary_edge) {
+    return error_result(HairTubeStatus::kRootNotBoundary, "root loop is only partially capped");
   }
 
   HairTubeTopology extracted;
   extracted.rings.insert(extracted.rings.end(), root.begin(), root.end());
   std::array<std::uint32_t, 4> current = root;
   std::vector<bool> visited_faces(static_cast<std::size_t>(topology.face_count), false);
+  if (root_cap_face != kNoHairTubeFace) {
+    visited_faces[static_cast<std::size_t>(root_cap_face)] = true;
+    extracted.root_cap_face = root_cap_face;
+  }
   std::unordered_set<std::uint32_t> visited_vertices(root.begin(), root.end());
 
   while (true) {
@@ -212,6 +239,17 @@ HairTubeTopologyResult extract_hair_tube_topology(const RawTopologyView& topolog
                               "tip loop is not an open boundary loop");
         }
       }
+      break;
+    }
+    const bool one_continuation = std::all_of(
+        continuation_counts.begin(), continuation_counts.end(),
+        [](std::size_t count) { return count == 1; });
+    if (one_continuation &&
+        std::all_of(next_faces.begin() + 1, next_faces.end(),
+                    [&next_faces](std::uint64_t face) { return face == next_faces[0]; }) &&
+        face_matches_ring(topology, next_faces[0], current)) {
+      extracted.tip_cap_face = next_faces[0];
+      visited_faces[static_cast<std::size_t>(next_faces[0])] = true;
       break;
     }
     if (std::any_of(continuation_counts.begin(), continuation_counts.end(),

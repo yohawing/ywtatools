@@ -14,6 +14,7 @@ using ywta::mesh_core::extract_hair_tube_topology;
 using ywta::mesh_core::HairTubeRootLoopView;
 using ywta::mesh_core::HairTubeStatus;
 using ywta::mesh_core::HairTubeTopologyResult;
+using ywta::mesh_core::kNoHairTubeFace;
 using ywta::mesh_core::RawTopologyView;
 using ywta::mesh_core::TopologyStatus;
 
@@ -136,14 +137,26 @@ void test_invalid_roots_are_rejected() {
                        HairTubeStatus::kNullRootVertices, "null root buffer");
 }
 
-void test_non_quad_and_capped_root_are_rejected() {
+void test_non_quad_is_rejected_and_caps_are_recorded() {
   Fixture triangle = open_tube();
   triangle.faces[0].pop_back();
   expect_empty_failure(run(triangle, {0, 1, 2, 3}), HairTubeStatus::kNonQuadFace, "triangle input");
 
   Fixture capped = open_tube();
   capped.faces.push_back({0, 3, 2, 1});
-  expect_empty_failure(run(capped, {0, 1, 2, 3}), HairTubeStatus::kRootNotBoundary, "capped root");
+  capped.faces.push_back({8, 9, 10, 11});
+  const HairTubeTopologyResult capped_result = run(capped, {0, 1, 2, 3});
+  expect(capped_result.ok(), "quad root and tip caps should be accepted");
+  expect(capped_result.topology.root_cap_face == 8,
+         "root cap source face should be recorded");
+  expect(capped_result.topology.tip_cap_face == 9,
+         "tip cap source face should be recorded");
+
+  Fixture open = open_tube();
+  const HairTubeTopologyResult open_result = run(open, {0, 1, 2, 3});
+  expect(open_result.topology.root_cap_face == kNoHairTubeFace &&
+             open_result.topology.tip_cap_face == kNoHairTubeFace,
+         "open tube should not report caps");
 
   Fixture internal_root = open_tube();
   expect_empty_failure(run(internal_root, {4, 5, 6, 7}), HairTubeStatus::kRootNotBoundary,
@@ -163,17 +176,13 @@ void test_non_manifold_and_winding_conflict_are_rejected() {
                        "winding conflict");
 }
 
-void test_incomplete_section_and_tip_cap_are_rejected() {
+void test_incomplete_section_is_rejected() {
   Fixture incomplete = open_tube();
   incomplete.vertex_count = 14;
   incomplete.faces.push_back({8, 9, 13, 12});
   expect_empty_failure(run(incomplete, {0, 1, 2, 3}), HairTubeStatus::kSectionCountChanged,
                        "incomplete station");
 
-  Fixture tip_cap = open_tube();
-  tip_cap.faces.push_back({8, 9, 10, 11});
-  expect_empty_failure(run(tip_cap, {0, 1, 2, 3}), HairTubeStatus::kAmbiguousContinuation,
-                       "tip cap");
 }
 
 void test_bow_tie_vertex_is_rejected_as_ambiguous() {
@@ -210,9 +219,9 @@ int main() {
   test_face_order_does_not_change_rings_or_rails();
   test_reversed_root_reverses_cyclic_rail_order_consistently();
   test_invalid_roots_are_rejected();
-  test_non_quad_and_capped_root_are_rejected();
+  test_non_quad_is_rejected_and_caps_are_recorded();
   test_non_manifold_and_winding_conflict_are_rejected();
-  test_incomplete_section_and_tip_cap_are_rejected();
+  test_incomplete_section_is_rejected();
   test_bow_tie_vertex_is_rejected_as_ambiguous();
   test_extra_component_is_rejected();
   test_malformed_buffer_is_rejected_without_partial_output();

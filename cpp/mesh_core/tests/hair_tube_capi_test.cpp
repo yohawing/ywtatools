@@ -79,6 +79,16 @@ void test_generate_from_edited_rails() {
   expect(output.positions_xyz[0] == -0.5 && output.positions_xyz[35] == 1.0,
          "edited rail endpoints should be preserved");
   ywta_hair_tube_free(&output);
+
+  const int capped_status =
+      ywta_hair_tube_generate_from_rails_ex(rails.data(), 2, 2, 0.0, 1, 1, &output);
+  expect(capped_status == 0 && output.quad_count == 10 && output.root_capped == 1 &&
+             output.tip_capped == 1,
+         "edited rails should regenerate requested root and tip caps");
+  expect(output.source_faces[8] == 4 && output.source_faces[9] == 5 &&
+             output.source_corner_faces[32] == 4 && output.source_corner_faces[36] == 5,
+         "generated cap faces should retain synthetic source face mappings");
+  ywta_hair_tube_free(&output);
 }
 
 }  // namespace

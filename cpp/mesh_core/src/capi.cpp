@@ -100,6 +100,22 @@ int write_generated_output(const ywta::mesh_core::HairTubeCurveCage& cage,
       }
     }
   }
+  const std::size_t source_side_face_count =
+      static_cast<std::size_t>(cage.source_station_count - 1) * 4;
+  std::size_t output_face = (output_station_count - 1) * 4;
+  if (cage.root_capped) {
+    const std::uint64_t source_face =
+        source_topology != nullptr ? source_topology->root_cap_face : source_side_face_count;
+    source_faces[output_face++] = source_face;
+    source_corner_faces.insert(source_corner_faces.end(), 4, source_face);
+  }
+  if (cage.tip_capped) {
+    const std::uint64_t source_face = source_topology != nullptr
+                                          ? source_topology->tip_cap_face
+                                          : source_side_face_count + cage.root_capped;
+    source_faces[output_face] = source_face;
+    source_corner_faces.insert(source_corner_faces.end(), 4, source_face);
+  }
 
   output->vertex_count = generated.mesh.positions.size();
   output->quad_count = generated.mesh.quad_indices.size() / 4;
@@ -114,6 +130,8 @@ int write_generated_output(const ywta::mesh_core::HairTubeCurveCage& cage,
   output->max_fit_deviation = cage.max_fit_deviation;
   output->max_source_distance = generated.mesh.max_source_distance;
   output->cubic_active = cage.cubic_active ? 1 : 0;
+  output->root_capped = cage.root_capped ? 1 : 0;
+  output->tip_capped = cage.tip_capped ? 1 : 0;
   return 0;
 }
 
@@ -173,6 +191,14 @@ int ywta_hair_tube_generate(uint32_t vertex_count, const double* positions_xyz,
 int ywta_hair_tube_generate_from_rails(const double* rail_positions_xyz, uint64_t station_count,
                                        uint64_t target_segments, double fit_tolerance,
                                        YwtaHairTubeOutput* output) {
+  return ywta_hair_tube_generate_from_rails_ex(rail_positions_xyz, station_count, target_segments,
+                                               fit_tolerance, 0, 0, output);
+}
+
+int ywta_hair_tube_generate_from_rails_ex(const double* rail_positions_xyz,
+                                          uint64_t station_count, uint64_t target_segments,
+                                          double fit_tolerance, int root_capped, int tip_capped,
+                                          YwtaHairTubeOutput* output) {
   last_error.clear();
   if (output == nullptr) {
     last_error = "output must not be null";
@@ -207,6 +233,8 @@ int ywta_hair_tube_generate_from_rails(const double* rail_positions_xyz, uint64_
       }
     }
     topology.side_faces.resize(static_cast<std::size_t>(station_count - 1) * 4);
+    topology.root_cap_face = root_capped != 0 ? 0 : ywta::mesh_core::kNoHairTubeFace;
+    topology.tip_cap_face = tip_capped != 0 ? 0 : ywta::mesh_core::kNoHairTubeFace;
     const ywta::mesh_core::HairTubeCageResult cage = ywta::mesh_core::build_hair_tube_curve_cage(
         topology, {positions.data(), positions.size()}, fit_tolerance);
     if (!cage.ok()) {

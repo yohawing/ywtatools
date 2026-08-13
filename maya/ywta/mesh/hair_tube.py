@@ -23,6 +23,8 @@ except ImportError:
 
 _WINDOW_NAME = "ywta_hairTubeCurveCageWindow"
 _CURVE_NAMES_ATTRIBUTE = "ywtaHairTubeCurveNames"
+_ROOT_CAP_ATTRIBUTE = "ywtaHairTubeRootCapped"
+_TIP_CAP_ATTRIBUTE = "ywtaHairTubeTipCapped"
 _EDGE_PATTERN = re.compile(r"^(?P<object>.+)\.e\[(?P<index>\d+)\]$")
 
 
@@ -146,6 +148,12 @@ def _build_attribute_payload(source, generated):
             source_face = generated.source_corner_faces[output_face * 4 + corner]
             first, second = generated.source_vertex_pairs[output_vertex]
             alpha = generated.source_mapping[output_vertex][1]
+            if alpha <= 0.0:
+                second = first
+                alpha = 0.0
+            elif alpha >= 1.0:
+                first = second
+                alpha = 0.0
             corner_sources.append((source_face, first, second, alpha))
 
     uv_sets = []
@@ -295,6 +303,25 @@ def _set_curve_names(mesh, names):
     cmds.setAttr(f"{mesh}.{_CURVE_NAMES_ATTRIBUTE}", json.dumps(names), type="string")
 
 
+def _set_cap_state(mesh, root_capped, tip_capped):
+    """生成meshへroot/tip cap保持状態を保存する。"""
+    for attribute, value in (
+        (_ROOT_CAP_ATTRIBUTE, root_capped),
+        (_TIP_CAP_ATTRIBUTE, tip_capped),
+    ):
+        if not cmds.attributeQuery(attribute, node=mesh, exists=True):
+            cmds.addAttr(mesh, longName=attribute, attributeType="bool")
+        cmds.setAttr(f"{mesh}.{attribute}", bool(value))
+
+
+def _cap_state(mesh):
+    """生成meshに保存したroot/tip cap状態を返す。"""
+    return tuple(
+        bool(cmds.getAttr(f"{mesh}.{attribute}")) if cmds.attributeQuery(attribute, node=mesh, exists=True) else False
+        for attribute in (_ROOT_CAP_ATTRIBUTE, _TIP_CAP_ATTRIBUTE)
+    )
+
+
 def _read_curve_cage(mesh):
     """生成meshに紐づく4本のcurve CVをmesh object-spaceで読む。"""
     if not cmds.attributeQuery(_CURVE_NAMES_ATTRIBUTE, node=mesh, exists=True):
@@ -333,6 +360,7 @@ def create_from_selected_root(segments=8, fit_tolerance=0.0):
         _apply_attribute_payload(output, attributes)
         names = _create_curve_cage(source, generated)
         _set_curve_names(output, names)
+        _set_cap_state(output, generated.root_capped, generated.tip_capped)
         cmds.select(output, replace=True)
     return output
 
@@ -344,7 +372,14 @@ def rebuild_selected(segments=8, fit_tolerance=0.0):
         raise ValueError("再生成するHair Tube meshを1つ選択してください")
     output = selected[0]
     names, rails = _read_curve_cage(output)
-    generated = binding.generate_from_rails(rails, target_segments=segments, fit_tolerance=fit_tolerance)
+    root_capped, tip_capped = _cap_state(output)
+    generated = binding.generate_from_rails(
+        rails,
+        target_segments=segments,
+        fit_tolerance=fit_tolerance,
+        root_capped=root_capped,
+        tip_capped=tip_capped,
+    )
     attributes = _build_attribute_payload(output, generated)
     matrix = cmds.xform(output, query=True, matrix=True, worldSpace=True)
     short_name = output.split("|")[-1]
@@ -354,6 +389,7 @@ def rebuild_selected(segments=8, fit_tolerance=0.0):
         _apply_attribute_payload(rebuilt, attributes)
         names = _update_curve_cage(rebuilt, names, generated)
         _set_curve_names(rebuilt, names)
+        _set_cap_state(rebuilt, generated.root_capped, generated.tip_capped)
         cmds.select(rebuilt, replace=True)
     return rebuilt
 
@@ -379,6 +415,7 @@ def generate_lods_selected(segment_counts="2,4,8", fit_tolerance=0.0):
         raise ValueError("LOD生成元のHair Tube meshを1つ選択してください")
     source = selected[0]
     names, rails = _read_curve_cage(source)
+    root_capped, tip_capped = _cap_state(source)
     segments = _parse_lod_segments(segment_counts)
     generated_levels = []
     for segment_count in segments:
@@ -386,6 +423,8 @@ def generate_lods_selected(segment_counts="2,4,8", fit_tolerance=0.0):
             rails,
             target_segments=segment_count,
             fit_tolerance=fit_tolerance,
+            root_capped=root_capped,
+            tip_capped=tip_capped,
         )
         generated_levels.append((segment_count, generated, _build_attribute_payload(source, generated)))
     matrix = cmds.xform(source, query=True, matrix=True, worldSpace=True)
@@ -396,6 +435,7 @@ def generate_lods_selected(segment_counts="2,4,8", fit_tolerance=0.0):
             output = _create_mesh(f"{base_name}_LOD{segment_count}", generated, matrix)
             _apply_attribute_payload(output, attributes)
             _set_curve_names(output, names)
+            _set_cap_state(output, generated.root_capped, generated.tip_capped)
             outputs.append(output)
         cmds.select(outputs, replace=True)
     return outputs

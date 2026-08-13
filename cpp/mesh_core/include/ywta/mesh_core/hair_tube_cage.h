@@ -62,6 +62,8 @@ struct HairTubeCurveCage {
   double fit_tolerance = 0.0;
   double max_fit_deviation = 0.0;
   bool cubic_active = false;
+  bool root_capped = false;
+  bool tip_capped = false;
 };
 
 /** Curve Cage構築結果。 */
@@ -94,7 +96,7 @@ struct HairTubeCageSampleResult {
   [[nodiscard]] bool ok() const noexcept { return status == HairTubeCageStatus::kOk; }
 };
 
-/** 固定密度で再生成したopen quad tube。 */
+/** 固定密度で再生成したquad tube。 */
 struct HairTubeGeneratedMesh {
   std::vector<Point3d> positions;
   std::vector<std::uint32_t> quad_indices;
@@ -141,7 +143,7 @@ struct HairTubeLodResult {
 [[nodiscard]] HairTubeCageSampleResult evaluate_hair_tube_curve_cage(const HairTubeCurveCage& cage,
                                                                      double t);
 
-/** Curve Cageから指定segment数のopen quad tubeを別bufferへ再生成する。 */
+/** Curve Cageから指定segment数のquad tubeを別bufferへ再生成する。 */
 [[nodiscard]] HairTubeGeneratedMeshResult regenerate_hair_tube_fixed_density(
     const HairTubeCurveCage& cage, std::uint64_t target_segments);
 

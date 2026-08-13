@@ -19,6 +19,8 @@ except ImportError:
 
 
 _CURVE_NAMES_PROPERTY = "ywta_hair_tube_curve_names"
+_ROOT_CAP_PROPERTY = "ywta_hair_tube_root_capped"
+_TIP_CAP_PROPERTY = "ywta_hair_tube_tip_capped"
 
 
 def _selected_root_cycle(bm):
@@ -142,6 +144,14 @@ def _build_attribute_payload(source, generated):
             source_face = generated.source_corner_faces[output_face * 4 + corner]
             first, second = generated.source_vertex_pairs[output_vertex]
             alpha = generated.source_mapping[output_vertex][1]
+            if alpha <= 0.0:
+                source_loop = _source_loop(mesh, source_face, first)
+                output_loop_sources.append((source_loop, source_loop, 0.0))
+                continue
+            if alpha >= 1.0:
+                source_loop = _source_loop(mesh, source_face, second)
+                output_loop_sources.append((source_loop, source_loop, 0.0))
+                continue
             output_loop_sources.append(
                 (
                     _source_loop(mesh, source_face, first),
@@ -341,6 +351,8 @@ class YWTA_OT_hair_tube_create(Operator):
             self.report({"ERROR"}, str(error))
             return {"CANCELLED"}
         output[_CURVE_NAMES_PROPERTY] = json.dumps(curve_names, ensure_ascii=True)
+        output[_ROOT_CAP_PROPERTY] = generated.root_capped
+        output[_TIP_CAP_PROPERTY] = generated.tip_capped
         for selected in context.selected_objects:
             selected.select_set(False)
         output.select_set(True)
@@ -376,7 +388,13 @@ class YWTA_OT_hair_tube_rebuild(Operator):
         obj = context.active_object
         try:
             rails = _read_curve_cage(obj)
-            generated = binding.generate_from_rails(rails, target_segments=self.segments, fit_tolerance=self.fit_tolerance)
+            generated = binding.generate_from_rails(
+                rails,
+                target_segments=self.segments,
+                fit_tolerance=self.fit_tolerance,
+                root_capped=bool(obj.get(_ROOT_CAP_PROPERTY, False)),
+                tip_capped=bool(obj.get(_TIP_CAP_PROPERTY, False)),
+            )
             attributes = _build_attribute_payload(obj, generated)
         except (ValueError, FileNotFoundError, binding.HairTubeError) as error:
             self.report({"ERROR"}, str(error))
@@ -418,6 +436,8 @@ class YWTA_OT_hair_tube_generate_lods(Operator):
                     rails,
                     target_segments=segments,
                     fit_tolerance=self.fit_tolerance,
+                    root_capped=bool(source.get(_ROOT_CAP_PROPERTY, False)),
+                    tip_capped=bool(source.get(_TIP_CAP_PROPERTY, False)),
                 )
                 generated_levels.append((segments, generated, _build_attribute_payload(source, generated)))
         except (ValueError, FileNotFoundError, binding.HairTubeError) as error:
@@ -436,6 +456,8 @@ class YWTA_OT_hair_tube_generate_lods(Operator):
                     attributes,
                 )
                 output[_CURVE_NAMES_PROPERTY] = curve_names
+                output[_ROOT_CAP_PROPERTY] = generated.root_capped
+                output[_TIP_CAP_PROPERTY] = generated.tip_capped
                 outputs.append(output)
         except (ValueError, RuntimeError) as error:
             for output in outputs:

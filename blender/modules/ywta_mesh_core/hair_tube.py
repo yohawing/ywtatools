@@ -30,6 +30,8 @@ class HairTubeOutput(ctypes.Structure):
         ("max_fit_deviation", ctypes.c_double),
         ("max_source_distance", ctypes.c_double),
         ("cubic_active", ctypes.c_int),
+        ("root_capped", ctypes.c_int),
+        ("tip_capped", ctypes.c_int),
     ]
 
 
@@ -47,6 +49,8 @@ class GeneratedHairTube:
     max_fit_deviation: float
     max_source_distance: float
     cubic_active: bool
+    root_capped: bool
+    tip_capped: bool
 
 
 class HairTubeError(RuntimeError):
@@ -102,6 +106,16 @@ def _load_dll():
         ctypes.POINTER(HairTubeOutput),
     ]
     dll.ywta_hair_tube_generate_from_rails.restype = ctypes.c_int
+    dll.ywta_hair_tube_generate_from_rails_ex.argtypes = [
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.c_double,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.POINTER(HairTubeOutput),
+    ]
+    dll.ywta_hair_tube_generate_from_rails_ex.restype = ctypes.c_int
     dll.ywta_hair_tube_free.argtypes = [ctypes.POINTER(HairTubeOutput)]
     dll.ywta_hair_tube_free.restype = None
     dll.ywta_mesh_core_last_error.argtypes = []
@@ -184,6 +198,8 @@ def _copy_output(dll, output: HairTubeOutput) -> GeneratedHairTube:
             float(output.max_fit_deviation),
             float(output.max_source_distance),
             bool(output.cubic_active),
+            bool(output.root_capped),
+            bool(output.tip_capped),
         )
     finally:
         dll.ywta_hair_tube_free(ctypes.pointer(output))
@@ -219,7 +235,7 @@ def generate(positions, faces, root_vertices, *, target_segments=8, fit_toleranc
     return _copy_output(dll, output)
 
 
-def generate_from_rails(rails, *, target_segments=8, fit_tolerance=0.0):
+def generate_from_rails(rails, *, target_segments=8, fit_tolerance=0.0, root_capped=False, tip_capped=False):
     """同数pointを持つ4本の編集済みrailからquad tubeを再生成する。"""
     rail_points = [list(rail) for rail in rails]
     if len(rail_points) != 4 or len(rail_points[0]) < 2:
@@ -245,6 +261,16 @@ def generate_from_rails(rails, *, target_segments=8, fit_tolerance=0.0):
     rail_array = (ctypes.c_double * len(flat))(*flat)
     output = HairTubeOutput()
     dll = _load_dll()
-    status = int(dll.ywta_hair_tube_generate_from_rails(rail_array, station_count, segments, tolerance, ctypes.pointer(output)))
+    status = int(
+        dll.ywta_hair_tube_generate_from_rails_ex(
+            rail_array,
+            station_count,
+            segments,
+            tolerance,
+            int(bool(root_capped)),
+            int(bool(tip_capped)),
+            ctypes.pointer(output),
+        )
+    )
     _raise_status(dll, status)
     return _copy_output(dll, output)

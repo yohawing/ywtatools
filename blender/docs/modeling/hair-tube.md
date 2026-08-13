@@ -20,6 +20,7 @@
 
 元Meshは残り、別のHair Tube Meshと4本のpoly Curveが同じCollectionに作られます。
 生成されたMeshがActive Objectになれば成功です。
+rootまたはtipにquad capがある場合は、再生成とLODでも同じ端を閉じたまま保持します。
 
 UV seam、Material、POINT/CORNER Color、Vertex Groupをsource mappingで補間します。
 Armatureのbone名と一致するVertex Groupは頂点ごとに再正規化し、同じArmature Modifierを
@@ -58,6 +59,7 @@ uvx nox -s mesh_core_tests
 ## Known Limitations
 
 - 入力は全区間が4-sided topologyである必要があります。
+- capはroot/tipにある1枚のquadだけを保持します。triangle、ngon、途中のcapは拒否します。
 - rootには、4頂点で閉じた1つのedge loopを指定します。
 - Cageは4本とも、1つの`POLY` splineのまま編集してください。削除、改名、spline形式の変更を
   行うと再生成できません。

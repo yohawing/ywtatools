@@ -21,7 +21,7 @@ import ywtatools_addon  # noqa: E402
 
 
 def _make_source():
-    """2 stationのopen quad tubeを作る。"""
+    """2 stationでroot/tip cap付きのquad tubeを作る。"""
     vertices = [
         (-0.5, -0.5, 0.0),
         (0.5, -0.5, 0.0),
@@ -32,7 +32,14 @@ def _make_source():
         (0.5, 0.5, 1.0),
         (-0.5, 0.5, 1.0),
     ]
-    faces = [(0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
+    faces = [
+        (0, 1, 5, 4),
+        (1, 2, 6, 5),
+        (2, 3, 7, 6),
+        (3, 0, 4, 7),
+        (0, 3, 2, 1),
+        (4, 5, 6, 7),
+    ]
     mesh = bpy.data.meshes.new("HairTubeSourceMesh")
     mesh.from_pydata(vertices, [], faces)
     mesh.update()
@@ -108,8 +115,10 @@ class HairTubeAddonTests(unittest.TestCase):
         self.assertEqual(bpy.ops.ywta.hair_tube_create(segments=3), {"FINISHED"})
         generated = bpy.context.active_object
         self.assertIsNot(generated, source)
-        self.assertEqual((len(source.data.vertices), len(source.data.polygons)), (8, 4))
-        self.assertEqual((len(generated.data.vertices), len(generated.data.polygons)), (16, 12))
+        self.assertEqual((len(source.data.vertices), len(source.data.polygons)), (8, 6))
+        self.assertEqual((len(generated.data.vertices), len(generated.data.polygons)), (16, 14))
+        self.assertTrue(generated["ywta_hair_tube_root_capped"])
+        self.assertTrue(generated["ywta_hair_tube_tip_capped"])
         self.assertEqual(len(generated.data.uv_layers), 1)
         self.assertEqual(len(generated.data.color_attributes), 1)
         self.assertEqual(
@@ -133,9 +142,9 @@ class HairTubeAddonTests(unittest.TestCase):
         first_curve.data.splines[0].points[-1].co.x -= 0.25
 
         self.assertEqual(bpy.ops.ywta.hair_tube_rebuild(segments=2), {"FINISHED"})
-        self.assertEqual((len(generated.data.vertices), len(generated.data.polygons)), (12, 8))
+        self.assertEqual((len(generated.data.vertices), len(generated.data.polygons)), (12, 10))
         self.assertLess(generated.data.vertices[8].co.x, -0.5)
-        self.assertEqual((len(source.data.vertices), len(source.data.polygons)), (8, 4))
+        self.assertEqual((len(source.data.vertices), len(source.data.polygons)), (8, 6))
         self.assertEqual(len(generated.data.uv_layers), 1)
         self.assertEqual(len(generated.data.color_attributes), 1)
         self.assertAlmostEqual(
@@ -146,8 +155,8 @@ class HairTubeAddonTests(unittest.TestCase):
         self.assertEqual(bpy.ops.ywta.hair_tube_generate_lods(segments="1,3"), {"FINISHED"})
         lod1 = bpy.data.objects[f"{generated.name}_LOD1"]
         lod3 = bpy.data.objects[f"{generated.name}_LOD3"]
-        self.assertEqual((len(lod1.data.vertices), len(lod1.data.polygons)), (8, 4))
-        self.assertEqual((len(lod3.data.vertices), len(lod3.data.polygons)), (16, 12))
+        self.assertEqual((len(lod1.data.vertices), len(lod1.data.polygons)), (8, 6))
+        self.assertEqual((len(lod3.data.vertices), len(lod3.data.polygons)), (16, 14))
         self.assertEqual(len(lod1.data.uv_layers), 1)
         self.assertAlmostEqual(
             lod3.vertex_groups["RootBone"].weight(4) + lod3.vertex_groups["TipBone"].weight(4),

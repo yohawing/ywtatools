@@ -10,7 +10,7 @@ from ywta.mesh import hair_tube
 
 
 def _make_source():
-    """2 stationのopen quad tubeを作る。"""
+    """2 stationでroot/tip cap付きのquad tubeを作る。"""
     transform = cmds.createNode("transform", name="HairTubeSource")
     selection = om2.MSelectionList()
     selection.add(transform)
@@ -25,8 +25,8 @@ def _make_source():
         om2.MPoint(0.5, 0.5, 1.0),
         om2.MPoint(-0.5, 0.5, 1.0),
     ]
-    connects = [0, 1, 5, 4, 1, 2, 6, 5, 2, 3, 7, 6, 3, 0, 4, 7]
-    om2.MFnMesh().create(points, [4, 4, 4, 4], connects, parent=parent)
+    connects = [0, 1, 5, 4, 1, 2, 6, 5, 2, 3, 7, 6, 3, 0, 4, 7, 0, 3, 2, 1, 4, 5, 6, 7]
+    om2.MFnMesh().create(points, [4, 4, 4, 4, 4, 4], connects, parent=parent)
     return transform
 
 
@@ -105,9 +105,11 @@ class HairTubeMayaTests(unittest.TestCase):
 
         self.assertTrue(cmds.objExists(source))
         self.assertEqual(cmds.polyEvaluate(source, vertex=True), 8)
-        self.assertEqual(cmds.polyEvaluate(source, face=True), 4)
+        self.assertEqual(cmds.polyEvaluate(source, face=True), 6)
         self.assertEqual(cmds.polyEvaluate(output, vertex=True), 16)
-        self.assertEqual(cmds.polyEvaluate(output, face=True), 12)
+        self.assertEqual(cmds.polyEvaluate(output, face=True), 14)
+        self.assertTrue(cmds.getAttr(f"{output}.ywtaHairTubeRootCapped"))
+        self.assertTrue(cmds.getAttr(f"{output}.ywtaHairTubeTipCapped"))
         output_function = om2.MFnMesh(hair_tube._mesh_dag_path(output))
         first_u = output_function.getUV(output_function.getPolygonUVid(0, 1, "map1"), "map1")[0]
         seam_u = output_function.getUV(output_function.getPolygonUVid(1, 0, "map1"), "map1")[0]
@@ -134,7 +136,7 @@ class HairTubeMayaTests(unittest.TestCase):
         cmds.select(output, replace=True)
         rebuilt = hair_tube.rebuild_selected(segments=2)
         self.assertEqual(cmds.polyEvaluate(rebuilt, vertex=True), 12)
-        self.assertEqual(cmds.polyEvaluate(rebuilt, face=True), 8)
+        self.assertEqual(cmds.polyEvaluate(rebuilt, face=True), 10)
         self.assertLess(cmds.pointPosition(f"{rebuilt}.vtx[8]", local=True)[0], -0.5)
         self.assertEqual(cmds.polyEvaluate(source, vertex=True), 8)
         rebuilt_function = om2.MFnMesh(hair_tube._mesh_dag_path(rebuilt))

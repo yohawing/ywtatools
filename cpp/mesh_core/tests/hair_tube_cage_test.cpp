@@ -193,6 +193,23 @@ void test_fixed_density_counts_mapping_and_determinism() {
          "quad winding should follow the source cyclic order");
 }
 
+void test_quad_caps_are_preserved_at_every_density() {
+  CageFixture fixture = make_tube({{0.0, 0.0, 0.0}, {0.0, 0.0, 1.0}, {0.0, 0.0, 2.0}});
+  fixture.topology.root_cap_face = 8;
+  fixture.topology.tip_cap_face = 9;
+  const HairTubeCageResult built = build(fixture, 0.0);
+  const HairTubeGeneratedMeshResult generated = regenerate_hair_tube_fixed_density(built.cage, 2);
+
+  expect(built.ok() && built.cage.root_capped && built.cage.tip_capped,
+         "source cap flags should be copied into the cage");
+  expect(generated.ok() && generated.mesh.quad_indices.size() == 40,
+         "two segments with both caps should produce ten quads");
+  const std::vector<std::uint32_t> expected_caps{3, 2, 1, 0, 8, 9, 10, 11};
+  expect(std::equal(expected_caps.begin(), expected_caps.end(),
+                    generated.mesh.quad_indices.end() - 8),
+         "root and tip cap winding should be deterministic");
+}
+
 void test_invalid_cage_inputs_fail_without_partial_output() {
   CageFixture fixture = make_tube({{0.0, 0.0, 0.0}, {0.0, 0.0, 1.0}, {0.0, 0.0, 2.0}});
 
@@ -374,6 +391,7 @@ int main() {
   test_nonuniform_shared_t_uses_average_chord_length();
   test_cubic_interpolates_sources_and_obeys_tolerance();
   test_fixed_density_counts_mapping_and_determinism();
+  test_quad_caps_are_preserved_at_every_density();
   test_invalid_cage_inputs_fail_without_partial_output();
   test_invalid_regeneration_and_zero_area_fail_without_partial_output();
   test_adaptive_sampling_meets_error_and_is_deterministic();

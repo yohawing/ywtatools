@@ -77,21 +77,30 @@ class FakeDLL:
         output.max_fit_deviation = 0.25
         output.max_source_distance = 0.5
         output.cubic_active = 1
+        output.root_capped = 0
+        output.tip_capped = 0
         return 0
 
     def ywta_hair_tube_free(self, _output_pointer):
         self.freed = True
 
     def ywta_hair_tube_generate_from_rails(self, rails, station_count, segments, tolerance, output_pointer):
+        return self.ywta_hair_tube_generate_from_rails_ex(rails, station_count, segments, tolerance, 0, 0, output_pointer)
+
+    def ywta_hair_tube_generate_from_rails_ex(
+        self, rails, station_count, segments, tolerance, root_capped, tip_capped, output_pointer
+    ):
         self.input = {
             "rails": list(rails[: station_count * 4 * 3]),
             "station_count": station_count,
             "segments": segments,
             "tolerance": tolerance,
+            "root_capped": root_capped,
+            "tip_capped": tip_capped,
         }
         if self.status:
             return self.status
-        return self.ywta_hair_tube_generate(
+        status = self.ywta_hair_tube_generate(
             4,
             (ctypes.c_double * 12)(*([0.0] * 12)),
             (ctypes.c_uint64 * 1)(0),
@@ -103,6 +112,9 @@ class FakeDLL:
             tolerance,
             output_pointer,
         )
+        self.input["root_capped"] = root_capped
+        self.input["tip_capped"] = tip_capped
+        return status
 
     def ywta_mesh_core_last_error(self):
         return b"fake diagnostic"
@@ -159,8 +171,9 @@ class HairTubeBindingTests(unittest.TestCase):
         fake = FakeDLL()
         hair_tube._load_dll = lambda: fake
         rails = [[(rail, 0, 0), (rail, 0, 1)] for rail in range(4)]
-        result = hair_tube.generate_from_rails(rails, target_segments=5)
+        result = hair_tube.generate_from_rails(rails, target_segments=5, root_capped=True, tip_capped=True)
         self.assertEqual(fake.input["segments"], 5)
+        self.assertEqual((fake.input["root_capped"], fake.input["tip_capped"]), (1, 1))
         self.assertEqual(result.quads, [(0, 1, 2, 3)])
         self.assertTrue(fake.freed)
 

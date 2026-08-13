@@ -29,6 +29,8 @@ typedef struct YwtaHairTubeOutput {
   double max_fit_deviation;
   double max_source_distance;
   int cubic_active;
+  int root_capped;
+  int tip_capped;
 } YwtaHairTubeOutput;
 
 /**
@@ -51,6 +53,14 @@ YWTA_MESH_CORE_API int ywta_hair_tube_generate_from_rails(const double* rail_pos
                                                           uint64_t target_segments,
                                                           double fit_tolerance,
                                                           YwtaHairTubeOutput* output);
+
+/** rail-majorな4本の編集済みpoint列からcap指定付きで固定密度tubeを再生成する。 */
+YWTA_MESH_CORE_API int ywta_hair_tube_generate_from_rails_ex(const double* rail_positions_xyz,
+                                                             uint64_t station_count,
+                                                             uint64_t target_segments,
+                                                             double fit_tolerance, int root_capped,
+                                                             int tip_capped,
+                                                             YwtaHairTubeOutput* output);
 
 /** ywta_hair_tube_generate()が確保した配列を解放し、outputをゼロ初期化する。 */
 YWTA_MESH_CORE_API void ywta_hair_tube_free(YwtaHairTubeOutput* output);

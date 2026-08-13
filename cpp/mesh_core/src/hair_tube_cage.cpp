@@ -518,6 +518,8 @@ HairTubeCageResult build_hair_tube_curve_cage(const HairTubeTopology& topology,
 
   HairTubeCurveCage cage;
   cage.source_station_count = topology.station_count;
+  cage.root_capped = topology.root_cap_face != kNoHairTubeFace;
+  cage.tip_capped = topology.tip_cap_face != kNoHairTubeFace;
   cage.fit_tolerance = fit_tolerance;
   cage.source_points.reserve(expected_points);
   for (std::size_t rail = 0; rail < kRailCount; ++rail) {
@@ -671,7 +673,10 @@ HairTubeGeneratedMeshResult regenerate_at_parameters(const HairTubeCurveCage& ca
   const std::size_t output_station_count = parameters.size();
   generated.positions.reserve(output_station_count * kRailCount);
   generated.source_mapping.reserve(output_station_count * kRailCount);
-  generated.quad_indices.reserve((output_station_count - 1) * kRailCount * 4);
+  generated.quad_indices.reserve(
+      ((output_station_count - 1) * kRailCount + static_cast<std::size_t>(cage.root_capped) +
+       static_cast<std::size_t>(cage.tip_capped)) *
+      4);
   for (const double t : parameters) {
     const HairTubeCageSampleResult sampled = evaluate_hair_tube_curve_cage(cage, t);
     if (!sampled.ok()) {
@@ -714,6 +719,38 @@ HairTubeGeneratedMeshResult regenerate_at_parameters(const HairTubeCurveCage& ca
       }
       generated.quad_indices.insert(generated.quad_indices.end(), indices.begin(), indices.end());
     }
+  }
+
+  if (cage.root_capped) {
+    const std::array<std::uint32_t, 4> indices{3, 2, 1, 0};
+    const std::array<Point3d, 4> quad{generated.positions[3], generated.positions[2],
+                                      generated.positions[1], generated.positions[0]};
+    const QuadQuality quality = inspect_quad(quad);
+    if (quality == QuadQuality::kZeroArea) {
+      return mesh_error(HairTubeCageStatus::kZeroAreaQuad,
+                        "generated root cap contains a zero-area quad");
+    }
+    if (quality == QuadQuality::kInverted) {
+      return mesh_error(HairTubeCageStatus::kInvertedQuad,
+                        "generated root cap is inverted or self-crossing");
+    }
+    generated.quad_indices.insert(generated.quad_indices.end(), indices.begin(), indices.end());
+  }
+  if (cage.tip_capped) {
+    const std::uint32_t tip = static_cast<std::uint32_t>((output_station_count - 1) * kRailCount);
+    const std::array<std::uint32_t, 4> indices{tip, tip + 1, tip + 2, tip + 3};
+    const std::array<Point3d, 4> quad{generated.positions[tip], generated.positions[tip + 1],
+                                      generated.positions[tip + 2], generated.positions[tip + 3]};
+    const QuadQuality quality = inspect_quad(quad);
+    if (quality == QuadQuality::kZeroArea) {
+      return mesh_error(HairTubeCageStatus::kZeroAreaQuad,
+                        "generated tip cap contains a zero-area quad");
+    }
+    if (quality == QuadQuality::kInverted) {
+      return mesh_error(HairTubeCageStatus::kInvertedQuad,
+                        "generated tip cap is inverted or self-crossing");
+    }
+    generated.quad_indices.insert(generated.quad_indices.end(), indices.begin(), indices.end());
   }
 
   const std::size_t quad_count = generated.quad_indices.size() / 4;
