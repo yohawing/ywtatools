@@ -15,15 +15,18 @@ bl_info = {
     "category": "User",
 }
 
-if "bpy" in locals():
+if "custom_nodes" in locals():
     import importlib
 
-    importlib.reload(custom_nodes)
-    importlib.reload(properties)
-    importlib.reload(ui)
-    importlib.reload(shape_key_rename)
-    importlib.reload(autoremesher)
-    importlib.reload(volume_smoothing)
+    from . import hair_tube
+
+    importlib.reload(custom_nodes)  # noqa: F821
+    importlib.reload(properties)  # noqa: F821
+    importlib.reload(ui)  # noqa: F821
+    importlib.reload(shape_key_rename)  # noqa: F821
+    importlib.reload(autoremesher)  # noqa: F821
+    importlib.reload(volume_smoothing)  # noqa: F821
+    importlib.reload(hair_tube)
 else:
     from . import custom_nodes
     from . import properties
@@ -31,8 +34,7 @@ else:
     from . import shape_key_rename
     from . import autoremesher
     from . import volume_smoothing
-
-import bpy
+    from . import hair_tube
 
 
 def register():
@@ -43,10 +45,12 @@ def register():
     shape_key_rename.register()
     autoremesher.register()
     volume_smoothing.register()
+    hair_tube.register()
 
 
 def unregister():
     print("unregister YWTA Tools")
+    hair_tube.unregister()
     volume_smoothing.unregister()
     autoremesher.unregister()
     shape_key_rename.unregister()
