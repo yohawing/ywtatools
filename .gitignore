@@ -76,6 +76,7 @@ build.*/
 
 # ローカル専用の作業ファイル（家風）
 /TODO.md
+/docs/
 .ai/
 artifacts/
 .claude/settings.local.json

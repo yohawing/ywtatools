@@ -81,8 +81,8 @@ Batch Runner、FBX 書き出し、Scene Audit、Dependency Visualizer、Resource
 などがあります。
 
 各機能の操作条件は [Maya ツールカタログ](docs/README.md) を参照してください。新しい
-ツール群を追加した経緯、検証記録、意図的に採用しなかった範囲は、開発資料の
-[`Maya ツール拡充`](../docs/maya-tool-expansion.md) に残しています。
+ツール群を追加した経緯、検証記録、計画資料は、Git管理外のローカル資料である
+リポジトリルートの `docs/` に保存します。
 
 ## C++ プラグインを使う場合
 
