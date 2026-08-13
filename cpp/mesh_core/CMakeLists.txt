@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 project(ywta_mesh_core LANGUAGES CXX)
 
 add_library(ywta_mesh_core_core STATIC
+    src/hair_tube_cage.cpp
     src/hair_tube_topology.cpp
     src/raw_topology.cpp
 )
@@ -38,4 +39,15 @@ if(YWTA_MESH_CORE_BUILD_TESTS)
         target_compile_options(ywta_hair_tube_topology_tests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME ywta_hair_tube_topology_tests COMMAND ywta_hair_tube_topology_tests)
+
+    add_executable(ywta_hair_tube_cage_tests
+        tests/hair_tube_cage_test.cpp
+    )
+    target_link_libraries(ywta_hair_tube_cage_tests PRIVATE ywta_mesh_core_core)
+    if(MSVC)
+        target_compile_options(ywta_hair_tube_cage_tests PRIVATE /W4)
+    else()
+        target_compile_options(ywta_hair_tube_cage_tests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME ywta_hair_tube_cage_tests COMMAND ywta_hair_tube_cage_tests)
 endif()
