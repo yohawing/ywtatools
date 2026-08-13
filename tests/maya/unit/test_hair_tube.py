@@ -85,6 +85,20 @@ class HairTubeMayaTests(unittest.TestCase):
         self.assertEqual(cmds.polyEvaluate(rebuilt, vertex=True), 12)
         self.assertEqual(cmds.polyEvaluate(source, vertex=True), 8)
 
+        cmds.select(rebuilt, replace=True)
+        lods = hair_tube.generate_lods_selected("1,3")
+        self.assertEqual(len(lods), 2)
+        self.assertEqual(cmds.polyEvaluate(lods[0], vertex=True), 8)
+        self.assertEqual(cmds.polyEvaluate(lods[1], vertex=True), 16)
+        self.assertEqual(
+            cmds.getAttr(f"{lods[0]}.ywtaHairTubeCurveNames"),
+            cmds.getAttr(f"{rebuilt}.ywtaHairTubeCurveNames"),
+        )
+        cmds.undo()
+        self.assertTrue(all(not cmds.objExists(lod) for lod in lods))
+        cmds.redo()
+        self.assertTrue(all(cmds.objExists(lod) for lod in lods))
+
     def test_create_undo_and_redo_restore_all_outputs(self):
         """作成操作のUndo/Redoがmeshと4 curveをまとめて復元する。"""
         source = _make_source()

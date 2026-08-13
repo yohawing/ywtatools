@@ -8,6 +8,7 @@
 - **Open:** `YWTA > Mesh > Hair Tube Curve Cage...`
 - **Create selection:** tubeのroot断面を構成する4辺だけ
 - **Rebuild selection:** このツールが生成したHair Tube Meshを1つ
+- **LOD selection:** このツールが生成したHair Tube Meshを1つ
 - **Undo / Redo:** Yes。CreateまたはRebuild全体が1回の操作です
 
 ## 初回準備
@@ -41,6 +42,15 @@ Maya起動前に`YWTA_MESH_CORE_DLL`へ絶対パスを設定します。
 
 生成Meshだけが置き換わり、元MeshとCurveは残ります。Undoで再生成前のMeshへ戻り、Redoで
 再生成結果へ進めます。
+
+## 複数LODを生成する
+
+1. Curve編集後、生成されたHair Tube Meshを1つ選択します。
+2. `LOD Segments`へ`2,4,8`のように重複なしの昇順で入力します。
+3. `Generate LODs from Selected Hair Tube`を押します。
+
+同じCurve Cageから密度ごとの別Meshを一括生成します。全LODを先に検証するため、途中の
+密度が品質ゲートに失敗しても部分出力を残しません。Undo/RedoはLOD群全体で1回です。
 
 ## Known Limitations
 

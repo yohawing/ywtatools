@@ -185,14 +185,60 @@ def rebuild_selected(segments=8, fit_tolerance=0.0):
     return rebuilt
 
 
+def _parse_lod_segments(value):
+    """comma区切りまたはsequenceを昇順のsegment数へ変換する。"""
+    try:
+        raw_values = value.split(",") if isinstance(value, str) else value
+        segments = [int(item.strip() if isinstance(item, str) else item) for item in raw_values]
+    except (TypeError, ValueError) as error:
+        raise ValueError("LOD Segmentsはcomma区切りの整数で指定してください") from error
+    if not segments or any(segment < 1 for segment in segments):
+        raise ValueError("LOD Segmentsは1以上を1つ以上指定してください")
+    if segments != sorted(set(segments)):
+        raise ValueError("LOD Segmentsは重複なしの昇順で指定してください")
+    return segments
+
+
+def generate_lods_selected(segment_counts="2,4,8", fit_tolerance=0.0):
+    """選択したHair TubeのCurve Cageから複数LODを別meshへ生成する。"""
+    selected = cmds.ls(selection=True, long=True, type="transform") or []
+    if len(selected) != 1:
+        raise ValueError("LOD生成元のHair Tube meshを1つ選択してください")
+    source = selected[0]
+    names, rails = _read_curve_cage(source)
+    segments = _parse_lod_segments(segment_counts)
+    generated_levels = [
+        (
+            segment_count,
+            binding.generate_from_rails(
+                rails,
+                target_segments=segment_count,
+                fit_tolerance=fit_tolerance,
+            ),
+        )
+        for segment_count in segments
+    ]
+    matrix = cmds.xform(source, query=True, matrix=True, worldSpace=True)
+    base_name = source.split("|")[-1]
+    outputs = []
+    with _undo_chunk("Generate Hair Tube LODs"):
+        for segment_count, generated in generated_levels:
+            output = _create_mesh(f"{base_name}_LOD{segment_count}", generated, matrix)
+            _set_curve_names(output, names)
+            outputs.append(output)
+        cmds.select(outputs, replace=True)
+    return outputs
+
+
 def show_options():
     """作成・再生成の最短導線を持つオプションwindowを表示する。"""
     if cmds.window(_WINDOW_NAME, exists=True):
         cmds.deleteUI(_WINDOW_NAME, window=True)
-    window = cmds.window(_WINDOW_NAME, title="Hair Tube Curve Cage", widthHeight=(360, 170))
+    window = cmds.window(_WINDOW_NAME, title="Hair Tube Curve Cage", widthHeight=(360, 220))
     cmds.columnLayout(adjustableColumn=True, rowSpacing=6, columnAttach=("both", 8))
     segments_field = cmds.intFieldGrp(label="Segments", value1=8, numberOfFields=1)
     tolerance_field = cmds.floatFieldGrp(label="Fit Tolerance", value1=0.0, numberOfFields=1)
+    lod_field = cmds.textFieldGrp(label="LOD Segments", text="2,4,8")
 
     def values():
         return (
@@ -212,8 +258,15 @@ def show_options():
         except (ValueError, FileNotFoundError, binding.HairTubeError) as error:
             cmds.warning(str(error))
 
+    def run_lods(*_args):
+        try:
+            generate_lods_selected(cmds.textFieldGrp(lod_field, query=True, text=True), values()[1])
+        except (ValueError, FileNotFoundError, binding.HairTubeError) as error:
+            cmds.warning(str(error))
+
     cmds.button(label="Create from Selected Root Edges", command=run_create, height=30)
     cmds.button(label="Rebuild Selected Hair Tube", command=run_rebuild, height=30)
+    cmds.button(label="Generate LODs from Selected Hair Tube", command=run_lods, height=30)
     cmds.text(label="生成meshと4本のcurveは別objectです。Undoで直前の操作を戻せます。")
     cmds.showWindow(window)
     return window

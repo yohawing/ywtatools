@@ -78,6 +78,16 @@ class HairTubeAddonTests(unittest.TestCase):
         self.assertLess(generated.data.vertices[8].co.x, -0.5)
         self.assertEqual((len(source.data.vertices), len(source.data.polygons)), (8, 4))
 
+        self.assertEqual(bpy.ops.ywta.hair_tube_generate_lods(segments="1,3"), {"FINISHED"})
+        lod1 = bpy.data.objects[f"{generated.name}_LOD1"]
+        lod3 = bpy.data.objects[f"{generated.name}_LOD3"]
+        self.assertEqual((len(lod1.data.vertices), len(lod1.data.polygons)), (8, 4))
+        self.assertEqual((len(lod3.data.vertices), len(lod3.data.polygons)), (16, 12))
+        self.assertEqual(
+            lod1["ywta_hair_tube_curve_names"],
+            generated["ywta_hair_tube_curve_names"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

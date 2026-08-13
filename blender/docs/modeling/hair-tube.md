@@ -7,6 +7,7 @@
 
 - **Create:** Edit Modeの `Mesh > Create Hair Tube Curve Cage`
 - **Rebuild:** Object Modeの `Object > Rebuild from Hair Tube Curve Cage`
+- **LODs:** Object Modeの `Object > Generate Hair Tube LODs`
 - **Selection:** tubeのroot断面を構成する4辺だけを選択
 - **Undo:** Yes
 
@@ -29,6 +30,15 @@
 
 再生成は選択したHair Tube ObjectのMesh datablockを置き換えます。元の入力Meshは
 変更しません。
+
+## 複数LODを生成する
+
+1. Curve編集後、生成されたHair Tube Meshを選択します。
+2. `Object > Generate Hair Tube LODs`を実行します。
+3. `LOD Segments`へ`2,4,8`のように重複なしの昇順で入力します。
+
+すべての密度を先に検証してから、密度ごとの別Objectを一括生成します。途中の密度が
+品質ゲートに失敗した場合は何も作りません。操作全体は1回のUndo対象です。
 
 ## Requirements
 

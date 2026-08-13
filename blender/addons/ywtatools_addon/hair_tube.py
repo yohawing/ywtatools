@@ -6,7 +6,7 @@ import sys
 
 import bmesh
 import bpy
-from bpy.props import FloatProperty, IntProperty
+from bpy.props import FloatProperty, IntProperty, StringProperty
 from bpy.types import Operator
 
 try:
@@ -69,6 +69,30 @@ def _replace_mesh(obj, generated):
     obj.data = mesh
     if old_mesh is not None and old_mesh.users == 0:
         bpy.data.meshes.remove(old_mesh)
+
+
+def _parse_lod_segments(value):
+    """comma区切りを昇順かつ重複なしのsegment数へ変換する。"""
+    try:
+        segments = [int(item.strip()) for item in value.split(",") if item.strip()]
+    except ValueError as error:
+        raise ValueError("LOD Segmentsはcomma区切りの整数で指定してください") from error
+    if not segments or any(segment < 1 for segment in segments):
+        raise ValueError("LOD Segmentsは1以上を1つ以上指定してください")
+    if segments != sorted(set(segments)):
+        raise ValueError("LOD Segmentsは重複なしの昇順で指定してください")
+    return segments
+
+
+def _create_generated_object(context, source, name, generated):
+    """sourceと同じtransform・collectionに生成mesh objectを作る。"""
+    mesh = bpy.data.meshes.new(name)
+    mesh.from_pydata(generated.positions, [], generated.quads)
+    mesh.update()
+    output = bpy.data.objects.new(name, mesh)
+    output.matrix_world = source.matrix_world.copy()
+    _link_object_like_source(context, source, output)
+    return output
 
 
 def _create_curve_cage(context, source, generated):
@@ -144,12 +168,7 @@ class YWTA_OT_hair_tube_create(Operator):
             self.report({"ERROR"}, str(error))
             return {"CANCELLED"}
 
-        mesh = bpy.data.meshes.new(f"{source.name}_HairTube")
-        mesh.from_pydata(generated.positions, [], generated.quads)
-        mesh.update()
-        output = bpy.data.objects.new(mesh.name, mesh)
-        output.matrix_world = source.matrix_world.copy()
-        _link_object_like_source(context, source, output)
+        output = _create_generated_object(context, source, f"{source.name}_HairTube", generated)
         curve_names = _create_curve_cage(context, source, generated)
         output[_CURVE_NAMES_PROPERTY] = json.dumps(curve_names, ensure_ascii=True)
         for selected in context.selected_objects:
@@ -200,6 +219,61 @@ class YWTA_OT_hair_tube_rebuild(Operator):
         return context.window_manager.invoke_props_dialog(self)
 
 
+class YWTA_OT_hair_tube_generate_lods(Operator):
+    """同じCurve Cageから複数密度の別meshを一括生成する。"""
+
+    bl_idname = "ywta.hair_tube_generate_lods"
+    bl_label = "Generate Hair Tube LODs"
+    bl_description = "編集済みCurve Cageから複数密度のLODを別Objectとして生成します"
+    bl_options = {"REGISTER", "UNDO"}
+
+    segments: StringProperty(name="LOD Segments", default="2,4,8")
+    fit_tolerance: FloatProperty(name="Fit Tolerance", default=0.0, min=0.0, precision=6)
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj is not None and obj.type == "MESH" and _CURVE_NAMES_PROPERTY in obj
+
+    def execute(self, context):
+        source = context.active_object
+        try:
+            segment_counts = _parse_lod_segments(self.segments)
+            rails = _read_curve_cage(source)
+            generated_levels = [
+                (
+                    segments,
+                    binding.generate_from_rails(
+                        rails,
+                        target_segments=segments,
+                        fit_tolerance=self.fit_tolerance,
+                    ),
+                )
+                for segments in segment_counts
+            ]
+        except (ValueError, FileNotFoundError, binding.HairTubeError) as error:
+            self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}
+
+        curve_names = source[_CURVE_NAMES_PROPERTY]
+        outputs = []
+        for segments, generated in generated_levels:
+            output = _create_generated_object(context, source, f"{source.name}_LOD{segments}", generated)
+            output[_CURVE_NAMES_PROPERTY] = curve_names
+            outputs.append(output)
+        for selected in context.selected_objects:
+            selected.select_set(False)
+        for output in outputs:
+            output.select_set(True)
+        context.view_layer.objects.active = outputs[-1]
+        self.report({"INFO"}, f"{len(outputs)}個のHair Tube LODを生成しました")
+        return {"FINISHED"}
+
+    def invoke(self, context, _event):
+        """一括生成前にLOD密度列を編集する。"""
+        return context.window_manager.invoke_props_dialog(self)
+
+
 def edit_menu_func(self, _context):
     """Edit Meshメニューへ作成操作を追加する。"""
     self.layout.separator()
@@ -210,9 +284,14 @@ def object_menu_func(self, _context):
     """Objectメニューへ再生成操作を追加する。"""
     self.layout.separator()
     self.layout.operator(YWTA_OT_hair_tube_rebuild.bl_idname)
+    self.layout.operator(YWTA_OT_hair_tube_generate_lods.bl_idname)
 
 
-classes = [YWTA_OT_hair_tube_create, YWTA_OT_hair_tube_rebuild]
+classes = [
+    YWTA_OT_hair_tube_create,
+    YWTA_OT_hair_tube_rebuild,
+    YWTA_OT_hair_tube_generate_lods,
+]
 
 
 def register():
