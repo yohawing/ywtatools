@@ -16,6 +16,84 @@ import maya.mel as mel
 from ywta.rig import humanik_assignment
 
 
+_HIK_MEL_SCRIPTS = (
+    "hikSkeletonUtils.mel",
+    "hikGlobalUtils.mel",
+    "hikDefinitionUtils.mel",
+    "hikDefinitionUI.mel",
+    "hikDefinitionOperations.mel",
+    "hikCharacterControlsUI.mel",
+    "hikCharacterControlsUtils.mel",
+)
+_HIK_PLUGINS = ("mayaHIK", "mayaCharacterization")
+_CREATE_CHARACTER_PROCEDURES = (
+    "hikCreateCharacter",
+    "hikUpdateCharacterList",
+    "hikSelectDefinitionTab",
+    "hikSetCurrentCharacter",
+)
+_ASSIGNMENT_RESOLUTION_PROCEDURES = ("hikGetNodeIdFromName",)
+_LOAD_DEFINITION_PROCEDURES = (
+    "hikGetCurrentCharacter",
+    "hikGetNodeIdFromName",
+    "setCharacterObject",
+)
+_CREATE_DEFINITION_PROCEDURES = (
+    "hikGetNodeIdFromName",
+    "hikGetSceneCharacters",
+    "hikCreateCharacter",
+    "setCharacterObject",
+    "hikGetSkNode",
+    "hikDeleteCharacter",
+)
+_SETUP_PROCEDURES = _CREATE_CHARACTER_PROCEDURES + (
+    "hikSetCharacterObject",
+    "hikUpdateDefinitionUI",
+    "hikCharacterLock",
+)
+_MEL_PROCEDURE_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def ensure_humanik_mel_loaded(required_procedures, mel_module=mel, cmds_module=cmds):
+    """必要なMaya標準HumanIK MEL procedureをscene変更前に準備する。
+
+    Args:
+        required_procedures: この処理sliceが実際に呼ぶprocedure名。
+        mel_module: テスト差し替え用のMEL互換module。
+        cmds_module: テスト差し替え用のmaya.cmds互換module。
+
+    Raises:
+        ValueError: procedure名が空またはMEL識別子でない場合。
+        RuntimeError: 標準scriptのsourceまたはprocedure準備に失敗した場合。
+    """
+    procedures = tuple(dict.fromkeys(required_procedures))
+    if not procedures or any(
+        not isinstance(procedure, str) or not _MEL_PROCEDURE_PATTERN.fullmatch(procedure) for procedure in procedures
+    ):
+        raise ValueError("HumanIK MEL procedure名が不正です")
+
+    missing = [procedure for procedure in procedures if not mel_module.eval(f"exists {procedure}")]
+    if not missing:
+        return
+
+    for plugin in _HIK_PLUGINS:
+        try:
+            if not cmds_module.pluginInfo(plugin, query=True, loaded=True):
+                cmds_module.loadPlugin(plugin, quiet=True)
+        except Exception as error:
+            raise RuntimeError("Maya標準HumanIK pluginを読み込めませんでした: {}".format(plugin)) from error
+
+    for script in _HIK_MEL_SCRIPTS:
+        try:
+            mel_module.eval('source "{}"'.format(script))
+        except Exception as error:
+            raise RuntimeError("Maya標準HumanIK MEL scriptを読み込めませんでした: {}".format(script)) from error
+
+    missing = [procedure for procedure in procedures if not mel_module.eval(f"exists {procedure}")]
+    if missing:
+        raise RuntimeError("HumanIK MEL procedureを準備できませんでした: {}".format(", ".join(missing)))
+
+
 class HumanIkCharacterCreationError(RuntimeError):
     """HumanIK Character作成後の失敗とcleanup結果を保持する例外。"""
 
@@ -98,6 +176,7 @@ def _preflight_hik_character():
 
 
 def create_character(name):
+    ensure_humanik_mel_loaded(_CREATE_CHARACTER_PROCEDURES)
     # create character Definition
     new_character = mel.eval(f'hikCreateCharacter( "{name}" );')
     mel.eval("hikUpdateCharacterList();")
@@ -112,6 +191,8 @@ def _resolve_assignments(assignment_data, require_non_empty=False):
     normalized = humanik_assignment.normalize(assignment_data)
     if require_non_empty and not normalized["assignments"]:
         raise ValueError("HumanIK assignmentには1件以上のslotが必要です")
+
+    ensure_humanik_mel_loaded(_ASSIGNMENT_RESOLUTION_PROCEDURES)
 
     resolved_slots = []
     for assignment in normalized["assignments"]:
@@ -238,6 +319,7 @@ def create_character_definition(assignment_data, name_hint="YWTACharacter"):
     if not isinstance(name_hint, str) or not name_hint.strip():
         raise ValueError("HumanIK Character名は空でない文字列にしてください")
     resolved = _resolve_assignments(assignment_data, require_non_empty=True)
+    ensure_humanik_mel_loaded(_CREATE_DEFINITION_PROCEDURES)
 
     characters_before = _scene_humanik_characters()
     character = None
@@ -304,6 +386,7 @@ def load_character_definition(file_path):
     変更しない。
     """
     character_config = humanik_assignment.load(file_path)
+    ensure_humanik_mel_loaded(_LOAD_DEFINITION_PROCEDURES)
 
     hikChar = mel.eval("hikGetCurrentCharacter()")
 
@@ -326,6 +409,7 @@ def setup_hik_character():
     成功・失敗にかかわらず、途中で変更した選択は元へ戻す。
     """
     root_joint, hip_joint, previous_selection = _preflight_hik_character()
+    ensure_humanik_mel_loaded(_SETUP_PROCEDURES)
 
     try:
         new_character = create_character("testCharacter")

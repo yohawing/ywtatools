@@ -41,7 +41,7 @@
 | 新規Character builder | `create_character_definition()` で実装済み。事前解決、slot順適用、readback、所有Character cleanupを行う |
 | bind/rest pose証明後のLock | 未実装 |
 | current Character/Sourceのsnapshotと復元 | 未実装 |
-| HumanIK MEL procedure loader | 未実装 |
+| HumanIK MEL procedure loader | `ensure_humanik_mel_loaded()`で実装済み。入口ごとの必須procedureを確認し、不足時だけMaya標準plugin/scriptを準備する |
 
 既存の`setup_hik_character()`はHip/Pelvisを限定的に割り当ててLockする旧来の入口です。
 選択は復元しますが、汎用builderの完成形やtransactionの根拠にはしません。
@@ -89,22 +89,19 @@ CharacterのLockは次をすべて満たした後だけ許可します。
 
 ## 実装sliceとテスト
 
-1. **MEL loader**
-   - 必須procedureの存在確認と、必要最小のscript sourceを実装する
-   - unit testで不足時にMEL mutationが0回であること、既にloadedならsourceしないことを固定する
-2. **current state snapshot**
+1. **current state snapshot**
    - current Character、Source、input type、lock状態をpureな値へcapture/restoreする
    - 成功・例外の両方で元状態へ戻ること、外部Characterを削除しないことをMaya testで確認する
-3. **既存Character assignment transaction**
+2. **既存Character assignment transaction**
    - 全件適用後readbackを追加し、途中失敗時は変更対象slotをsnapshotから復元する
    - 1件目成功後の2件目失敗、readback不一致、cleanup失敗をfixtureで検証する
-4. **bind/rest proof**
+3. **bind/rest proof**
    - root階層、pose出所、対象Joint集合、world matrix readbackを表す小さな結果型を定義する
    - missing/ambiguous pose、階層外Joint、matrix不一致ではLock前に停止する
-5. **Lock付きbuilder**
+4. **Lock付きbuilder**
    - rebind、proof、create、assignment readback、Lock readbackを順に合成する
    - 成功時のCharacterと元current state、各失敗点の所有cleanup/復元、Undo/RedoをMaya 2024で確認する
-6. **薄いUI**
+5. **薄いUI**
    - assignment/merge preview、proof結果、実行可否だけを表示する
    - callback testに加え、Maya GUIでmenu位置、前提、成功表示、Undoをsmoke確認する
 

@@ -9,7 +9,119 @@ from unittest import mock
 from ywta.rig import humanik
 
 
+class HumanIkMelLoaderTests(unittest.TestCase):
+    def test_loaded_procedures_do_not_source_scripts(self):
+        mel_module = mock.Mock()
+        mel_module.eval.return_value = 1
+        cmds_module = mock.Mock()
+
+        humanik.ensure_humanik_mel_loaded(("hikCreateCharacter",), mel_module, cmds_module)
+
+        mel_module.eval.assert_called_once_with("exists hikCreateCharacter")
+        cmds_module.pluginInfo.assert_not_called()
+
+    def test_missing_procedure_sources_standard_scripts_in_order(self):
+        mel_module = mock.Mock()
+        loaded = False
+
+        def evaluate(command):
+            nonlocal loaded
+            if command.startswith("exists "):
+                return loaded
+            if command == 'source "hikCharacterControlsUtils.mel"':
+                loaded = True
+            return None
+
+        mel_module.eval.side_effect = evaluate
+        cmds_module = mock.Mock()
+        cmds_module.pluginInfo.return_value = False
+        humanik.ensure_humanik_mel_loaded(("hikCreateCharacter",), mel_module, cmds_module)
+
+        commands = [call.args[0] for call in mel_module.eval.call_args_list]
+        self.assertEqual(
+            [mock.call(plugin, query=True, loaded=True) for plugin in humanik._HIK_PLUGINS],
+            cmds_module.pluginInfo.call_args_list,
+        )
+        self.assertEqual(
+            [mock.call(plugin, quiet=True) for plugin in humanik._HIK_PLUGINS],
+            cmds_module.loadPlugin.call_args_list,
+        )
+        self.assertEqual(
+            ['source "{}"'.format(script) for script in humanik._HIK_MEL_SCRIPTS],
+            [command for command in commands if command.startswith("source ")],
+        )
+
+    def test_still_missing_procedure_raises_after_source(self):
+        mel_module = mock.Mock()
+        mel_module.eval.return_value = 0
+        cmds_module = mock.Mock()
+        cmds_module.pluginInfo.return_value = True
+
+        with self.assertRaisesRegex(RuntimeError, "hikCreateCharacter"):
+            humanik.ensure_humanik_mel_loaded(("hikCreateCharacter",), mel_module, cmds_module)
+
+        self.assertEqual(
+            ['source "{}"'.format(script) for script in humanik._HIK_MEL_SCRIPTS],
+            [call.args[0] for call in mel_module.eval.call_args_list if call.args[0].startswith("source ")],
+        )
+
+    def test_source_error_reports_standard_script(self):
+        mel_module = mock.Mock()
+
+        def evaluate(command):
+            if command.startswith("exists "):
+                return 0
+            if command == 'source "hikGlobalUtils.mel"':
+                raise RuntimeError("source failed")
+            return None
+
+        mel_module.eval.side_effect = evaluate
+        cmds_module = mock.Mock()
+        cmds_module.pluginInfo.return_value = True
+        with self.assertRaisesRegex(RuntimeError, "hikGlobalUtils.mel") as raised:
+            humanik.ensure_humanik_mel_loaded(("hikCreateCharacter",), mel_module, cmds_module)
+
+        self.assertEqual(str(raised.exception.__cause__), "source failed")
+
+    def test_plugin_error_stops_before_source(self):
+        mel_module = mock.Mock()
+        mel_module.eval.return_value = 0
+        cmds_module = mock.Mock()
+        cmds_module.pluginInfo.return_value = False
+        cmds_module.loadPlugin.side_effect = RuntimeError("plugin failed")
+
+        with self.assertRaisesRegex(RuntimeError, "mayaHIK") as raised:
+            humanik.ensure_humanik_mel_loaded(("hikCreateCharacter",), mel_module, cmds_module)
+
+        self.assertEqual(str(raised.exception.__cause__), "plugin failed")
+        self.assertFalse(any(call.args[0].startswith("source ") for call in mel_module.eval.call_args_list))
+
+    def test_setup_stops_before_scene_mutation_when_procedures_stay_missing(self):
+        def evaluate(command):
+            return 0 if command.startswith("exists ") else None
+
+        with (
+            mock.patch.object(humanik.cmds, "ls", return_value=["|rig|root"]),
+            mock.patch.object(humanik.cmds, "nodeType", return_value="joint"),
+            mock.patch.object(humanik.cmds, "listRelatives", return_value=["|rig|root|pelvis"]),
+            mock.patch.object(humanik.cmds, "select") as select,
+            mock.patch.object(humanik, "create_character") as create_character,
+            mock.patch.object(humanik.mel, "eval", side_effect=evaluate),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "HumanIK MEL procedure"):
+                humanik.setup_hik_character()
+
+        select.assert_not_called()
+        create_character.assert_not_called()
+
+
 class HumanIkTests(unittest.TestCase):
+    def setUp(self):
+        """既存のcommand順テストではloaderの観測commandを分離する。"""
+        patcher = mock.patch.object(humanik, "ensure_humanik_mel_loaded")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     @staticmethod
     def _assignment(*items):
         return {

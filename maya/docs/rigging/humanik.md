@@ -17,6 +17,12 @@ fail-closedで停止し、`create_character`やHumanIK MELは呼び出しませ�
 Lockします。途中でHipを一時選択しますが、成功・失敗にかかわらず実行前のJoint選択へ
 戻します。Character作成後のMEL処理全体をtransactionとして戻す機能はありません。
 
+各入口はsceneを変更する前に、その処理が実際に使うHumanIK MEL procedureを`exists`で
+確認します。不足時だけAutodesk Maya同梱の`mayaHIK` / `mayaCharacterization` pluginと、
+現在の入口が使うprocedureの定義元を含む標準HumanIK MEL script群を既定順で準備します。
+再確認しても不足する場合はfail-closedで停止します。既に準備済みならplugin loadもsourceも
+行いません。外部pathやユーザーscriptはloaderの探索・source対象にしません。
+
 ## Assignment JSON
 
 `ywta.rig.humanik.load_character_definition()` は、現在のHumanIK Characterへversioned JSONの
@@ -63,5 +69,6 @@ sceneから消えたことも確認します。`HumanIkCharacterCreationError`�
 汎用的な全身自動マッピングではありません。Hip / Pelvis中心の限定的な設定で、Character名も
 固定されています。bind/rest poseの検証、接続復元、UI拡張はこの機能の責務外です。
 
-HumanIK MELへの依存、Character/Sourceの接続・復元、bind/rest poseの検証、Bakeは未実装です。
+HumanIK MEL procedureの自動準備は実装済みですが、Character/Sourceの接続・復元、
+bind/rest poseの検証、Bakeは未実装です。
 保存済みSceneのコピーで使用してください。
