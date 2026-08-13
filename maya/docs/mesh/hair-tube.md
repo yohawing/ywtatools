@@ -33,6 +33,10 @@ Maya起動前に`YWTA_MESH_CORE_DLL`へ絶対パスを設定します。
 元Meshは変更されません。`<元名>_HairTube`と4本のdegree-1 Curveが作られ、生成Meshが
 選択されれば成功です。結果が不適切なら1回のUndoでMeshと4 Curveをまとめて削除できます。
 
+UV seam、face-vertex color、Material assignment、Skin Weightはsource mappingで補間されます。
+Skin Weightは生成頂点ごとに正規化され、同じInfluenceで新しいskinClusterを作ります。
+未割り当てUV、複数skinCluster、weight合計0などは変更前にfail-closedで拒否します。
+
 ## Curve編集後に再生成する
 
 1. 4本のCurveのCVを移動します。CV数、degree、Curve名は変更しません。
@@ -55,6 +59,6 @@ Maya起動前に`YWTA_MESH_CORE_DLL`へ絶対パスを設定します。
 ## Known Limitations
 
 - 分岐、cap、triangle、non-manifold、自己交差を含む入力はfail-closedで拒否します。
-- 初期版はUV、Material、Skin Weight、Color、Custom Normalを転送しません。
+- Custom Normal、BlendShapeは生成Meshへ転送しません。
 - 4本のCurveは同じCV数とdegree 1を保つ必要があります。
 - 極端に大きい`Segments`では自己交差検査の計算量が増えます。

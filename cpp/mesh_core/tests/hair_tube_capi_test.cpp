@@ -33,19 +33,22 @@ void test_round_trip_and_free() {
          "C ABI should return requested density");
   expect(output.positions_xyz != nullptr && output.quad_indices != nullptr &&
              output.source_intervals != nullptr && output.source_alphas != nullptr &&
-             output.source_vertex_pairs != nullptr && output.source_faces != nullptr,
+             output.source_vertex_pairs != nullptr && output.source_faces != nullptr &&
+             output.source_corner_faces != nullptr,
          "C ABI should allocate all output arrays");
   expect(output.source_vertex_pairs[0] == 0 && output.source_vertex_pairs[1] == 4 &&
              output.source_vertex_pairs[2] == 1 && output.source_vertex_pairs[3] == 5,
          "C ABI should expose source rail vertex pairs");
   expect(output.source_faces[0] == 0 && output.source_faces[3] == 3,
          "C ABI should expose source side faces");
+  expect(output.source_corner_faces[0] == 0 && output.source_corner_faces[15] == 3,
+         "C ABI should expose source face per output corner");
   expect(output.positions_xyz[2] == 0.0 && output.positions_xyz[47] == 1.0,
          "C ABI should preserve root and tip");
   ywta_hair_tube_free(&output);
   expect(output.vertex_count == 0 && output.positions_xyz == nullptr &&
              output.quad_indices == nullptr && output.source_vertex_pairs == nullptr &&
-             output.source_faces == nullptr,
+             output.source_faces == nullptr && output.source_corner_faces == nullptr,
          "free should clear output");
 }
 

@@ -61,29 +61,42 @@ int write_generated_output(const ywta::mesh_core::HairTubeCurveCage& cage,
       source_vertex_pairs.push_back(source_topology->rails[first]);
       source_vertex_pairs.push_back(source_topology->rails[first + 1]);
     } else {
-      source_vertex_pairs.push_back(static_cast<std::uint32_t>(first));
-      source_vertex_pairs.push_back(static_cast<std::uint32_t>(first + 1));
+      source_vertex_pairs.push_back(static_cast<std::uint32_t>(source.interval * 4 + rail));
+      source_vertex_pairs.push_back(static_cast<std::uint32_t>((source.interval + 1) * 4 + rail));
     }
   }
   std::vector<std::uint64_t> source_faces(generated.mesh.quad_indices.size() / 4,
                                           std::numeric_limits<std::uint64_t>::max());
-  if (source_topology != nullptr) {
-    const std::size_t output_station_count = generated.mesh.positions.size() / 4;
-    for (std::size_t station = 0; station + 1 < output_station_count; ++station) {
-      const auto parameter = [&cage](const ywta::mesh_core::HairTubeSourceSample& source) {
-        const std::size_t interval = static_cast<std::size_t>(source.interval);
-        return cage.shared_t[interval] * (1.0 - source.alpha) +
-               cage.shared_t[interval + 1] * source.alpha;
-      };
-      const double midpoint = (parameter(generated.mesh.source_mapping[station * 4]) +
-                               parameter(generated.mesh.source_mapping[(station + 1) * 4])) *
-                              0.5;
-      const auto upper = std::upper_bound(cage.shared_t.begin(), cage.shared_t.end(), midpoint);
-      const std::size_t source_interval =
-          std::min(static_cast<std::size_t>(std::distance(cage.shared_t.begin(), upper) - 1),
-                   static_cast<std::size_t>(cage.source_station_count - 2));
-      for (std::size_t rail = 0; rail < 4; ++rail) {
+  std::vector<std::uint64_t> source_corner_faces;
+  source_corner_faces.reserve(generated.mesh.quad_indices.size());
+  const std::size_t output_station_count = generated.mesh.positions.size() / 4;
+  for (std::size_t station = 0; station + 1 < output_station_count; ++station) {
+    const auto parameter = [&cage](const ywta::mesh_core::HairTubeSourceSample& source) {
+      const std::size_t interval = static_cast<std::size_t>(source.interval);
+      return cage.shared_t[interval] * (1.0 - source.alpha) +
+             cage.shared_t[interval + 1] * source.alpha;
+    };
+    const double midpoint = (parameter(generated.mesh.source_mapping[station * 4]) +
+                             parameter(generated.mesh.source_mapping[(station + 1) * 4])) *
+                            0.5;
+    const auto upper = std::upper_bound(cage.shared_t.begin(), cage.shared_t.end(), midpoint);
+    const std::size_t source_interval =
+        std::min(static_cast<std::size_t>(std::distance(cage.shared_t.begin(), upper) - 1),
+                 static_cast<std::size_t>(cage.source_station_count - 2));
+    for (std::size_t rail = 0; rail < 4; ++rail) {
+      if (source_topology != nullptr) {
         source_faces[station * 4 + rail] = source_topology->side_faces[source_interval * 4 + rail];
+      } else {
+        source_faces[station * 4 + rail] = source_interval * 4 + rail;
+      }
+      for (std::size_t corner = 0; corner < 4; ++corner) {
+        const std::uint32_t output_vertex =
+            generated.mesh.quad_indices[(station * 4 + rail) * 4 + corner];
+        const std::size_t corner_interval =
+            static_cast<std::size_t>(generated.mesh.source_mapping[output_vertex].interval);
+        source_corner_faces.push_back(source_topology != nullptr
+                                          ? source_topology->side_faces[corner_interval * 4 + rail]
+                                          : corner_interval * 4 + rail);
       }
     }
   }
@@ -96,6 +109,7 @@ int write_generated_output(const ywta::mesh_core::HairTubeCurveCage& cage,
   output->source_alphas = copy_array(alphas);
   output->source_vertex_pairs = copy_array(source_vertex_pairs);
   output->source_faces = copy_array(source_faces);
+  output->source_corner_faces = copy_array(source_corner_faces);
   output->source_station_count = cage.source_station_count;
   output->max_fit_deviation = cage.max_fit_deviation;
   output->max_source_distance = generated.mesh.max_source_distance;
@@ -221,6 +235,7 @@ void ywta_hair_tube_free(YwtaHairTubeOutput* output) {
   delete[] output->source_alphas;
   delete[] output->source_vertex_pairs;
   delete[] output->source_faces;
+  delete[] output->source_corner_faces;
   clear_output(output);
 }
 

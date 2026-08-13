@@ -10,6 +10,7 @@ from pathlib import Path
 
 import maya.api.OpenMaya as om2
 import maya.cmds as cmds
+from ywta.core import undo_utils
 
 try:
     from ywta_mesh_core import hair_tube as binding
@@ -28,10 +29,16 @@ _EDGE_PATTERN = re.compile(r"^(?P<object>.+)\.e\[(?P<index>\d+)\]$")
 @contextmanager
 def _undo_chunk(name):
     """Maya commandを単一Undo単位にまとめる。"""
+    undo_utils.require_enabled(name)
     cmds.undoInfo(openChunk=True, chunkName=name)
     try:
         yield
-    finally:
+    except Exception:
+        cmds.undoInfo(closeChunk=True)
+        if cmds.undoInfo(query=True, undoName=True) == name:
+            cmds.undo()
+        raise
+    else:
         cmds.undoInfo(closeChunk=True)
 
 
@@ -106,6 +113,153 @@ def _create_mesh(name, generated, matrix):
     return transform
 
 
+def _lerp_values(first, second, alpha):
+    """同じ長さの数値列を線形補間する。"""
+    return tuple(a * (1.0 - alpha) + b * alpha for a, b in zip(first, second))
+
+
+def _source_face_vertex_index(function, face, vertex):
+    """source face-vertexのflat indexを返す。"""
+    vertices = function.getPolygonVertices(face)
+    try:
+        local_vertex = list(vertices).index(vertex)
+    except ValueError as error:
+        raise ValueError(f"source face {face}にsource vertex {vertex}がありません") from error
+    return function.getFaceVertexIndex(face, local_vertex)
+
+
+def _build_attribute_payload(source, generated):
+    """source mappingからUV、color、material、skin weightを事前計算する。"""
+    function = om2.MFnMesh(_mesh_dag_path(source))
+    if len(generated.source_vertex_pairs) != len(generated.positions):
+        raise ValueError("source vertex mappingの長さが生成頂点数と一致しません")
+    if len(generated.source_faces) != len(generated.quads) or len(generated.source_corner_faces) != len(generated.quads) * 4:
+        raise ValueError("source face mappingの長さが生成面またはloop数と一致しません")
+    if any(vertex < 0 or vertex >= function.numVertices for pair in generated.source_vertex_pairs for vertex in pair) or any(
+        face < 0 or face >= function.numPolygons for face in (*generated.source_faces, *generated.source_corner_faces)
+    ):
+        raise ValueError("現在のmeshはCurve Cageのsource mappingと一致しません")
+
+    corner_sources = []
+    for output_face, quad in enumerate(generated.quads):
+        for corner, output_vertex in enumerate(quad):
+            source_face = generated.source_corner_faces[output_face * 4 + corner]
+            first, second = generated.source_vertex_pairs[output_vertex]
+            alpha = generated.source_mapping[output_vertex][1]
+            corner_sources.append((source_face, first, second, alpha))
+
+    uv_sets = []
+    for uv_set in function.getUVSetNames():
+        if function.numUVs(uv_set) == 0:
+            continue
+        values = []
+        for face, first, second, alpha in corner_sources:
+            vertices = list(function.getPolygonVertices(face))
+            try:
+                first_uv = function.getUV(function.getPolygonUVid(face, vertices.index(first), uv_set), uv_set)
+                second_uv = function.getUV(function.getPolygonUVid(face, vertices.index(second), uv_set), uv_set)
+            except RuntimeError as error:
+                raise ValueError(f"UV set {uv_set}に未割り当てのsource cornerがあります") from error
+            values.append(_lerp_values(first_uv, second_uv, alpha))
+        uv_sets.append((uv_set, values))
+
+    color_sets = []
+    for color_set in function.getColorSetNames():
+        source_colors = function.getFaceVertexColors(color_set)
+        values = []
+        for face, first, second, alpha in corner_sources:
+            first_color = source_colors[_source_face_vertex_index(function, face, first)]
+            second_color = source_colors[_source_face_vertex_index(function, face, second)]
+            values.append(_lerp_values(first_color, second_color, alpha))
+        color_sets.append(
+            (
+                color_set,
+                function.isColorClamped(color_set),
+                function.getColorRepresentation(color_set),
+                values,
+            )
+        )
+
+    shaders, shader_indices = function.getConnectedShaders(0)
+    shader_names = [om2.MFnDependencyNode(shader).name() for shader in shaders]
+    material_indices = [shader_indices[face] for face in generated.source_faces]
+
+    skin_clusters = cmds.ls(cmds.listHistory(source) or [], type="skinCluster") or []
+    if len(skin_clusters) > 1:
+        raise ValueError("複数skinClusterを持つmeshのweight転送には対応していません")
+    skin = None
+    if skin_clusters:
+        cluster = skin_clusters[0]
+        influences = cmds.skinCluster(cluster, query=True, influence=True) or []
+        source_weights = [
+            cmds.skinPercent(cluster, f"{source}.vtx[{vertex}]", query=True, value=True)
+            for vertex in range(function.numVertices)
+        ]
+        weights = []
+        for (first, second), (_interval, alpha) in zip(generated.source_vertex_pairs, generated.source_mapping):
+            interpolated = [a * (1.0 - alpha) + b * alpha for a, b in zip(source_weights[first], source_weights[second])]
+            total = sum(interpolated)
+            if total <= 1.0e-12:
+                raise ValueError("生成頂点のskin weight合計が0です")
+            weights.append([weight / total for weight in interpolated])
+        skin = (influences, weights)
+
+    return {
+        "uv_sets": uv_sets,
+        "color_sets": color_sets,
+        "shader_names": shader_names,
+        "material_indices": material_indices,
+        "skin": skin,
+    }
+
+
+def _apply_attribute_payload(output, payload):
+    """事前検証済み属性を生成meshへ適用する。"""
+    function = om2.MFnMesh(_mesh_dag_path(output))
+    face_counts = [4] * function.numPolygons
+    uv_ids = list(range(function.numPolygons * 4))
+    existing_uv_sets = set(function.getUVSetNames())
+    for uv_set, values in payload["uv_sets"]:
+        target_set = uv_set
+        if uv_set not in existing_uv_sets:
+            target_set = function.createUVSet(uv_set)
+            existing_uv_sets.add(target_set)
+        function.setUVs([value[0] for value in values], [value[1] for value in values], target_set)
+        function.assignUVs(face_counts, uv_ids, target_set)
+
+    existing_color_sets = set(function.getColorSetNames())
+    face_ids = [face for face in range(function.numPolygons) for _corner in range(4)]
+    vertex_ids = [vertex for quad in range(function.numPolygons) for vertex in function.getPolygonVertices(quad)]
+    for color_set, clamped, representation, values in payload["color_sets"]:
+        target_set = color_set
+        if color_set not in existing_color_sets:
+            target_set = function.createColorSet(color_set, clamped, representation)
+            existing_color_sets.add(target_set)
+        colors = [om2.MColor(value) for value in values]
+        function.setCurrentColorSetName(target_set)
+        function.setFaceVertexColors(colors, face_ids, vertex_ids, rep=representation)
+
+    for shader_index, shader in enumerate(payload["shader_names"]):
+        faces = [
+            f"{output}.f[{face}]"
+            for face, material_index in enumerate(payload["material_indices"])
+            if material_index == shader_index
+        ]
+        if faces:
+            cmds.sets(faces, edit=True, forceElement=shader)
+
+    if payload["skin"] is not None:
+        influences, weights = payload["skin"]
+        cluster = cmds.skinCluster(influences, output, toSelectedBones=True, normalizeWeights=1)[0]
+        for vertex, values in enumerate(weights):
+            cmds.skinPercent(
+                cluster,
+                f"{output}.vtx[{vertex}]",
+                transformValue=list(zip(influences, values)),
+                normalize=True,
+            )
+
+
 def _create_curve_cage(source, generated):
     """station-major生成点から4本のdegree-1 curveを作る。"""
     station_count = len(generated.positions) // 4
@@ -118,6 +272,20 @@ def _create_curve_cage(source, generated):
         cmds.xform(curve, matrix=matrix, worldSpace=True)
         names.append(curve)
     return names
+
+
+def _update_curve_cage(output, names, generated):
+    """再生成密度へ4本のCurve CV列を同期する。"""
+    matrix = cmds.xform(output, query=True, matrix=True, worldSpace=True)
+    station_count = len(generated.positions) // 4
+    updated = []
+    for rail, name in enumerate(names):
+        cmds.delete(name)
+        points = [generated.positions[station * 4 + rail] for station in range(station_count)]
+        curve = cmds.curve(degree=1, point=points, name=name)
+        cmds.xform(curve, matrix=matrix, worldSpace=True)
+        updated.append(curve)
+    return updated
 
 
 def _set_curve_names(mesh, names):
@@ -158,9 +326,11 @@ def create_from_selected_root(segments=8, fit_tolerance=0.0):
     source, root = _selected_root_cycle()
     positions, faces = _mesh_arrays(source)
     generated = binding.generate(positions, faces, root, target_segments=segments, fit_tolerance=fit_tolerance)
+    attributes = _build_attribute_payload(source, generated)
     matrix = cmds.xform(source, query=True, matrix=True, worldSpace=True)
     with _undo_chunk("Create Hair Tube Curve Cage"):
         output = _create_mesh(f"{source.split('|')[-1]}_HairTube", generated, matrix)
+        _apply_attribute_payload(output, attributes)
         names = _create_curve_cage(source, generated)
         _set_curve_names(output, names)
         cmds.select(output, replace=True)
@@ -175,11 +345,14 @@ def rebuild_selected(segments=8, fit_tolerance=0.0):
     output = selected[0]
     names, rails = _read_curve_cage(output)
     generated = binding.generate_from_rails(rails, target_segments=segments, fit_tolerance=fit_tolerance)
+    attributes = _build_attribute_payload(output, generated)
     matrix = cmds.xform(output, query=True, matrix=True, worldSpace=True)
     short_name = output.split("|")[-1]
     with _undo_chunk("Rebuild Hair Tube Curve Cage"):
         cmds.delete(output)
         rebuilt = _create_mesh(short_name, generated, matrix)
+        _apply_attribute_payload(rebuilt, attributes)
+        names = _update_curve_cage(rebuilt, names, generated)
         _set_curve_names(rebuilt, names)
         cmds.select(rebuilt, replace=True)
     return rebuilt
@@ -207,23 +380,21 @@ def generate_lods_selected(segment_counts="2,4,8", fit_tolerance=0.0):
     source = selected[0]
     names, rails = _read_curve_cage(source)
     segments = _parse_lod_segments(segment_counts)
-    generated_levels = [
-        (
-            segment_count,
-            binding.generate_from_rails(
-                rails,
-                target_segments=segment_count,
-                fit_tolerance=fit_tolerance,
-            ),
+    generated_levels = []
+    for segment_count in segments:
+        generated = binding.generate_from_rails(
+            rails,
+            target_segments=segment_count,
+            fit_tolerance=fit_tolerance,
         )
-        for segment_count in segments
-    ]
+        generated_levels.append((segment_count, generated, _build_attribute_payload(source, generated)))
     matrix = cmds.xform(source, query=True, matrix=True, worldSpace=True)
     base_name = source.split("|")[-1]
     outputs = []
     with _undo_chunk("Generate Hair Tube LODs"):
-        for segment_count, generated in generated_levels:
+        for segment_count, generated, attributes in generated_levels:
             output = _create_mesh(f"{base_name}_LOD{segment_count}", generated, matrix)
+            _apply_attribute_payload(output, attributes)
             _set_curve_names(output, names)
             outputs.append(output)
         cmds.select(outputs, replace=True)

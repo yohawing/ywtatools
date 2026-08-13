@@ -60,13 +60,15 @@ def _link_object_like_source(context, source, obj):
         collection.objects.link(obj)
 
 
-def _replace_mesh(obj, generated):
+def _replace_mesh(obj, generated, attributes=None):
     """生成meshを新しいdatablockへ置換する。"""
     mesh = bpy.data.meshes.new(f"{obj.name}_mesh")
     mesh.from_pydata(generated.positions, [], generated.quads)
     mesh.update()
     old_mesh = obj.data
     obj.data = mesh
+    if attributes is not None:
+        _apply_attribute_payload(obj, attributes)
     if old_mesh is not None and old_mesh.users == 0:
         bpy.data.meshes.remove(old_mesh)
 
@@ -84,7 +86,7 @@ def _parse_lod_segments(value):
     return segments
 
 
-def _create_generated_object(context, source, name, generated):
+def _create_generated_object(context, source, name, generated, attributes=None):
     """sourceと同じtransform・collectionに生成mesh objectを作る。"""
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata(generated.positions, [], generated.quads)
@@ -92,7 +94,149 @@ def _create_generated_object(context, source, name, generated):
     output = bpy.data.objects.new(name, mesh)
     output.matrix_world = source.matrix_world.copy()
     _link_object_like_source(context, source, output)
+    try:
+        if attributes is not None:
+            _apply_attribute_payload(output, attributes)
+    except Exception:
+        bpy.data.objects.remove(output, do_unlink=True)
+        if mesh.users == 0:
+            bpy.data.meshes.remove(mesh)
+        raise
     return output
+
+
+def _lerp_values(first, second, alpha):
+    """同じ長さの数値列を線形補間する。"""
+    return tuple(a * (1.0 - alpha) + b * alpha for a, b in zip(first, second))
+
+
+def _source_loop(mesh, face_index, vertex_index):
+    """source face内のvertexに対応するloop indexを返す。"""
+    polygon = mesh.polygons[face_index]
+    for loop_index in polygon.loop_indices:
+        if mesh.loops[loop_index].vertex_index == vertex_index:
+            return loop_index
+    raise ValueError(f"source face {face_index}にsource vertex {vertex_index}がありません")
+
+
+def _build_attribute_payload(source, generated):
+    """source mappingからUV、color、material、vertex groupを事前計算する。"""
+    mesh = source.data
+    has_attributes = bool(len(source.vertex_groups) or len(mesh.materials) or len(mesh.uv_layers) or len(mesh.color_attributes))
+    if not has_attributes:
+        return None
+    if len(generated.source_vertex_pairs) != len(generated.positions):
+        raise ValueError("source vertex mappingの長さが生成頂点数と一致しません")
+    if len(generated.source_faces) != len(generated.quads):
+        raise ValueError("source face mappingの長さが生成面数と一致しません")
+    if len(generated.source_corner_faces) != len(generated.quads) * 4:
+        raise ValueError("source corner face mappingの長さが生成loop数と一致しません")
+    if any(vertex < 0 or vertex >= len(mesh.vertices) for pair in generated.source_vertex_pairs for vertex in pair) or any(
+        face < 0 or face >= len(mesh.polygons) for face in (*generated.source_faces, *generated.source_corner_faces)
+    ):
+        raise ValueError("現在のmeshはCurve Cageのsource mappingと一致しません")
+
+    output_loop_sources = []
+    for output_face, quad in enumerate(generated.quads):
+        for corner, output_vertex in enumerate(quad):
+            source_face = generated.source_corner_faces[output_face * 4 + corner]
+            first, second = generated.source_vertex_pairs[output_vertex]
+            alpha = generated.source_mapping[output_vertex][1]
+            output_loop_sources.append(
+                (
+                    _source_loop(mesh, source_face, first),
+                    _source_loop(mesh, source_face, second),
+                    alpha,
+                )
+            )
+
+    uv_layers = []
+    for layer in mesh.uv_layers:
+        values = [
+            _lerp_values(layer.data[first].uv, layer.data[second].uv, alpha) for first, second, alpha in output_loop_sources
+        ]
+        uv_layers.append((layer.name, values))
+
+    color_layers = []
+    for layer in mesh.color_attributes:
+        if layer.domain == "CORNER":
+            values = [
+                _lerp_values(layer.data[first].color, layer.data[second].color, alpha)
+                for first, second, alpha in output_loop_sources
+            ]
+        elif layer.domain == "POINT":
+            values = [
+                _lerp_values(layer.data[first].color, layer.data[second].color, alpha)
+                for (first, second), (_interval, alpha) in zip(generated.source_vertex_pairs, generated.source_mapping)
+            ]
+        else:
+            continue
+        color_layers.append((layer.name, layer.data_type, layer.domain, values))
+
+    armatures = [
+        modifier.object for modifier in source.modifiers if modifier.type == "ARMATURE" and modifier.object is not None
+    ]
+    bone_names = {bone.name for armature in armatures for bone in armature.data.bones}
+    group_weights = {}
+    for group in source.vertex_groups:
+        values = []
+        for (first, second), (_interval, alpha) in zip(generated.source_vertex_pairs, generated.source_mapping):
+            try:
+                first_weight = group.weight(first)
+            except RuntimeError:
+                first_weight = 0.0
+            try:
+                second_weight = group.weight(second)
+            except RuntimeError:
+                second_weight = 0.0
+            values.append(first_weight * (1.0 - alpha) + second_weight * alpha)
+        group_weights[group.name] = values
+    skin_groups = [name for name in group_weights if name in bone_names]
+    for vertex in range(len(generated.positions)):
+        total = sum(group_weights[name][vertex] for name in skin_groups)
+        if skin_groups and total <= 1.0e-12:
+            raise ValueError(f"生成頂点{vertex}のskin weight合計が0です")
+        if total > 0.0:
+            for name in skin_groups:
+                group_weights[name][vertex] /= total
+
+    return {
+        "materials": list(mesh.materials),
+        "material_indices": [mesh.polygons[source_face].material_index for source_face in generated.source_faces],
+        "uv_layers": uv_layers,
+        "color_layers": color_layers,
+        "group_weights": group_weights,
+        "armatures": armatures,
+    }
+
+
+def _apply_attribute_payload(output, payload):
+    """事前検証済み属性を生成objectへ適用する。"""
+    mesh = output.data
+    for material in payload["materials"]:
+        mesh.materials.append(material)
+    for polygon, material_index in zip(mesh.polygons, payload["material_indices"]):
+        polygon.material_index = material_index
+    for name, values in payload["uv_layers"]:
+        layer = mesh.uv_layers.new(name=name)
+        for datum, value in zip(layer.data, values):
+            datum.uv = value
+    for name, data_type, domain, values in payload["color_layers"]:
+        layer = mesh.color_attributes.new(name=name, type=data_type, domain=domain)
+        for datum, value in zip(layer.data, values):
+            datum.color = value
+    output.vertex_groups.clear()
+    for name, weights in payload["group_weights"].items():
+        group = output.vertex_groups.new(name=name)
+        for vertex, weight in enumerate(weights):
+            if weight > 0.0:
+                group.add([vertex], weight, "REPLACE")
+    for modifier in list(output.modifiers):
+        if modifier.type == "ARMATURE":
+            output.modifiers.remove(modifier)
+    for index, armature in enumerate(payload["armatures"]):
+        modifier = output.modifiers.new(name=f"HairTubeArmature{index + 1}", type="ARMATURE")
+        modifier.object = armature
 
 
 def _create_curve_cage(context, source, generated):
@@ -136,6 +280,21 @@ def _read_curve_cage(obj):
     return rails
 
 
+def _update_curve_cage(obj, generated):
+    """再生成密度へCurve CageのCV列を同期し、次回mappingを一致させる。"""
+    names = json.loads(obj[_CURVE_NAMES_PROPERTY])
+    station_count = len(generated.positions) // 4
+    for rail, name in enumerate(names):
+        curve_obj = bpy.data.objects[name]
+        curve_obj.matrix_world = obj.matrix_world.copy()
+        curve = curve_obj.data
+        curve.splines.clear()
+        spline = curve.splines.new("POLY")
+        spline.points.add(station_count - 1)
+        for station, point in enumerate(spline.points):
+            point.co = (*generated.positions[station * 4 + rail], 1.0)
+
+
 class YWTA_OT_hair_tube_create(Operator):
     """選択root loopから編集可能なCurve Cageと別meshを作る。"""
 
@@ -168,8 +327,19 @@ class YWTA_OT_hair_tube_create(Operator):
             self.report({"ERROR"}, str(error))
             return {"CANCELLED"}
 
-        output = _create_generated_object(context, source, f"{source.name}_HairTube", generated)
-        curve_names = _create_curve_cage(context, source, generated)
+        try:
+            attributes = _build_attribute_payload(source, generated)
+        except ValueError as error:
+            self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}
+        try:
+            output = _create_generated_object(context, source, f"{source.name}_HairTube", generated, attributes)
+            curve_names = _create_curve_cage(context, source, generated)
+        except (ValueError, RuntimeError) as error:
+            if "output" in locals():
+                bpy.data.objects.remove(output, do_unlink=True)
+            self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}
         output[_CURVE_NAMES_PROPERTY] = json.dumps(curve_names, ensure_ascii=True)
         for selected in context.selected_objects:
             selected.select_set(False)
@@ -207,10 +377,12 @@ class YWTA_OT_hair_tube_rebuild(Operator):
         try:
             rails = _read_curve_cage(obj)
             generated = binding.generate_from_rails(rails, target_segments=self.segments, fit_tolerance=self.fit_tolerance)
+            attributes = _build_attribute_payload(obj, generated)
         except (ValueError, FileNotFoundError, binding.HairTubeError) as error:
             self.report({"ERROR"}, str(error))
             return {"CANCELLED"}
-        _replace_mesh(obj, generated)
+        _replace_mesh(obj, generated, attributes)
+        _update_curve_cage(obj, generated)
         self.report({"INFO"}, f"Curve Cageから{len(generated.positions)}頂点へ再生成しました")
         return {"FINISHED"}
 
@@ -240,27 +412,36 @@ class YWTA_OT_hair_tube_generate_lods(Operator):
         try:
             segment_counts = _parse_lod_segments(self.segments)
             rails = _read_curve_cage(source)
-            generated_levels = [
-                (
-                    segments,
-                    binding.generate_from_rails(
-                        rails,
-                        target_segments=segments,
-                        fit_tolerance=self.fit_tolerance,
-                    ),
+            generated_levels = []
+            for segments in segment_counts:
+                generated = binding.generate_from_rails(
+                    rails,
+                    target_segments=segments,
+                    fit_tolerance=self.fit_tolerance,
                 )
-                for segments in segment_counts
-            ]
+                generated_levels.append((segments, generated, _build_attribute_payload(source, generated)))
         except (ValueError, FileNotFoundError, binding.HairTubeError) as error:
             self.report({"ERROR"}, str(error))
             return {"CANCELLED"}
 
         curve_names = source[_CURVE_NAMES_PROPERTY]
         outputs = []
-        for segments, generated in generated_levels:
-            output = _create_generated_object(context, source, f"{source.name}_LOD{segments}", generated)
-            output[_CURVE_NAMES_PROPERTY] = curve_names
-            outputs.append(output)
+        try:
+            for segments, generated, attributes in generated_levels:
+                output = _create_generated_object(
+                    context,
+                    source,
+                    f"{source.name}_LOD{segments}",
+                    generated,
+                    attributes,
+                )
+                output[_CURVE_NAMES_PROPERTY] = curve_names
+                outputs.append(output)
+        except (ValueError, RuntimeError) as error:
+            for output in outputs:
+                bpy.data.objects.remove(output, do_unlink=True)
+            self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}
         for selected in context.selected_objects:
             selected.select_set(False)
         for output in outputs:

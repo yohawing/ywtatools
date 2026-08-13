@@ -25,6 +25,7 @@ class HairTubeOutput(ctypes.Structure):
         ("source_alphas", ctypes.POINTER(ctypes.c_double)),
         ("source_vertex_pairs", ctypes.POINTER(ctypes.c_uint32)),
         ("source_faces", ctypes.POINTER(ctypes.c_uint64)),
+        ("source_corner_faces", ctypes.POINTER(ctypes.c_uint64)),
         ("source_station_count", ctypes.c_uint64),
         ("max_fit_deviation", ctypes.c_double),
         ("max_source_distance", ctypes.c_double),
@@ -41,6 +42,7 @@ class GeneratedHairTube:
     source_mapping: list[tuple[int, float]]
     source_vertex_pairs: list[tuple[int, int]]
     source_faces: list[int]
+    source_corner_faces: list[int]
     source_station_count: int
     max_fit_deviation: float
     max_source_distance: float
@@ -170,12 +172,14 @@ def _copy_output(dll, output: HairTubeOutput) -> GeneratedHairTube:
             for index in range(output.vertex_count)
         ]
         source_faces = [int(output.source_faces[index]) for index in range(output.quad_count)]
+        source_corner_faces = [int(output.source_corner_faces[index]) for index in range(output.quad_count * 4)]
         return GeneratedHairTube(
             positions,
             quads,
             mapping,
             source_vertex_pairs,
             source_faces,
+            source_corner_faces,
             int(output.source_station_count),
             float(output.max_fit_deviation),
             float(output.max_source_distance),

@@ -21,6 +21,10 @@
 元Meshは残り、別のHair Tube Meshと4本のpoly Curveが同じCollectionに作られます。
 生成されたMeshがActive Objectになれば成功です。
 
+UV seam、Material、POINT/CORNER Color、Vertex Groupをsource mappingで補間します。
+Armatureのbone名と一致するVertex Groupは頂点ごとに再正規化し、同じArmature Modifierを
+生成Objectへ設定します。未割り当てUVやweight合計0などは部分出力を残さず拒否します。
+
 ## Curveから再生成する
 
 1. 生成された4本のCurveをEdit Modeで動かします。
@@ -57,4 +61,4 @@ uvx nox -s mesh_core_tests
 - rootには、4頂点で閉じた1つのedge loopを指定します。
 - Cageは4本とも、1つの`POLY` splineのまま編集してください。削除、改名、spline形式の変更を
   行うと再生成できません。
-- UV、Material、Vertex Group、Shape Keyは生成Meshへ転送されません。
+- Shape Key、Custom Normalは生成Meshへ転送されません。
