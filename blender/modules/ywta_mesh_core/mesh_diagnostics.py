@@ -81,8 +81,8 @@ def _configure(dll):
     dll.ywta_mesh_diagnostic_free.restype = None
 
 
-def diagnose(positions, faces, *, area_epsilon=1.0e-12):
-    """位置とface配列を変更せず診断する。"""
+def _validate_inputs(positions, faces, area_epsilon):
+    """Python入力を検証し、正規化済み配列を返す。"""
     points = [tuple(float(component) for component in point) for point in positions]
     polygons = [tuple(int(vertex) for vertex in face) for face in faces]
     epsilon = float(area_epsilon)
@@ -96,6 +96,12 @@ def diagnose(positions, faces, *, area_epsilon=1.0e-12):
         raise ValueError("facesに範囲外の頂点があります")
     if not math.isfinite(epsilon) or epsilon < 0.0:
         raise ValueError("area_epsilonは有限な0以上で指定してください")
+    return points, polygons, epsilon
+
+
+def diagnose(positions, faces, *, area_epsilon=1.0e-12):
+    """位置とface配列を変更せず診断する。"""
+    points, polygons, epsilon = _validate_inputs(positions, faces, area_epsilon)
 
     flat_positions = [value for point in points for value in point]
     offsets = [0]

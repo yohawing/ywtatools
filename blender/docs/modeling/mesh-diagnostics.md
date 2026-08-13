@@ -19,4 +19,14 @@ meshデータを変更しません。結果が0件ならObject選択を維持し
 - 1回に1つのMeshを診断します。
 - Boundaryは各頂点のboundary次数が2の閉ループだけを返します。分岐したboundaryは
   non-manifold / bow-tie分類を先に確認してください。
-- 自動修復は行いません。
+- 診断operator自体は修復を行いません。
+
+## Safe Mesh Repair
+
+同じメニューの`Safe Mesh Repair`は既定でdry-runです。`Apply Changes`を無効のまま実行すると、
+削除または反転予定のFaceだけを選択します。内容を確認後、もう一度開いて`Apply Changes`を
+有効にすると、zero-area faceと後発duplicate faceを削除し、2面共有edgeのwindingを整合します。
+
+適用は1回のUndo対象です。保持FaceのUV、Color、Material、Vertex GroupはBlenderのBMesh編集で
+維持されます。元Faceから新Faceへの対応はObjectの`ywta_mesh_repair_old_face_to_new`へJSONで
+保存します。3面以上の共有edgeやnon-orientableな面接続は変更せず拒否します。

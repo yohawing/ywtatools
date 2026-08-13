@@ -1,20 +1,26 @@
 """共有coreのmesh診断結果をBlender component選択へ反映する。"""
 
+import json
 import os
 import sys
 
 import bmesh
 import bpy
-from bpy.props import EnumProperty, FloatProperty
+from bpy.props import BoolProperty, EnumProperty, FloatProperty
 from bpy.types import Operator
 
 try:
     from ywta_mesh_core import mesh_diagnostics as binding
+    from ywta_mesh_core import mesh_repair as repair_binding
 except ImportError:
     _modules_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "modules"))
     if _modules_dir not in sys.path:
         sys.path.append(_modules_dir)
     from ywta_mesh_core import mesh_diagnostics as binding
+    from ywta_mesh_core import mesh_repair as repair_binding
+
+
+_REPAIR_MAPPING_PROPERTY = "ywta_mesh_repair_old_face_to_new"
 
 
 _ISSUES = (
@@ -114,18 +120,79 @@ class YWTA_OT_select_mesh_diagnostics(Operator):
         return context.window_manager.invoke_props_dialog(self)
 
 
+class YWTA_OT_safe_mesh_repair(Operator):
+    """zero-area・重複faceを除去し、windingを安全範囲で整合する。"""
+
+    bl_idname = "ywta.safe_mesh_repair"
+    bl_label = "Safe Mesh Repair"
+    bl_description = "dry-run確認後、zero-area・後発duplicate face除去とwinding整合をUndo可能に適用します"
+    bl_options = {"REGISTER", "UNDO"}
+
+    apply_changes: BoolProperty(name="Apply Changes", default=False)
+    area_epsilon: FloatProperty(name="Area Epsilon", default=1.0e-12, min=0.0, precision=12)
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj is not None and obj.type == "MESH" and obj.mode in {"OBJECT", "EDIT"}
+
+    def execute(self, context):
+        obj = context.active_object
+        if obj.mode == "EDIT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        try:
+            positions, faces = _mesh_arrays(obj.data)
+            plan = repair_binding.plan(positions, faces, area_epsilon=self.area_epsilon)
+            affected = set(plan.removed_zero_area_faces + plan.removed_duplicate_faces + plan.flipped_source_faces)
+            bpy.ops.object.mode_set(mode="EDIT")
+            bm = bmesh.from_edit_mesh(obj.data)
+            bm.faces.ensure_lookup_table()
+            if not self.apply_changes:
+                for face in bm.faces:
+                    face.select = face.index in affected
+                bmesh.update_edit_mesh(obj.data)
+                self.report(
+                    {"INFO"},
+                    f"Dry-run: remove {len(plan.removed_zero_area_faces) + len(plan.removed_duplicate_faces)}、flip {len(plan.flipped_source_faces)} faces",
+                )
+                return {"FINISHED"}
+
+            for face in plan.flipped_source_faces:
+                bm.faces[face].normal_flip()
+            removed = [bm.faces[face] for face in plan.removed_zero_area_faces + plan.removed_duplicate_faces]
+            if removed:
+                bmesh.ops.delete(bm, geom=removed, context="FACES_ONLY")
+            bmesh.update_edit_mesh(obj.data, loop_triangles=True, destructive=bool(removed))
+            obj[_REPAIR_MAPPING_PROPERTY] = json.dumps(plan.old_face_to_new)
+        except (ValueError, FileNotFoundError, repair_binding.MeshRepairError) as error:
+            self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}
+        self.report(
+            {"INFO"},
+            f"remove {len(plan.removed_zero_area_faces) + len(plan.removed_duplicate_faces)}、flip {len(plan.flipped_source_faces)} facesを適用しました",
+        )
+        return {"FINISHED"}
+
+    def invoke(self, context, _event):
+        """既定dry-runで変更内容を確認する。"""
+        return context.window_manager.invoke_props_dialog(self)
+
+
 def _draw_mesh_menu(self, _context):
     self.layout.separator()
     self.layout.operator(YWTA_OT_select_mesh_diagnostics.bl_idname)
+    self.layout.operator(YWTA_OT_safe_mesh_repair.bl_idname)
 
 
 def register():
     """operatorとEdit Modeメニューを登録する。"""
     bpy.utils.register_class(YWTA_OT_select_mesh_diagnostics)
+    bpy.utils.register_class(YWTA_OT_safe_mesh_repair)
     bpy.types.VIEW3D_MT_edit_mesh.append(_draw_mesh_menu)
 
 
 def unregister():
     """operatorとEdit Modeメニューを解除する。"""
     bpy.types.VIEW3D_MT_edit_mesh.remove(_draw_mesh_menu)
+    bpy.utils.unregister_class(YWTA_OT_safe_mesh_repair)
     bpy.utils.unregister_class(YWTA_OT_select_mesh_diagnostics)

@@ -51,6 +51,23 @@ typedef struct YwtaMeshDiagnosticOutput {
   uint32_t* boundary_loop_vertices;
 } YwtaMeshDiagnosticOutput;
 
+/** C ABIが所有する安全修復dry-run plan。 */
+typedef struct YwtaMeshRepairOutput {
+  uint64_t output_face_count;
+  uint64_t output_corner_count;
+  uint64_t* face_offsets;
+  uint32_t* face_vertices;
+  uint64_t* old_face_to_new;
+  uint64_t* source_face_by_output;
+  uint64_t* source_corner_by_output;
+  uint64_t removed_zero_area_count;
+  uint64_t* removed_zero_area_faces;
+  uint64_t removed_duplicate_count;
+  uint64_t* removed_duplicate_faces;
+  uint64_t flipped_face_count;
+  uint64_t* flipped_source_faces;
+} YwtaMeshRepairOutput;
+
 /**
  * flat topologyと4頂点root loopから固定密度のopen quad tubeを生成する。
  *
@@ -104,6 +121,15 @@ YWTA_MESH_CORE_API int ywta_mesh_diagnose(
 
 /** ywta_mesh_diagnose()が確保した配列を解放し、outputをゼロ初期化する。 */
 YWTA_MESH_CORE_API void ywta_mesh_diagnostic_free(YwtaMeshDiagnosticOutput* output);
+
+/** zero-area・後発duplicateを除去し、windingを整合させるdry-run planを返す。 */
+YWTA_MESH_CORE_API int ywta_mesh_repair_plan(
+    uint32_t vertex_count, const double* positions_xyz, const uint64_t* face_offsets,
+    uint64_t face_count, const uint32_t* face_vertices, uint64_t face_vertex_count,
+    double area_epsilon, YwtaMeshRepairOutput* output);
+
+/** ywta_mesh_repair_plan()が確保した配列を解放し、outputをゼロ初期化する。 */
+YWTA_MESH_CORE_API void ywta_mesh_repair_free(YwtaMeshRepairOutput* output);
 
 /** 現在のthreadで最後に発生したエラー説明。次のAPI呼び出しまで有効。 */
 YWTA_MESH_CORE_API const char* ywta_mesh_core_last_error(void);

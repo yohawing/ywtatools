@@ -123,6 +123,20 @@ void test_mesh_diagnostic_capi() {
          "diagnostic free should clear output");
 }
 
+void test_mesh_repair_capi() {
+  const double positions[]{0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0, 0};
+  const std::uint64_t offsets[]{0, 3, 6};
+  const std::uint32_t faces[]{0, 1, 3, 0, 1, 2};
+  YwtaMeshRepairOutput output{};
+  const int status = ywta_mesh_repair_plan(4, positions, offsets, 2, faces, 6, 1.0e-12, &output);
+  expect(status == 0 && output.output_face_count == 1 && output.removed_zero_area_count == 1 &&
+             output.old_face_to_new[0] == UINT64_MAX && output.old_face_to_new[1] == 0,
+         "C ABI should expose removal and old-to-new mapping");
+  ywta_mesh_repair_free(&output);
+  expect(output.output_face_count == 0 && output.face_offsets == nullptr,
+         "repair free should clear output");
+}
+
 }  // namespace
 
 int main() {
@@ -131,6 +145,7 @@ int main() {
   test_generate_from_edited_rails();
   test_generate_from_five_edited_rails();
   test_mesh_diagnostic_capi();
+  test_mesh_repair_capi();
   if (failures != 0) {
     std::cerr << failures << " test(s) failed\n";
     return EXIT_FAILURE;

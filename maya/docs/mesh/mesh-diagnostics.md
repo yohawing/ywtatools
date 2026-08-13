@@ -18,4 +18,14 @@ sceneデータを変更しません。実行後はIn-View Messageに全問題数
 - 1回に1つのMeshを診断します。
 - Boundaryは各頂点のboundary次数が2の閉ループだけを返します。分岐したboundaryは
   non-manifold / bow-tie分類を先に確認してください。
-- 自動修復は行いません。
+- 診断ボタン自体は修復を行いません。
+
+## Safe Mesh Repair
+
+同じwindowの`Preview Safe Repair`は、削除または反転予定のFaceだけを選択します。内容を確認後、
+`Apply Safe Repair`を押すと、zero-area faceと後発duplicate faceを削除し、2面共有edgeの
+windingを整合します。
+
+適用は1回のUndo対象です。保持FaceのUV、Color、Material、Skin WeightはMayaのcomponent編集で
+維持されます。元Faceから新Faceへの対応はtransformの`ywtaMeshRepairOldFaceToNew`へJSONで
+保存します。3面以上の共有edgeやnon-orientableな面接続は変更せず拒否します。
