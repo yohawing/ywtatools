@@ -9,6 +9,7 @@ autoRemesherNode（maya/cpp/src/autoRemesherNode.cpp、maya/plug-ins/<version>/y
 """
 
 import unittest
+from unittest import mock
 
 import maya.api.OpenMaya as om2
 import maya.cmds as cmds
@@ -23,9 +24,7 @@ except RuntimeError:
     PLUGIN_LOADED = False
 
 
-@unittest.skipUnless(
-    PLUGIN_LOADED, f"'{PLUGIN_NAME}' プラグイン(.mll)がロードできないためスキップします。"
-)
+@unittest.skipUnless(PLUGIN_LOADED, f"'{PLUGIN_NAME}' プラグイン(.mll)がロードできないためスキップします。")
 class TestAutoRemesherNode(unittest.TestCase):
     """AutoRemesherNode のテストクラス"""
 
@@ -146,6 +145,24 @@ class TestAutoRemesherNode(unittest.TestCase):
         self.assertTrue(cmds.objExists(node))
         self.assertAlmostEqual(cmds.getAttr(f"{node}.sharpEdgeDegrees"), 45.0, places=6)
         self.assertAlmostEqual(cmds.getAttr(f"{node}.smoothNormalDegrees"), 30.0, places=6)
+
+    def test_plugin_loader_falls_back_to_versioned_repository_binary(self):
+        """module path未設定時はversion別の同梱mllを絶対pathでロードする。"""
+        import ywta.mesh.autoremesher as autoremesher
+
+        with (
+            mock.patch.object(autoremesher.cmds, "pluginInfo", side_effect=[False, True]),
+            mock.patch.object(
+                autoremesher.cmds,
+                "loadPlugin",
+                side_effect=[RuntimeError("not on MAYA_PLUG_IN_PATH"), ["ywtatools"]],
+            ) as load_plugin,
+            mock.patch.object(autoremesher.cmds, "about", return_value="2024"),
+        ):
+            self.assertTrue(autoremesher._ensure_plugin_loaded())
+
+        self.assertEqual(load_plugin.call_args_list[0].args[0], "ywtatools")
+        self.assertTrue(load_plugin.call_args_list[1].args[0].replace("\\", "/").endswith("maya/plug-ins/2024/ywtatools.mll"))
 
 
 if __name__ == "__main__":

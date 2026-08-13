@@ -13,6 +13,8 @@ autoRemesherNode は inMesh -> outMesh の非破壊ノードだが、トポロ�
 ノードを作成できる（メニューからはこちらを呼ぶ）。
 """
 
+from pathlib import Path
+
 import maya.cmds as cmds
 
 PLUGIN_NAME = "ywtatools"
@@ -35,8 +37,16 @@ def _ensure_plugin_loaded() -> bool:
     try:
         cmds.loadPlugin(PLUGIN_NAME)
     except RuntimeError as e:
-        cmds.warning(f"プラグイン '{PLUGIN_NAME}' のロードに失敗しました: {e}")
-        return False
+        version = str(cmds.about(version=True)).split(".", 1)[0]
+        plugin_path = Path(__file__).resolve().parents[2] / "plug-ins" / version / "ywtatools.mll"
+        if not plugin_path.is_file():
+            cmds.warning(f"プラグイン '{PLUGIN_NAME}' のロードに失敗しました: {e}")
+            return False
+        try:
+            cmds.loadPlugin(str(plugin_path))
+        except RuntimeError as path_error:
+            cmds.warning(f"プラグイン '{PLUGIN_NAME}' のロードに失敗しました: {path_error}")
+            return False
 
     return bool(cmds.pluginInfo(PLUGIN_NAME, query=True, loaded=True))
 
@@ -100,9 +110,7 @@ def create_remesh_node(
     cmds.connectAttr(f"{shape}.outMesh", f"{node}.inMesh")
 
     out_transform = cmds.createNode("transform", name=f"{transform}_remeshed")
-    out_shape = cmds.createNode(
-        "mesh", name=f"{transform}_remeshedShape", parent=out_transform
-    )
+    out_shape = cmds.createNode("mesh", name=f"{transform}_remeshedShape", parent=out_transform)
     cmds.connectAttr(f"{node}.outMesh", f"{out_shape}.inMesh")
     cmds.sets(out_shape, edit=True, forceElement="initialShadingGroup")
 
@@ -196,9 +204,7 @@ def show_options():
         edge_scaling = cmds.floatFieldGrp(edge_scaling_field, query=True, value1=True)
         model_type = cmds.optionMenuGrp(model_type_field, query=True, select=True) - 1
         sharp_edge_degrees = cmds.floatSliderGrp(sharp_edge_degrees_field, query=True, value=True)
-        smooth_normal_degrees = cmds.floatSliderGrp(
-            smooth_normal_degrees_field, query=True, value=True
-        )
+        smooth_normal_degrees = cmds.floatSliderGrp(smooth_normal_degrees_field, query=True, value=True)
 
         node = create_remesh_node(
             target_count=target_count,
