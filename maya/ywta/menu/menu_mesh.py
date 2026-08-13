@@ -52,7 +52,13 @@ def create_mesh_menu(parent_menu):
         parent=mesh_menu,
         label="Hair Tube Curve Cage...",
         command="import ywta.mesh.hair_tube as ht; ht.show_options()",
-        annotation="選択した4辺root loopから編集可能なCurve Cageと別meshを生成します",
+        annotation="選択した3辺以上のroot loopから編集可能なCurve Cageと別meshを生成します",
+    )
+    cmds.menuItem(
+        parent=mesh_menu,
+        label="Mesh Diagnostics...",
+        command="import ywta.mesh.mesh_diagnostics as md; md.show_options()",
+        annotation="zero-area、重複、non-manifold、winding、bow-tie、boundaryを分類して選択します",
     )
 
     # Rust Volume Preserving Smoothing（ブラシは別実装）

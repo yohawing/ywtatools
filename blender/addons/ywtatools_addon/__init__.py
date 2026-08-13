@@ -19,6 +19,7 @@ if "custom_nodes" in locals():
     import importlib
 
     from . import hair_tube
+    from . import mesh_diagnostics
 
     importlib.reload(custom_nodes)  # noqa: F821
     importlib.reload(properties)  # noqa: F821
@@ -27,6 +28,7 @@ if "custom_nodes" in locals():
     importlib.reload(autoremesher)  # noqa: F821
     importlib.reload(volume_smoothing)  # noqa: F821
     importlib.reload(hair_tube)
+    importlib.reload(mesh_diagnostics)
 else:
     from . import custom_nodes
     from . import properties
@@ -35,6 +37,7 @@ else:
     from . import autoremesher
     from . import volume_smoothing
     from . import hair_tube
+    from . import mesh_diagnostics
 
 
 def register():
@@ -46,10 +49,12 @@ def register():
     autoremesher.register()
     volume_smoothing.register()
     hair_tube.register()
+    mesh_diagnostics.register()
 
 
 def unregister():
     print("unregister YWTA Tools")
+    mesh_diagnostics.unregister()
     hair_tube.unregister()
     volume_smoothing.unregister()
     autoremesher.unregister()

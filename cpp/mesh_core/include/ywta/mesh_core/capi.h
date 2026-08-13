@@ -34,6 +34,23 @@ typedef struct YwtaHairTubeOutput {
   uint64_t rail_count;
 } YwtaHairTubeOutput;
 
+/** C ABIが所有するread-only mesh診断結果。 */
+typedef struct YwtaMeshDiagnosticOutput {
+  uint64_t zero_area_face_count;
+  uint64_t* zero_area_faces;
+  uint64_t duplicate_face_count;
+  uint64_t* duplicate_faces;
+  uint64_t non_manifold_edge_count;
+  uint32_t* non_manifold_edges;
+  uint64_t winding_conflict_edge_count;
+  uint32_t* winding_conflict_edges;
+  uint64_t bow_tie_vertex_count;
+  uint32_t* bow_tie_vertices;
+  uint64_t boundary_loop_count;
+  uint64_t* boundary_loop_offsets;
+  uint32_t* boundary_loop_vertices;
+} YwtaMeshDiagnosticOutput;
+
 /**
  * flat topologyと4頂点root loopから固定密度のopen quad tubeを生成する。
  *
@@ -78,6 +95,15 @@ YWTA_MESH_CORE_API int ywta_hair_tube_generate_from_rails_n(
 
 /** ywta_hair_tube_generate()が確保した配列を解放し、outputをゼロ初期化する。 */
 YWTA_MESH_CORE_API void ywta_hair_tube_free(YwtaHairTubeOutput* output);
+
+/** flat topologyを変更せず診断し、該当要素IDを返す。 */
+YWTA_MESH_CORE_API int ywta_mesh_diagnose(
+    uint32_t vertex_count, const double* positions_xyz, const uint64_t* face_offsets,
+    uint64_t face_count, const uint32_t* face_vertices, uint64_t face_vertex_count,
+    double area_epsilon, YwtaMeshDiagnosticOutput* output);
+
+/** ywta_mesh_diagnose()が確保した配列を解放し、outputをゼロ初期化する。 */
+YWTA_MESH_CORE_API void ywta_mesh_diagnostic_free(YwtaMeshDiagnosticOutput* output);
 
 /** 現在のthreadで最後に発生したエラー説明。次のAPI呼び出しまで有効。 */
 YWTA_MESH_CORE_API const char* ywta_mesh_core_last_error(void);

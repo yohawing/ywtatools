@@ -5,6 +5,7 @@ project(ywta_mesh_core LANGUAGES CXX)
 add_library(ywta_mesh_core_core STATIC
     src/hair_tube_cage.cpp
     src/hair_tube_topology.cpp
+    src/mesh_diagnostics.cpp
     src/raw_topology.cpp
 )
 target_include_directories(ywta_mesh_core_core PUBLIC include)
@@ -41,6 +42,15 @@ if(YWTA_MESH_CORE_BUILD_TESTS)
         target_compile_options(ywta_mesh_core_tests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME ywta_mesh_core_tests COMMAND ywta_mesh_core_tests)
+
+    add_executable(ywta_mesh_diagnostics_tests tests/mesh_diagnostics_test.cpp)
+    target_link_libraries(ywta_mesh_diagnostics_tests PRIVATE ywta_mesh_core_core)
+    if(MSVC)
+        target_compile_options(ywta_mesh_diagnostics_tests PRIVATE /W4)
+    else()
+        target_compile_options(ywta_mesh_diagnostics_tests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME ywta_mesh_diagnostics_tests COMMAND ywta_mesh_diagnostics_tests)
 
     add_executable(ywta_hair_tube_topology_tests
         tests/hair_tube_topology_test.cpp

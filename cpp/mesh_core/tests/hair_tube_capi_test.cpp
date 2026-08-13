@@ -109,6 +109,20 @@ void test_generate_from_five_edited_rails() {
   ywta_hair_tube_free(&output);
 }
 
+void test_mesh_diagnostic_capi() {
+  const double positions[]{0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0};
+  const std::uint64_t offsets[]{0, 4};
+  const std::uint32_t faces[]{0, 1, 2, 3};
+  YwtaMeshDiagnosticOutput output{};
+  const int status = ywta_mesh_diagnose(4, positions, offsets, 1, faces, 4, 1.0e-12, &output);
+  expect(status == 0 && output.boundary_loop_count == 1 &&
+             output.boundary_loop_offsets[1] == 4,
+         "C ABI should expose one quad boundary loop");
+  ywta_mesh_diagnostic_free(&output);
+  expect(output.boundary_loop_count == 0 && output.boundary_loop_offsets == nullptr,
+         "diagnostic free should clear output");
+}
+
 }  // namespace
 
 int main() {
@@ -116,6 +130,7 @@ int main() {
   test_invalid_input_has_no_partial_output();
   test_generate_from_edited_rails();
   test_generate_from_five_edited_rails();
+  test_mesh_diagnostic_capi();
   if (failures != 0) {
     std::cerr << failures << " test(s) failed\n";
     return EXIT_FAILURE;

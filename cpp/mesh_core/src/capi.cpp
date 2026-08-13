@@ -8,6 +8,7 @@
 
 #include "ywta/mesh_core/hair_tube_cage.h"
 #include "ywta/mesh_core/hair_tube_topology.h"
+#include "ywta/mesh_core/mesh_diagnostics.h"
 
 namespace {
 
@@ -24,6 +25,12 @@ T* copy_array(const std::vector<T>& source) {
 }
 
 void clear_output(YwtaHairTubeOutput* output) {
+  if (output != nullptr) {
+    *output = {};
+  }
+}
+
+void clear_output(YwtaMeshDiagnosticOutput* output) {
   if (output != nullptr) {
     *output = {};
   }
@@ -291,6 +298,77 @@ void ywta_hair_tube_free(YwtaHairTubeOutput* output) {
   delete[] output->source_vertex_pairs;
   delete[] output->source_faces;
   delete[] output->source_corner_faces;
+  clear_output(output);
+}
+
+int ywta_mesh_diagnose(uint32_t vertex_count, const double* positions_xyz,
+                       const uint64_t* face_offsets, uint64_t face_count,
+                       const uint32_t* face_vertices, uint64_t face_vertex_count,
+                       double area_epsilon, YwtaMeshDiagnosticOutput* output) {
+  last_error.clear();
+  if (output == nullptr) {
+    last_error = "output must not be null";
+    return 1;
+  }
+  clear_output(output);
+  if (positions_xyz == nullptr) {
+    last_error = "positions_xyz must not be null";
+    return 2;
+  }
+  try {
+    std::vector<ywta::mesh_core::Point3d> positions;
+    positions.reserve(vertex_count);
+    for (std::uint32_t vertex = 0; vertex < vertex_count; ++vertex) {
+      const std::size_t offset = static_cast<std::size_t>(vertex) * 3;
+      positions.push_back(
+          {positions_xyz[offset], positions_xyz[offset + 1], positions_xyz[offset + 2]});
+    }
+    const auto result = ywta::mesh_core::diagnose_mesh(
+        {vertex_count, face_offsets, face_count, face_vertices, face_vertex_count},
+        {positions.data(), positions.size()}, area_epsilon);
+    if (!result.ok()) {
+      last_error = result.message;
+      return 400 + static_cast<int>(result.status);
+    }
+    const auto& report = result.report;
+    output->zero_area_face_count = report.zero_area_faces.size();
+    output->zero_area_faces = copy_array(report.zero_area_faces);
+    output->duplicate_face_count = report.duplicate_faces.size();
+    output->duplicate_faces = copy_array(report.duplicate_faces);
+    output->non_manifold_edge_count = report.non_manifold_edges.size() / 2;
+    output->non_manifold_edges = copy_array(report.non_manifold_edges);
+    output->winding_conflict_edge_count = report.winding_conflict_edges.size() / 2;
+    output->winding_conflict_edges = copy_array(report.winding_conflict_edges);
+    output->bow_tie_vertex_count = report.bow_tie_vertices.size();
+    output->bow_tie_vertices = copy_array(report.bow_tie_vertices);
+    output->boundary_loop_count = report.boundary_loop_offsets.empty()
+                                      ? 0
+                                      : report.boundary_loop_offsets.size() - 1;
+    output->boundary_loop_offsets = copy_array(report.boundary_loop_offsets);
+    output->boundary_loop_vertices = copy_array(report.boundary_loop_vertices);
+    return 0;
+  } catch (const std::exception& error) {
+    ywta_mesh_diagnostic_free(output);
+    last_error = error.what();
+    return 3;
+  } catch (...) {
+    ywta_mesh_diagnostic_free(output);
+    last_error = "unknown C++ exception";
+    return 4;
+  }
+}
+
+void ywta_mesh_diagnostic_free(YwtaMeshDiagnosticOutput* output) {
+  if (output == nullptr) {
+    return;
+  }
+  delete[] output->zero_area_faces;
+  delete[] output->duplicate_faces;
+  delete[] output->non_manifold_edges;
+  delete[] output->winding_conflict_edges;
+  delete[] output->bow_tie_vertices;
+  delete[] output->boundary_loop_offsets;
+  delete[] output->boundary_loop_vertices;
   clear_output(output);
 }
 
