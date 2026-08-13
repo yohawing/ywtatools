@@ -9,8 +9,9 @@ Maya 2024 でよく行うリギング、スキニング、アニメーション�
 
 メニュー項目ごとの前提条件、最小手順、成功確認、Undo/ロールバック、既知の制限は
 [Maya ツールカタログ](docs/README.md) にまとめています。目的別に直接読む場合は、
-[Rigging](docs/rigging.md)、[Deform](docs/deform.md)、[Animation](docs/animation.md)、
-[Mesh](docs/mesh.md)、[Pipeline / Export](docs/pipeline-export.md)、[Utility](docs/utility.md)
+[Rigging](docs/rigging/README.md)、[Deform](docs/deform/README.md)、
+[Animation](docs/animation/README.md)、[Mesh](docs/mesh/README.md)、
+[Pipeline / Export](docs/pipeline/README.md)、[Utility](docs/utility/README.md)
 を選んでください。この README は導入・初回利用と開発者向け配置を扱い、機能の詳細は
 カタログを正本とします。
 

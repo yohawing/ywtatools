@@ -1,52 +1,45 @@
-# Maya ツールガイド
+# YWTA Maya Manual
 
-`YWTA` メニューにあるツールを、やりたい作業から探すためのガイドです。
-インストールがまだの場合は、先に [Maya README](../README.md) を参照してください。
+YWTA Maya Toolsは、リギング、スキニング、アニメーション、メッシュ編集、書き出しを
+支援するMaya 2024向けツールセットです。
 
-## やりたいことから探す
+このマニュアルは、ツールの目的と使い方を説明します。インストールについては
+[Maya README](../README.md)を参照してください。
 
-- [ジョイントやコントローラーを作る](rigging.md)
-  — Joint、Constraint、Control、Skeleton、HumanIK
-- [スキンウェイトや BlendShape を編集する](deform.md)
-  — Skin Weight、Skinned Mesh、Shape、Deformer
-- [ポーズやアニメーションを保存・再利用する](animation.md)
-  — Selection Set、Pose、Animation Clip
-- [メッシュを結合・整形する](mesh.md)
-  — 頂点ロック、Merge、AutoRemesher、Smoothing
-- [スクリプト実行や FBX 書き出しを行う](pipeline-export.md)
-  — Run Script、Batch Runner、FBX Export
-- [シーンの検査や開発作業を行う](utility.md)
-  — Scene Audit、Test Runner、Dependency、Reload
+## Sections
 
-## 各ページの読み方
+### [Rigging](rigging/README.md)
 
-ツール名の横に、操作の性質を短く記載しています。
+Jointの作成と編集、Constraint、Skeletonの入出力、Control Curve、HumanIK。
 
-- **Undo 1回** — 実装上、操作全体を1回の Undo で戻せます。
-- **シーン変更なし** — ノードや属性を変更しません。選択が変わることはあります。
-- **ファイル保存** — JSON や FBX の変更は Maya の Undo では戻りません。
-- **要バックアップ** — 一括 Undo や失敗時の復元が保証されていない機能です。
-- **開発者向け** — 任意コード実行やソースファイル変更など、制作作業以外の機能です。
+### [Deform](deform/README.md)
 
-> [!IMPORTANT]
-> 初めて使う編集ツールは、保存済みシーンのコピーで試してください。特に
-> **要バックアップ** と書かれた機能は、Maya の Undo だけに頼らないでください。
+Skin Weightの保存と編集、Influence、Skinned Mesh、BlendShape、Deformer。
 
-## メニュー構成
+### [Animation](animation/README.md)
 
-```text
-YWTA
-├─ Animation
-├─ Mesh
-├─ Rigging
-├─ Deform
-├─ Utility
-├─ Run Script
-├─ Batch Runner
-├─ Export Selected FBX
-├─ Export Animation FBX
-└─ Documentation
-```
+Selection Set、Pose、Animation Clipの保存と再利用。
 
-このガイドは、現在のメニュー定義と実装、関連テストを基にしています。今回、Maya GUI
-上で全ツールを操作する実機確認は行っていません。既知の制限は各ページに明記しています。
+### [Mesh](mesh/README.md)
+
+頂点ロック、階層からのMesh生成、AutoRemesher、Volume Preserving Smoothing。
+
+### [Pipeline and Export](pipeline/README.md)
+
+Python Scriptの実行、複数SceneのBatch処理、FBX Export。
+
+### [Utility](utility/README.md)
+
+Scene Audit、Test Runner、依存関係の確認、開発中のModule Reload。
+
+## Conventions
+
+メニュー名とボタン名は、Mayaの英語UIに合わせて記載しています。
+
+各ページのReferenceには、ツールを開く場所と、実行前に選択するものを示します。
+ファイルへ保存する操作はMayaのUndoでは戻りません。Undoについて特別な制限がある場合は、
+各ページのNotesまたはKnown Limitationsに記載します。
+
+> [!NOTE]
+> このマニュアルは現在の実装とテストを基にしています。今回、すべてのツールをMaya GUIで
+> 操作する実機確認は行っていません。
