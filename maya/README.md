@@ -68,11 +68,12 @@ Replace / Place / Insert を選べるほか、選択中の対象だけへ適用�
 ### メッシュを整える
 
 `YWTA > Mesh` には、頂点のロック、Skinning を保ったオブジェクト結合、クアッドへの
-リメッシュ、ボリュームを保つスムージングとブラシがあります。
+リメッシュ、Hair Tube Curve Cage、ボリュームを保つスムージングとブラシがあります。
 
-AutoRemesher とボリューム保持スムージングだけは、初回にネイティブプラグインの
-ビルドが必要です。手順は [C++ Components](../cpp/README.md) と
-[Rust Components](../rust/README.md) に分けてあります。
+Hair Tubeは初回に`uvx nox -s mesh_core_tests`、AutoRemesherとボリューム保持
+スムージングは各ネイティブcomponentのビルドが必要です。Hair Tubeの最短手順は
+[Hair Tube Curve Cage](docs/mesh/hair-tube.md)、ほかは
+[C++ Components](cpp/README.md) と [Rust Components](../rust/README.md) を参照してください。
 
 ### シーンを確認して書き出す
 
