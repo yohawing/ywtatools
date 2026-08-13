@@ -1,4 +1,4 @@
-"""4-sided hair tubeをCurve Cageへ変換して再生成するBlenderオペレータ。"""
+"""N-sided hair tubeをCurve Cageへ変換して再生成するBlenderオペレータ。"""
 
 import json
 import os
@@ -24,23 +24,23 @@ _TIP_CAP_PROPERTY = "ywta_hair_tube_tip_capped"
 
 
 def _selected_root_cycle(bm):
-    """選択された4辺から決定的なroot巡回順を返す。"""
+    """選択された3辺以上から決定的なroot巡回順を返す。"""
     bm.verts.ensure_lookup_table()
     bm.verts.index_update()
     bm.edges.ensure_lookup_table()
     selected_edges = [edge for edge in bm.edges if edge.select]
-    if len(selected_edges) != 4:
-        raise ValueError("root断面を構成する4辺だけを選択してください")
+    if len(selected_edges) < 3:
+        raise ValueError("root断面を構成する3辺以上だけを選択してください")
     adjacency = {}
     for edge in selected_edges:
         first, second = (vertex.index for vertex in edge.verts)
         adjacency.setdefault(first, []).append(second)
         adjacency.setdefault(second, []).append(first)
-    if len(adjacency) != 4 or any(len(neighbours) != 2 for neighbours in adjacency.values()):
-        raise ValueError("選択辺は4頂点の閉じたedge loopである必要があります")
+    if len(adjacency) != len(selected_edges) or any(len(neighbours) != 2 for neighbours in adjacency.values()):
+        raise ValueError("選択辺は3頂点以上の閉じたedge loopである必要があります")
     start = min(adjacency)
     cycle = [start, min(adjacency[start])]
-    while len(cycle) < 4:
+    while len(cycle) < len(adjacency):
         candidates = [vertex for vertex in adjacency[cycle[-1]] if vertex != cycle[-2]]
         if len(candidates) != 1 or candidates[0] in cycle:
             raise ValueError("root edge loopの巡回順を一意に決定できません")
@@ -250,17 +250,17 @@ def _apply_attribute_payload(output, payload):
 
 
 def _create_curve_cage(context, source, generated):
-    """station-major生成点から4本のpoly curveを作る。"""
-    station_count = len(generated.positions) // 4
+    """station-major生成点からrailごとのpoly curveを作る。"""
+    station_count = len(generated.positions) // generated.rail_count
     names = []
-    for rail in range(4):
+    for rail in range(generated.rail_count):
         curve = bpy.data.curves.new(f"{source.name}_HairTubeRail{rail + 1}", "CURVE")
         curve.dimensions = "3D"
         curve.resolution_u = 2
         spline = curve.splines.new("POLY")
         spline.points.add(station_count - 1)
         for station, point in enumerate(spline.points):
-            position = generated.positions[station * 4 + rail]
+            position = generated.positions[station * generated.rail_count + rail]
             point.co = (*position, 1.0)
         curve_obj = bpy.data.objects.new(curve.name, curve)
         curve_obj.matrix_world = source.matrix_world.copy()
@@ -270,13 +270,13 @@ def _create_curve_cage(context, source, generated):
 
 
 def _read_curve_cage(obj):
-    """生成objectに記録された4本のCurveからrail-major点列を読む。"""
+    """生成objectに記録されたCurve群からrail-major点列を読む。"""
     try:
         names = json.loads(obj[_CURVE_NAMES_PROPERTY])
     except (KeyError, TypeError, json.JSONDecodeError) as error:
         raise ValueError("Hair Tube Curve Cage情報がありません") from error
-    if len(names) != 4:
-        raise ValueError("Hair Tube Curve Cageは4本必要です")
+    if len(names) < 3:
+        raise ValueError("Hair Tube Curve Cageは3本以上必要です")
     rails = []
     for name in names:
         curve_obj = bpy.data.objects.get(name)
@@ -293,7 +293,9 @@ def _read_curve_cage(obj):
 def _update_curve_cage(obj, generated):
     """再生成密度へCurve CageのCV列を同期し、次回mappingを一致させる。"""
     names = json.loads(obj[_CURVE_NAMES_PROPERTY])
-    station_count = len(generated.positions) // 4
+    if len(names) != generated.rail_count:
+        raise ValueError("Curve Cage本数と生成rail数が一致しません")
+    station_count = len(generated.positions) // generated.rail_count
     for rail, name in enumerate(names):
         curve_obj = bpy.data.objects[name]
         curve_obj.matrix_world = obj.matrix_world.copy()
@@ -302,7 +304,7 @@ def _update_curve_cage(obj, generated):
         spline = curve.splines.new("POLY")
         spline.points.add(station_count - 1)
         for station, point in enumerate(spline.points):
-            point.co = (*generated.positions[station * 4 + rail], 1.0)
+            point.co = (*generated.positions[station * generated.rail_count + rail], 1.0)
 
 
 class YWTA_OT_hair_tube_create(Operator):
@@ -310,7 +312,7 @@ class YWTA_OT_hair_tube_create(Operator):
 
     bl_idname = "ywta.hair_tube_create"
     bl_label = "Create Hair Tube Curve Cage"
-    bl_description = "選択した4辺root loopから編集可能なCurve Cageと別meshを生成します"
+    bl_description = "選択した3辺以上のroot loopから編集可能なCurve Cageと別meshを生成します"
     bl_options = {"REGISTER", "UNDO"}
 
     segments: IntProperty(name="Segments", default=8, min=1, max=2048)
@@ -359,7 +361,7 @@ class YWTA_OT_hair_tube_create(Operator):
         context.view_layer.objects.active = output
         self.report(
             {"INFO"},
-            f"{len(generated.positions)}頂点・{len(generated.quads)}面と4本のCurve Cageを生成しました",
+            f"{len(generated.positions)}頂点・{len(generated.quads)}面と{generated.rail_count}本のCurve Cageを生成しました",
         )
         return {"FINISHED"}
 
@@ -373,7 +375,7 @@ class YWTA_OT_hair_tube_rebuild(Operator):
 
     bl_idname = "ywta.hair_tube_rebuild"
     bl_label = "Rebuild from Hair Tube Curve Cage"
-    bl_description = "編集した4本のCurve Cageを読み戻して生成meshを更新します"
+    bl_description = "編集したCurve Cage群を読み戻して生成meshを更新します"
     bl_options = {"REGISTER", "UNDO"}
 
     segments: IntProperty(name="Segments", default=8, min=1, max=2048)

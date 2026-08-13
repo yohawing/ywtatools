@@ -49,17 +49,31 @@ struct Fixture {
   }
 };
 
-Fixture open_tube(std::uint32_t stations = 3) {
+Fixture open_tube(std::uint32_t stations = 3, std::uint32_t rail_count = 4) {
   Fixture fixture;
-  fixture.vertex_count = stations * 4;
+  fixture.vertex_count = stations * rail_count;
   for (std::uint32_t station = 0; station + 1 < stations; ++station) {
-    for (std::uint32_t rail = 0; rail < 4; ++rail) {
-      const std::uint32_t next_rail = (rail + 1) % 4;
-      fixture.faces.push_back({station * 4 + rail, station * 4 + next_rail,
-                               (station + 1) * 4 + next_rail, (station + 1) * 4 + rail});
+    for (std::uint32_t rail = 0; rail < rail_count; ++rail) {
+      const std::uint32_t next_rail = (rail + 1) % rail_count;
+      fixture.faces.push_back({station * rail_count + rail, station * rail_count + next_rail,
+                               (station + 1) * rail_count + next_rail,
+                               (station + 1) * rail_count + rail});
     }
   }
   return fixture;
+}
+
+HairTubeTopologyResult run(Fixture& fixture, const std::vector<std::uint32_t>& root);
+
+void test_five_sided_tube_preserves_all_rails() {
+  Fixture fixture = open_tube(3, 5);
+  const HairTubeTopologyResult result = run(fixture, {0, 1, 2, 3, 4});
+
+  expect(result.ok(), "five-sided open tube should be accepted");
+  expect(result.topology.rail_count == 5 && result.topology.station_count == 3,
+         "five-sided tube should retain its rail and station counts");
+  expect(result.topology.side_faces.size() == 10 && result.topology.rails.size() == 15,
+         "five-sided tube should expose every side face and rail vertex");
 }
 
 HairTubeTopologyResult run(Fixture& fixture, const std::vector<std::uint32_t>& root) {
@@ -123,7 +137,7 @@ void test_reversed_root_reverses_cyclic_rail_order_consistently() {
 
 void test_invalid_roots_are_rejected() {
   Fixture fixture = open_tube();
-  expect_empty_failure(run(fixture, {0, 1, 2}), HairTubeStatus::kRootLoopCountNotFour,
+  expect_empty_failure(run(fixture, {0, 1}), HairTubeStatus::kInvalidRootLoopCount,
                        "short root");
   expect_empty_failure(run(fixture, {0, 1, 1, 3}), HairTubeStatus::kRepeatedRootVertex,
                        "repeated root");
@@ -216,6 +230,7 @@ void test_malformed_buffer_is_rejected_without_partial_output() {
 
 int main() {
   test_valid_tube_has_deterministic_rings_and_rails();
+  test_five_sided_tube_preserves_all_rails();
   test_face_order_does_not_change_rings_or_rails();
   test_reversed_root_reverses_cyclic_rail_order_consistently();
   test_invalid_roots_are_rejected();

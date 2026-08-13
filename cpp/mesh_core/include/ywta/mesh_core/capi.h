@@ -31,6 +31,7 @@ typedef struct YwtaHairTubeOutput {
   int cubic_active;
   int root_capped;
   int tip_capped;
+  uint64_t rail_count;
 } YwtaHairTubeOutput;
 
 /**
@@ -47,6 +48,13 @@ YWTA_MESH_CORE_API int ywta_hair_tube_generate(uint32_t vertex_count, const doub
                                                uint64_t target_segments, double fit_tolerance,
                                                YwtaHairTubeOutput* output);
 
+/** flat topologyと3頂点以上のroot loopから固定密度tubeを生成する。 */
+YWTA_MESH_CORE_API int ywta_hair_tube_generate_n(
+    uint32_t vertex_count, const double* positions_xyz, const uint64_t* face_offsets,
+    uint64_t face_count, const uint32_t* face_vertices, uint64_t face_vertex_count,
+    const uint32_t* root_vertices, uint64_t root_count, uint64_t target_segments,
+    double fit_tolerance, YwtaHairTubeOutput* output);
+
 /** rail-majorな4本の編集済みpoint列から固定密度tubeを再生成する。 */
 YWTA_MESH_CORE_API int ywta_hair_tube_generate_from_rails(const double* rail_positions_xyz,
                                                           uint64_t station_count,
@@ -61,6 +69,12 @@ YWTA_MESH_CORE_API int ywta_hair_tube_generate_from_rails_ex(const double* rail_
                                                              double fit_tolerance, int root_capped,
                                                              int tip_capped,
                                                              YwtaHairTubeOutput* output);
+
+/** rail-majorな可変本数の編集済みpoint列から固定密度tubeを再生成する。 */
+YWTA_MESH_CORE_API int ywta_hair_tube_generate_from_rails_n(
+    const double* rail_positions_xyz, uint64_t rail_count, uint64_t station_count,
+    uint64_t target_segments, double fit_tolerance, int root_capped, int tip_capped,
+    YwtaHairTubeOutput* output);
 
 /** ywta_hair_tube_generate()が確保した配列を解放し、outputをゼロ初期化する。 */
 YWTA_MESH_CORE_API void ywta_hair_tube_free(YwtaHairTubeOutput* output);

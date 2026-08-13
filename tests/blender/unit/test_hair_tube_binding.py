@@ -79,7 +79,38 @@ class FakeDLL:
         output.cubic_active = 1
         output.root_capped = 0
         output.tip_capped = 0
+        output.rail_count = 4
         return 0
+
+    def ywta_hair_tube_generate_n(
+        self,
+        vertex_count,
+        positions,
+        offsets,
+        face_count,
+        faces,
+        corner_count,
+        root,
+        root_count,
+        segments,
+        tolerance,
+        output_pointer,
+    ):
+        status = self.ywta_hair_tube_generate(
+            vertex_count,
+            positions,
+            offsets,
+            face_count,
+            faces,
+            corner_count,
+            root,
+            segments,
+            tolerance,
+            output_pointer,
+        )
+        self.input["root"] = list(root[:root_count])
+        output_pointer.contents.rail_count = root_count
+        return status
 
     def ywta_hair_tube_free(self, _output_pointer):
         self.freed = True
@@ -114,6 +145,16 @@ class FakeDLL:
         )
         self.input["root_capped"] = root_capped
         self.input["tip_capped"] = tip_capped
+        return status
+
+    def ywta_hair_tube_generate_from_rails_n(
+        self, rails, rail_count, station_count, segments, tolerance, root_capped, tip_capped, output_pointer
+    ):
+        status = self.ywta_hair_tube_generate_from_rails_ex(
+            rails, station_count, segments, tolerance, root_capped, tip_capped, output_pointer
+        )
+        self.input["rail_count"] = rail_count
+        output_pointer.contents.rail_count = rail_count
         return status
 
     def ywta_mesh_core_last_error(self):
@@ -176,6 +217,20 @@ class HairTubeBindingTests(unittest.TestCase):
         self.assertEqual((fake.input["root_capped"], fake.input["tip_capped"]), (1, 1))
         self.assertEqual(result.quads, [(0, 1, 2, 3)])
         self.assertTrue(fake.freed)
+
+    def test_five_sided_root_and_rails_use_variable_count_abi(self):
+        fake = FakeDLL()
+        hair_tube._load_dll = lambda: fake
+        positions = [(float(index), 0.0, float(station)) for station in range(2) for index in range(5)]
+        faces = [(rail, (rail + 1) % 5, 5 + (rail + 1) % 5, 5 + rail) for rail in range(5)]
+        generated = hair_tube.generate(positions, faces, (0, 1, 2, 3, 4))
+        self.assertEqual(fake.input["root"], [0, 1, 2, 3, 4])
+        self.assertEqual(generated.rail_count, 5)
+
+        rails = [[(rail, 0, station) for station in range(2)] for rail in range(5)]
+        generated = hair_tube.generate_from_rails(rails)
+        self.assertEqual(fake.input["rail_count"], 5)
+        self.assertEqual(generated.rail_count, 5)
 
     def test_default_path_targets_shared_core_dll(self):
         self.assertTrue(str(hair_tube.default_dll_path()).replace("\\", "/").endswith("bin/windows/ywta_mesh_core.dll"))

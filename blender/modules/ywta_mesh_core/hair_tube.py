@@ -32,6 +32,7 @@ class HairTubeOutput(ctypes.Structure):
         ("cubic_active", ctypes.c_int),
         ("root_capped", ctypes.c_int),
         ("tip_capped", ctypes.c_int),
+        ("rail_count", ctypes.c_uint64),
     ]
 
 
@@ -51,6 +52,7 @@ class GeneratedHairTube:
     cubic_active: bool
     root_capped: bool
     tip_capped: bool
+    rail_count: int
 
 
 class HairTubeError(RuntimeError):
@@ -98,6 +100,20 @@ def _load_dll():
         ctypes.POINTER(HairTubeOutput),
     ]
     dll.ywta_hair_tube_generate.restype = ctypes.c_int
+    dll.ywta_hair_tube_generate_n.argtypes = [
+        ctypes.c_uint32,
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.POINTER(ctypes.c_uint64),
+        ctypes.c_uint64,
+        ctypes.POINTER(ctypes.c_uint32),
+        ctypes.c_uint64,
+        ctypes.POINTER(ctypes.c_uint32),
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.c_double,
+        ctypes.POINTER(HairTubeOutput),
+    ]
+    dll.ywta_hair_tube_generate_n.restype = ctypes.c_int
     dll.ywta_hair_tube_generate_from_rails.argtypes = [
         ctypes.POINTER(ctypes.c_double),
         ctypes.c_uint64,
@@ -116,6 +132,17 @@ def _load_dll():
         ctypes.POINTER(HairTubeOutput),
     ]
     dll.ywta_hair_tube_generate_from_rails_ex.restype = ctypes.c_int
+    dll.ywta_hair_tube_generate_from_rails_n.argtypes = [
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.c_double,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.POINTER(HairTubeOutput),
+    ]
+    dll.ywta_hair_tube_generate_from_rails_n.restype = ctypes.c_int
     dll.ywta_hair_tube_free.argtypes = [ctypes.POINTER(HairTubeOutput)]
     dll.ywta_hair_tube_free.restype = None
     dll.ywta_mesh_core_last_error.argtypes = []
@@ -143,8 +170,8 @@ def _validate_inputs(positions, faces, root_vertices, target_segments, fit_toler
     if any(index < 0 or index >= len(points) for face in polygons for index in face):
         raise ValueError("facesに範囲外の頂点があります")
     root = tuple(int(index) for index in root_vertices)
-    if len(root) != 4 or len(set(root)) != 4 or any(index < 0 or index >= len(points) for index in root):
-        raise ValueError("root_verticesは異なる4頂点を巡回順で指定してください")
+    if len(root) < 3 or len(set(root)) != len(root) or any(index < 0 or index >= len(points) for index in root):
+        raise ValueError("root_verticesは異なる3頂点以上を巡回順で指定してください")
     segments = int(target_segments)
     tolerance = float(fit_tolerance)
     if segments < 1:
@@ -200,6 +227,7 @@ def _copy_output(dll, output: HairTubeOutput) -> GeneratedHairTube:
             bool(output.cubic_active),
             bool(output.root_capped),
             bool(output.tip_capped),
+            int(output.rail_count),
         )
     finally:
         dll.ywta_hair_tube_free(ctypes.pointer(output))
@@ -214,11 +242,11 @@ def generate(positions, faces, root_vertices, *, target_segments=8, fit_toleranc
     positions_array = (ctypes.c_double * len(flat_positions))(*flat_positions)
     offsets_array = (ctypes.c_uint64 * len(offsets))(*offsets)
     faces_array = (ctypes.c_uint32 * len(flat_faces))(*flat_faces)
-    root_array = (ctypes.c_uint32 * 4)(*root)
+    root_array = (ctypes.c_uint32 * len(root))(*root)
     output = HairTubeOutput()
     dll = _load_dll()
     status = int(
-        dll.ywta_hair_tube_generate(
+        dll.ywta_hair_tube_generate_n(
             len(points),
             positions_array,
             offsets_array,
@@ -226,6 +254,7 @@ def generate(positions, faces, root_vertices, *, target_segments=8, fit_toleranc
             faces_array,
             len(flat_faces),
             root_array,
+            len(root),
             segments,
             tolerance,
             ctypes.pointer(output),
@@ -236,13 +265,15 @@ def generate(positions, faces, root_vertices, *, target_segments=8, fit_toleranc
 
 
 def generate_from_rails(rails, *, target_segments=8, fit_tolerance=0.0, root_capped=False, tip_capped=False):
-    """同数pointを持つ4本の編集済みrailからquad tubeを再生成する。"""
+    """同数pointを持つ3本以上の編集済みrailからquad tubeを再生成する。"""
     rail_points = [list(rail) for rail in rails]
-    if len(rail_points) != 4 or len(rail_points[0]) < 2:
-        raise ValueError("railsは2点以上を持つ4本で指定してください")
+    if len(rail_points) < 3 or len(rail_points[0]) < 2:
+        raise ValueError("railsは2点以上を持つ3本以上で指定してください")
     station_count = len(rail_points[0])
     if any(len(rail) != station_count for rail in rail_points):
-        raise ValueError("4本のrailsは同じpoint数で指定してください")
+        raise ValueError("railsはすべて同じpoint数で指定してください")
+    if len(rail_points) != 4 and (root_capped or tip_capped):
+        raise ValueError("cap付き再生成は4本のrailsだけに対応しています")
     flat = []
     for rail in rail_points:
         for point in rail:
@@ -262,8 +293,9 @@ def generate_from_rails(rails, *, target_segments=8, fit_tolerance=0.0, root_cap
     output = HairTubeOutput()
     dll = _load_dll()
     status = int(
-        dll.ywta_hair_tube_generate_from_rails_ex(
+        dll.ywta_hair_tube_generate_from_rails_n(
             rail_array,
+            len(rail_points),
             station_count,
             segments,
             tolerance,

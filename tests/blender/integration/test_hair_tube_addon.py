@@ -1,6 +1,7 @@
 """Blender 5.2でHair Tube作成・curve編集・再生成を検証する。"""
 
 import json
+import math
 import os
 import sys
 import unittest
@@ -47,6 +48,28 @@ def _make_source():
     bpy.context.collection.objects.link(obj)
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
+    return obj
+
+
+def _make_open_n_sided_source(rail_count=5):
+    """2 stationのopen N-sided tubeを作る。"""
+    vertices = [
+        (math.cos(2.0 * math.pi * rail / rail_count), math.sin(2.0 * math.pi * rail / rail_count), z)
+        for z in (0.0, 1.0)
+        for rail in range(rail_count)
+    ]
+    faces = [
+        (rail, (rail + 1) % rail_count, rail_count + (rail + 1) % rail_count, rail_count + rail) for rail in range(rail_count)
+    ]
+    mesh = bpy.data.meshes.new("HairTubeNSidedSourceMesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+    obj = bpy.data.objects.new("HairTubeNSidedSource", mesh)
+    bpy.context.collection.objects.link(obj)
+    for selected in bpy.context.selected_objects:
+        selected.select_set(False)
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
     return obj
 
 
@@ -166,6 +189,22 @@ class HairTubeAddonTests(unittest.TestCase):
             lod1["ywta_hair_tube_curve_names"],
             generated["ywta_hair_tube_curve_names"],
         )
+
+    def test_five_sided_tube_creates_five_curve_cage(self):
+        """5-sided tubeを5本のCurve Cageとして再生成する。"""
+        source = _make_open_n_sided_source()
+        bpy.ops.object.mode_set(mode="EDIT")
+        bm = bmesh.from_edit_mesh(source.data)
+        for edge in bm.edges:
+            edge.select = all(vertex.co.z == 0.0 for vertex in edge.verts)
+        bmesh.update_edit_mesh(source.data)
+
+        self.assertEqual(bpy.ops.ywta.hair_tube_create(segments=2), {"FINISHED"})
+        generated = bpy.context.active_object
+        self.assertEqual((len(generated.data.vertices), len(generated.data.polygons)), (15, 10))
+        self.assertEqual(len(json.loads(generated["ywta_hair_tube_curve_names"])), 5)
+        self.assertEqual(bpy.ops.ywta.hair_tube_rebuild(segments=1), {"FINISHED"})
+        self.assertEqual((len(generated.data.vertices), len(generated.data.polygons)), (10, 5))
 
 
 if __name__ == "__main__":

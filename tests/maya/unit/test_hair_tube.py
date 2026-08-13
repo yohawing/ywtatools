@@ -1,6 +1,7 @@
 """Maya 2024でHair Tube作成・curve編集・再生成・Undoを検証する。"""
 
 import json
+import math
 import unittest
 
 import maya.api.OpenMaya as om2
@@ -27,6 +28,26 @@ def _make_source():
     ]
     connects = [0, 1, 5, 4, 1, 2, 6, 5, 2, 3, 7, 6, 3, 0, 4, 7, 0, 3, 2, 1, 4, 5, 6, 7]
     om2.MFnMesh().create(points, [4, 4, 4, 4, 4, 4], connects, parent=parent)
+    return transform
+
+
+def _make_open_n_sided_source(rail_count=5):
+    """2 stationのopen N-sided tubeを作る。"""
+    transform = cmds.createNode("transform", name="HairTubeNSidedSource")
+    selection = om2.MSelectionList()
+    selection.add(transform)
+    parent = selection.getDependNode(0)
+    points = [
+        om2.MPoint(math.cos(2.0 * math.pi * rail / rail_count), math.sin(2.0 * math.pi * rail / rail_count), z)
+        for z in (0.0, 1.0)
+        for rail in range(rail_count)
+    ]
+    connects = [
+        vertex
+        for rail in range(rail_count)
+        for vertex in (rail, (rail + 1) % rail_count, rail_count + (rail + 1) % rail_count, rail_count + rail)
+    ]
+    om2.MFnMesh().create(points, [4] * rail_count, connects, parent=parent)
     return transform
 
 
@@ -186,6 +207,20 @@ class HairTubeMayaTests(unittest.TestCase):
         self.assertTrue(cmds.objExists(output))
         self.assertEqual(cmds.polyEvaluate(output, vertex=True), 12)
         self.assertTrue(all(cmds.objExists(name) for name in curve_names))
+
+    def test_five_sided_tube_creates_five_curve_cage(self):
+        """5-sided tubeを5本のCurve Cageとして再生成する。"""
+        source = _make_open_n_sided_source()
+        cmds.select(_root_edges(source), replace=True)
+        output = hair_tube.create_from_selected_root(segments=2)
+        self.assertEqual(cmds.polyEvaluate(output, vertex=True), 15)
+        self.assertEqual(cmds.polyEvaluate(output, face=True), 10)
+        self.assertEqual(len(json.loads(cmds.getAttr(f"{output}.ywtaHairTubeCurveNames"))), 5)
+
+        cmds.select(output, replace=True)
+        rebuilt = hair_tube.rebuild_selected(segments=1)
+        self.assertEqual(cmds.polyEvaluate(rebuilt, vertex=True), 10)
+        self.assertEqual(cmds.polyEvaluate(rebuilt, face=True), 5)
 
     def test_attribute_apply_failure_rolls_back_partial_output(self):
         """属性適用例外でも生成途中のmeshを残さない。"""

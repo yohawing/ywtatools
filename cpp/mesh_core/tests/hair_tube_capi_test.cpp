@@ -91,12 +91,31 @@ void test_generate_from_edited_rails() {
   ywta_hair_tube_free(&output);
 }
 
+void test_generate_from_five_edited_rails() {
+  const double x[]{1.0, 0.309016994, -0.809016994, -0.809016994, 0.309016994};
+  const double y[]{0.0, 0.951056516, 0.587785252, -0.587785252, -0.951056516};
+  std::vector<double> rails;
+  for (std::uint64_t rail = 0; rail < 5; ++rail) {
+    for (std::uint64_t station = 0; station < 2; ++station) {
+      rails.insert(rails.end(), {x[rail], y[rail], static_cast<double>(station)});
+    }
+  }
+  YwtaHairTubeOutput output{};
+  const int status =
+      ywta_hair_tube_generate_from_rails_n(rails.data(), 5, 2, 3, 0.0, 0, 0, &output);
+  expect(status == 0 && output.rail_count == 5 && output.vertex_count == 20 &&
+             output.quad_count == 15,
+         "C ABI should regenerate a five-sided edited cage");
+  ywta_hair_tube_free(&output);
+}
+
 }  // namespace
 
 int main() {
   test_round_trip_and_free();
   test_invalid_input_has_no_partial_output();
   test_generate_from_edited_rails();
+  test_generate_from_five_edited_rails();
   if (failures != 0) {
     std::cerr << failures << " test(s) failed\n";
     return EXIT_FAILURE;

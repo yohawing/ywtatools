@@ -56,15 +56,15 @@ def _mesh_dag_path(node):
 
 
 def _selected_root_cycle():
-    """選択された4 edgeからmeshと決定的なroot巡回順を返す。"""
+    """選択された3 edge以上からmeshと決定的なroot巡回順を返す。"""
     selected = cmds.ls(selection=True, flatten=True) or []
     parsed = []
     for component in selected:
         match = _EDGE_PATTERN.match(component)
         if match:
             parsed.append((match.group("object"), int(match.group("index"))))
-    if len(parsed) != 4 or len({node for node, _index in parsed}) != 1:
-        raise ValueError("同じmeshのroot断面4辺だけを選択してください")
+    if len(parsed) < 3 or len({node for node, _index in parsed}) != 1:
+        raise ValueError("同じmeshのroot断面3辺以上だけを選択してください")
     node = parsed[0][0]
     dag_path = _mesh_dag_path(node)
     edge_iterator = om2.MItMeshEdge(dag_path)
@@ -75,11 +75,11 @@ def _selected_root_cycle():
         second = edge_iterator.vertexId(1)
         adjacency.setdefault(first, []).append(second)
         adjacency.setdefault(second, []).append(first)
-    if len(adjacency) != 4 or any(len(neighbours) != 2 for neighbours in adjacency.values()):
-        raise ValueError("選択辺は4頂点の閉じたedge loopである必要があります")
+    if len(adjacency) != len(parsed) or any(len(neighbours) != 2 for neighbours in adjacency.values()):
+        raise ValueError("選択辺は3頂点以上の閉じたedge loopである必要があります")
     start = min(adjacency)
     cycle = [start, min(adjacency[start])]
-    while len(cycle) < 4:
+    while len(cycle) < len(adjacency):
         candidates = [vertex for vertex in adjacency[cycle[-1]] if vertex != cycle[-2]]
         if len(candidates) != 1 or candidates[0] in cycle:
             raise ValueError("root edge loopの巡回順を一意に決定できません")
@@ -269,13 +269,13 @@ def _apply_attribute_payload(output, payload):
 
 
 def _create_curve_cage(source, generated):
-    """station-major生成点から4本のdegree-1 curveを作る。"""
-    station_count = len(generated.positions) // 4
+    """station-major生成点からrailごとのdegree-1 curveを作る。"""
+    station_count = len(generated.positions) // generated.rail_count
     matrix = cmds.xform(source, query=True, matrix=True, worldSpace=True)
     names = []
     base_name = source.split("|")[-1]
-    for rail in range(4):
-        points = [generated.positions[station * 4 + rail] for station in range(station_count)]
+    for rail in range(generated.rail_count):
+        points = [generated.positions[station * generated.rail_count + rail] for station in range(station_count)]
         curve = cmds.curve(degree=1, point=points, name=f"{base_name}_HairTubeRail{rail + 1}")
         cmds.xform(curve, matrix=matrix, worldSpace=True)
         names.append(curve)
@@ -283,13 +283,15 @@ def _create_curve_cage(source, generated):
 
 
 def _update_curve_cage(output, names, generated):
-    """再生成密度へ4本のCurve CV列を同期する。"""
+    """再生成密度へCurve CV列を同期する。"""
     matrix = cmds.xform(output, query=True, matrix=True, worldSpace=True)
-    station_count = len(generated.positions) // 4
+    if len(names) != generated.rail_count:
+        raise ValueError("Curve Cage本数と生成rail数が一致しません")
+    station_count = len(generated.positions) // generated.rail_count
     updated = []
     for rail, name in enumerate(names):
         cmds.delete(name)
-        points = [generated.positions[station * 4 + rail] for station in range(station_count)]
+        points = [generated.positions[station * generated.rail_count + rail] for station in range(station_count)]
         curve = cmds.curve(degree=1, point=points, name=name)
         cmds.xform(curve, matrix=matrix, worldSpace=True)
         updated.append(curve)
@@ -323,12 +325,12 @@ def _cap_state(mesh):
 
 
 def _read_curve_cage(mesh):
-    """生成meshに紐づく4本のcurve CVをmesh object-spaceで読む。"""
+    """生成meshに紐づくCurve群をmesh object-spaceで読む。"""
     if not cmds.attributeQuery(_CURVE_NAMES_ATTRIBUTE, node=mesh, exists=True):
         raise ValueError("Hair Tube Curve Cage情報がありません")
     names = json.loads(cmds.getAttr(f"{mesh}.{_CURVE_NAMES_ATTRIBUTE}"))
-    if len(names) != 4:
-        raise ValueError("Hair Tube Curve Cageは4本必要です")
+    if len(names) < 3:
+        raise ValueError("Hair Tube Curve Cageは3本以上必要です")
     output_inverse = om2.MMatrix(cmds.xform(mesh, query=True, matrix=True, worldSpace=True)).inverse()
     rails = []
     for name in names:
@@ -349,7 +351,7 @@ def _read_curve_cage(mesh):
 
 
 def create_from_selected_root(segments=8, fit_tolerance=0.0):
-    """選択root loopから別meshと4本のCurve Cageを作る。"""
+    """選択root loopから別meshとrailごとのCurve Cageを作る。"""
     source, root = _selected_root_cycle()
     positions, faces = _mesh_arrays(source)
     generated = binding.generate(positions, faces, root, target_segments=segments, fit_tolerance=fit_tolerance)
@@ -478,6 +480,6 @@ def show_options():
     cmds.button(label="Create from Selected Root Edges", command=run_create, height=30)
     cmds.button(label="Rebuild Selected Hair Tube", command=run_rebuild, height=30)
     cmds.button(label="Generate LODs from Selected Hair Tube", command=run_lods, height=30)
-    cmds.text(label="生成meshと4本のcurveは別objectです。Undoで直前の操作を戻せます。")
+    cmds.text(label="生成meshとcurve群は別objectです。Undoで直前の操作を戻せます。")
     cmds.showWindow(window)
     return window

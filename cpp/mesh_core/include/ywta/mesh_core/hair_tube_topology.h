@@ -15,7 +15,7 @@ enum class HairTubeStatus {
   kOk = 0,
   kInvalidTopology,
   kNullRootVertices,
-  kRootLoopCountNotFour,
+  kInvalidRootLoopCount,
   kRootVertexOutOfRange,
   kRepeatedRootVertex,
   kRootEdgeMissing,
@@ -36,12 +36,13 @@ struct HairTubeRootLoopView {
 };
 
 /**
- * 4 railと共有ring列を保持する抽出結果。
+ * 3本以上のrailと共有ring列を保持する抽出結果。
  *
  * ringsはstation-major、railsはrail-majorで、それぞれ同じ頂点IDを保持する。
- * side_facesは各station区間についてrootのedge順に4面を保持する。
+ * side_facesは各station区間についてrootのedge順にrail_count面を保持する。
  */
 struct HairTubeTopology {
+  std::uint64_t rail_count = 0;
   std::uint64_t station_count = 0;
   std::vector<std::uint32_t> rings;
   std::vector<std::uint32_t> rails;
@@ -63,7 +64,7 @@ struct HairTubeTopologyResult {
 /**
  * 単一のopen quad tubeから4 railと共有ring列をread-onlyで抽出する。
  *
- * root_loopの巡回順をrail ID 0〜3の正本とする。root/tipのquad capは保持する。
+ * root_loopの巡回順をrail IDの正本とする。4-sided入力のroot/tip quad capは保持する。
  * triangle、分岐、再訪、non-manifold、余分なcomponentは修復せず、部分結果を返さず拒否する。
  */
 [[nodiscard]] HairTubeTopologyResult extract_hair_tube_topology(

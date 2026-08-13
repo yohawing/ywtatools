@@ -13,7 +13,6 @@
 namespace ywta::mesh_core {
 namespace {
 
-constexpr std::size_t kRailCount = 4;
 constexpr std::size_t kFitSamplesPerInterval = 16;
 constexpr double kLengthEpsilon = 1.0e-12;
 constexpr double kAreaEpsilon = 1.0e-12;
@@ -487,22 +486,28 @@ bool quads_intersect(const std::vector<Point3d>& positions,
 
 HairTubeCageResult build_hair_tube_curve_cage(const HairTubeTopology& topology,
                                               const Point3dView& positions, double fit_tolerance) {
-  if (topology.station_count < 2 ||
-      topology.station_count > std::numeric_limits<std::size_t>::max() / kRailCount) {
+  const std::size_t rail_count = static_cast<std::size_t>(topology.rail_count);
+  if (rail_count < 3 || topology.station_count < 2 ||
+      topology.station_count > std::numeric_limits<std::size_t>::max() / rail_count) {
     return cage_error(HairTubeCageStatus::kInvalidTopologyLayout,
-                      "topology must contain at least two four-vertex stations");
+                      "topology must contain at least two stations with three or more rails");
+  }
+  if (rail_count != 4 &&
+      (topology.root_cap_face != kNoHairTubeFace || topology.tip_cap_face != kNoHairTubeFace)) {
+    return cage_error(HairTubeCageStatus::kInvalidTopologyLayout,
+                      "only four-sided tubes support cap regeneration");
   }
   const std::size_t station_count = static_cast<std::size_t>(topology.station_count);
-  const std::size_t expected_points = station_count * kRailCount;
+  const std::size_t expected_points = station_count * rail_count;
   if (topology.rings.size() != expected_points || topology.rails.size() != expected_points ||
-      topology.side_faces.size() != (station_count - 1) * kRailCount) {
+      topology.side_faces.size() != (station_count - 1) * rail_count) {
     return cage_error(HairTubeCageStatus::kInvalidTopologyLayout,
                       "topology arrays do not match station_count");
   }
-  for (std::size_t rail = 0; rail < kRailCount; ++rail) {
+  for (std::size_t rail = 0; rail < rail_count; ++rail) {
     for (std::size_t station = 0; station < station_count; ++station) {
       if (topology.rails[rail * station_count + station] !=
-          topology.rings[station * kRailCount + rail]) {
+          topology.rings[station * rail_count + rail]) {
         return cage_error(HairTubeCageStatus::kInvalidTopologyLayout,
                           "rail and ring layouts disagree");
       }
@@ -517,12 +522,13 @@ HairTubeCageResult build_hair_tube_curve_cage(const HairTubeTopology& topology,
   }
 
   HairTubeCurveCage cage;
+  cage.rail_count = topology.rail_count;
   cage.source_station_count = topology.station_count;
   cage.root_capped = topology.root_cap_face != kNoHairTubeFace;
   cage.tip_capped = topology.tip_cap_face != kNoHairTubeFace;
   cage.fit_tolerance = fit_tolerance;
   cage.source_points.reserve(expected_points);
-  for (std::size_t rail = 0; rail < kRailCount; ++rail) {
+  for (std::size_t rail = 0; rail < rail_count; ++rail) {
     for (std::size_t station = 0; station < station_count; ++station) {
       const std::uint32_t source_vertex = topology.rails[rail * station_count + station];
       if (source_vertex >= positions.count) {
@@ -541,11 +547,11 @@ HairTubeCageResult build_hair_tube_curve_cage(const HairTubeTopology& topology,
   cage.shared_t.assign(station_count, 0.0);
   for (std::size_t station = 0; station + 1 < station_count; ++station) {
     double average_length = 0.0;
-    for (std::size_t rail = 0; rail < kRailCount; ++rail) {
+    for (std::size_t rail = 0; rail < rail_count; ++rail) {
       average_length += distance(cage.source_points[rail * station_count + station],
                                  cage.source_points[rail * station_count + station + 1]);
     }
-    average_length /= static_cast<double>(kRailCount);
+    average_length /= static_cast<double>(rail_count);
     if (!std::isfinite(average_length) || average_length <= kLengthEpsilon) {
       return cage_error(HairTubeCageStatus::kZeroLengthStationInterval,
                         "a shared station interval has zero average chord length");
@@ -563,8 +569,8 @@ HairTubeCageResult build_hair_tube_curve_cage(const HairTubeTopology& topology,
   cage.shared_t.front() = 0.0;
   cage.shared_t.back() = 1.0;
 
-  cage.cubic_segments.reserve((station_count - 1) * kRailCount);
-  for (std::size_t rail = 0; rail < kRailCount; ++rail) {
+  cage.cubic_segments.reserve((station_count - 1) * rail_count);
+  for (std::size_t rail = 0; rail < rail_count; ++rail) {
     const auto begin =
         cage.source_points.begin() + static_cast<std::ptrdiff_t>(rail * station_count);
     const std::vector<Point3d> rail_points(begin,
@@ -588,7 +594,7 @@ HairTubeCageResult build_hair_tube_curve_cage(const HairTubeTopology& topology,
           static_cast<double>(sample) / static_cast<double>(kFitSamplesPerInterval);
       const double t = t0 + (t1 - t0) * alpha;
       const HairTubeSourceSample source{interval, alpha};
-      for (std::size_t rail = 0; rail < kRailCount; ++rail) {
+      for (std::size_t rail = 0; rail < rail_count; ++rail) {
         const double deviation =
             distance(evaluate_cubic(cage, rail, source, t), evaluate_polyline(cage, rail, source));
         if (!std::isfinite(deviation)) {
@@ -607,9 +613,11 @@ HairTubeCageResult build_hair_tube_curve_cage(const HairTubeTopology& topology,
 }
 
 HairTubeCageSampleResult evaluate_hair_tube_curve_cage(const HairTubeCurveCage& cage, double t) {
-  if (cage.source_station_count < 2 || cage.shared_t.size() != cage.source_station_count ||
-      cage.source_points.size() != cage.source_station_count * kRailCount ||
-      cage.cubic_segments.size() != (cage.source_station_count - 1) * kRailCount) {
+  const std::size_t rail_count = static_cast<std::size_t>(cage.rail_count);
+  if (rail_count < 3 || cage.source_station_count < 2 ||
+      cage.shared_t.size() != cage.source_station_count ||
+      cage.source_points.size() != cage.source_station_count * rail_count ||
+      cage.cubic_segments.size() != (cage.source_station_count - 1) * rail_count) {
     return sample_error(HairTubeCageStatus::kInvalidTopologyLayout,
                         "cage arrays do not match source_station_count");
   }
@@ -628,8 +636,9 @@ HairTubeCageSampleResult evaluate_hair_tube_curve_cage(const HairTubeCurveCage& 
   }
 
   HairTubeCageSample sample;
+  sample.points.resize(rail_count);
   sample.source = locate_source_interval(cage, t);
-  for (std::size_t rail = 0; rail < kRailCount; ++rail) {
+  for (std::size_t rail = 0; rail < rail_count; ++rail) {
     if (t == 0.0) {
       sample.points[rail] = cage.source_points[source_index(cage, rail, 0)];
     } else if (t == 1.0) {
@@ -655,6 +664,7 @@ namespace {
 
 HairTubeGeneratedMeshResult regenerate_at_parameters(const HairTubeCurveCage& cage,
                                                      const std::vector<double>& parameters) {
+  const std::size_t rail_count = static_cast<std::size_t>(cage.rail_count);
   if (parameters.size() < 2 || parameters.front() != 0.0 || parameters.back() != 1.0 ||
       std::adjacent_find(parameters.begin(), parameters.end(), [](double first, double second) {
         return !std::isfinite(first) || !std::isfinite(second) || second <= first;
@@ -662,19 +672,19 @@ HairTubeGeneratedMeshResult regenerate_at_parameters(const HairTubeCurveCage& ca
     return mesh_error(HairTubeCageStatus::kInvalidTopologyLayout,
                       "output parameters must increase from zero to one");
   }
-  constexpr std::size_t kMaxStation =
-      static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) / kRailCount;
+  const std::size_t kMaxStation =
+      static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) / rail_count;
   if (parameters.size() > kMaxStation ||
-      parameters.size() > std::numeric_limits<std::size_t>::max() / kRailCount) {
+      parameters.size() > std::numeric_limits<std::size_t>::max() / rail_count) {
     return mesh_error(HairTubeCageStatus::kOutputOverflow,
                       "generated mesh exceeds index or container limits");
   }
   HairTubeGeneratedMesh generated;
   const std::size_t output_station_count = parameters.size();
-  generated.positions.reserve(output_station_count * kRailCount);
-  generated.source_mapping.reserve(output_station_count * kRailCount);
+  generated.positions.reserve(output_station_count * rail_count);
+  generated.source_mapping.reserve(output_station_count * rail_count);
   generated.quad_indices.reserve(
-      ((output_station_count - 1) * kRailCount + static_cast<std::size_t>(cage.root_capped) +
+      ((output_station_count - 1) * rail_count + static_cast<std::size_t>(cage.root_capped) +
        static_cast<std::size_t>(cage.tip_capped)) *
       4);
   for (const double t : parameters) {
@@ -682,7 +692,7 @@ HairTubeGeneratedMeshResult regenerate_at_parameters(const HairTubeCurveCage& ca
     if (!sampled.ok()) {
       return mesh_error(sampled.status, sampled.message);
     }
-    for (std::size_t rail = 0; rail < kRailCount; ++rail) {
+    for (std::size_t rail = 0; rail < rail_count; ++rail) {
       generated.positions.push_back(sampled.sample.points[rail]);
       generated.source_mapping.push_back(sampled.sample.source);
       generated.max_source_distance =
@@ -692,10 +702,10 @@ HairTubeGeneratedMeshResult regenerate_at_parameters(const HairTubeCurveCage& ca
   }
 
   for (std::size_t station = 0; station + 1 < output_station_count; ++station) {
-    const std::uint32_t first_station = static_cast<std::uint32_t>(station * kRailCount);
-    const std::uint32_t next_station = static_cast<std::uint32_t>((station + 1) * kRailCount);
-    for (std::uint32_t rail = 0; rail < kRailCount; ++rail) {
-      const std::uint32_t next_rail = (rail + 1) % kRailCount;
+    const std::uint32_t first_station = static_cast<std::uint32_t>(station * rail_count);
+    const std::uint32_t next_station = static_cast<std::uint32_t>((station + 1) * rail_count);
+    for (std::uint32_t rail = 0; rail < rail_count; ++rail) {
+      const std::uint32_t next_rail = (rail + 1) % rail_count;
       const std::array<std::uint32_t, 4> indices{
           first_station + rail,
           first_station + next_rail,
@@ -737,7 +747,7 @@ HairTubeGeneratedMeshResult regenerate_at_parameters(const HairTubeCurveCage& ca
     generated.quad_indices.insert(generated.quad_indices.end(), indices.begin(), indices.end());
   }
   if (cage.tip_capped) {
-    const std::uint32_t tip = static_cast<std::uint32_t>((output_station_count - 1) * kRailCount);
+    const std::uint32_t tip = static_cast<std::uint32_t>((output_station_count - 1) * rail_count);
     const std::array<std::uint32_t, 4> indices{tip, tip + 1, tip + 2, tip + 3};
     const std::array<Point3d, 4> quad{generated.positions[tip], generated.positions[tip + 1],
                                       generated.positions[tip + 2], generated.positions[tip + 3]};
@@ -790,6 +800,7 @@ struct ChordErrorResult {
 };
 
 ChordErrorResult measure_chord_error(const HairTubeCurveCage& cage, double begin, double end) {
+  const std::size_t rail_count = static_cast<std::size_t>(cage.rail_count);
   const HairTubeCageSampleResult first = evaluate_hair_tube_curve_cage(cage, begin);
   const HairTubeCageSampleResult last = evaluate_hair_tube_curve_cage(cage, end);
   if (!first.ok()) {
@@ -804,7 +815,7 @@ ChordErrorResult measure_chord_error(const HairTubeCurveCage& cage, double begin
   const std::uint64_t interval = locate_source_interval(cage, (begin + end) * 0.5).interval;
   const double duration = end - begin;
   double error = 0.0;
-  for (std::size_t rail = 0; rail < kRailCount; ++rail) {
+  for (std::size_t rail = 0; rail < rail_count; ++rail) {
     const Point3d first_control =
         add(first.sample.points[rail],
             multiply(evaluate_cubic_derivative(cage, rail, interval, begin), duration / 3.0));
@@ -829,14 +840,19 @@ ChordErrorResult measure_chord_error(const HairTubeCurveCage& cage, double begin
 
 HairTubeGeneratedMeshResult regenerate_hair_tube_fixed_density(const HairTubeCurveCage& cage,
                                                                std::uint64_t target_segments) {
+  const std::uint64_t rail_count = cage.rail_count;
+  if (rail_count < 3) {
+    return mesh_error(HairTubeCageStatus::kInvalidTopologyLayout,
+                      "cage must contain at least three rails");
+  }
   if (target_segments == 0) {
     return mesh_error(HairTubeCageStatus::kTargetSegmentsZero,
                       "target_segments must be at least one");
   }
-  constexpr std::uint64_t kMaxStation =
-      static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()) / kRailCount;
+  const std::uint64_t kMaxStation =
+      static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()) / rail_count;
   if (target_segments >= kMaxStation ||
-      target_segments > std::numeric_limits<std::size_t>::max() / kRailCount - 1) {
+      target_segments > std::numeric_limits<std::size_t>::max() / rail_count - 1) {
     return mesh_error(HairTubeCageStatus::kOutputOverflow,
                       "generated mesh exceeds index or container limits");
   }
@@ -850,16 +866,21 @@ HairTubeGeneratedMeshResult regenerate_hair_tube_fixed_density(const HairTubeCur
 
 HairTubeGeneratedMeshResult regenerate_hair_tube_adaptive(const HairTubeCurveCage& cage,
                                                           const HairTubeAdaptiveOptions& options) {
+  const std::uint64_t rail_count = cage.rail_count;
+  if (rail_count < 3) {
+    return mesh_error(HairTubeCageStatus::kInvalidTopologyLayout,
+                      "cage must contain at least three rails");
+  }
   if (!std::isfinite(options.max_chord_error) || options.max_chord_error < 0.0 ||
       options.min_segments == 0 || options.max_segments < options.min_segments) {
     return mesh_error(
         HairTubeCageStatus::kInvalidAdaptiveOptions,
         "adaptive options require finite non-negative error and valid segment limits");
   }
-  constexpr std::uint64_t kMaxStation =
-      static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()) / kRailCount;
+  const std::uint64_t kMaxStation =
+      static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()) / rail_count;
   if (options.max_segments >= kMaxStation ||
-      options.max_segments > std::numeric_limits<std::size_t>::max() / kRailCount - 1) {
+      options.max_segments > std::numeric_limits<std::size_t>::max() / rail_count - 1) {
     return mesh_error(HairTubeCageStatus::kOutputOverflow,
                       "adaptive segment limit exceeds index or container limits");
   }

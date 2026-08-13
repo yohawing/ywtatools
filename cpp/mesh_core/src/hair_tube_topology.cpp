@@ -51,17 +51,13 @@ HairTubeTopologyResult error_result(HairTubeStatus status, std::string message,
   return result;
 }
 
-std::array<std::uint32_t, 4> face_vertices(const RawTopologyView& topology, std::uint64_t face) {
+std::vector<std::uint32_t> face_vertices(const RawTopologyView& topology, std::uint64_t face) {
   const std::uint64_t begin = topology.face_offsets[face];
-  return {
-      topology.face_vertices[begin],
-      topology.face_vertices[begin + 1],
-      topology.face_vertices[begin + 2],
-      topology.face_vertices[begin + 3],
-  };
+  const std::uint64_t end = topology.face_offsets[face + 1];
+  return {topology.face_vertices + begin, topology.face_vertices + end};
 }
 
-bool assign_next(std::array<std::uint64_t, 4>& next_ring, std::size_t rail, std::uint32_t vertex) {
+bool assign_next(std::vector<std::uint64_t>& next_ring, std::size_t rail, std::uint32_t vertex) {
   constexpr std::uint64_t kUnset = std::numeric_limits<std::uint64_t>::max();
   if (next_ring[rail] == kUnset) {
     next_ring[rail] = vertex;
@@ -70,7 +66,7 @@ bool assign_next(std::array<std::uint64_t, 4>& next_ring, std::size_t rail, std:
   return next_ring[rail] == vertex;
 }
 
-bool opposite_vertices(const std::array<std::uint32_t, 4>& face, std::uint32_t first,
+bool opposite_vertices(const std::vector<std::uint32_t>& face, std::uint32_t first,
                        std::uint32_t second, std::uint32_t& next_first,
                        std::uint32_t& next_second) {
   for (std::size_t index = 0; index < face.size(); ++index) {
@@ -94,11 +90,12 @@ bool opposite_vertices(const std::array<std::uint32_t, 4>& face, std::uint32_t f
 }
 
 bool face_matches_ring(const RawTopologyView& topology, std::uint64_t face,
-                       const std::array<std::uint32_t, 4>& ring) {
+                       const std::vector<std::uint32_t>& ring) {
   const auto vertices = face_vertices(topology, face);
-  return std::all_of(vertices.begin(), vertices.end(), [&ring](std::uint32_t vertex) {
-    return std::find(ring.begin(), ring.end(), vertex) != ring.end();
-  });
+  return vertices.size() == ring.size() &&
+         std::all_of(vertices.begin(), vertices.end(), [&ring](std::uint32_t vertex) {
+           return std::find(ring.begin(), ring.end(), vertex) != ring.end();
+         });
 }
 
 }  // namespace
@@ -109,15 +106,15 @@ HairTubeTopologyResult extract_hair_tube_topology(const RawTopologyView& topolog
   if (!validation.ok()) {
     return error_result(HairTubeStatus::kInvalidTopology, validation.message, validation.status);
   }
-  if (root_loop.count != 4) {
-    return error_result(HairTubeStatus::kRootLoopCountNotFour,
-                        "root loop must contain exactly four vertices");
+  if (root_loop.count < 3 || root_loop.count > std::numeric_limits<std::uint32_t>::max()) {
+    return error_result(HairTubeStatus::kInvalidRootLoopCount,
+                        "root loop must contain at least three vertices");
   }
   if (root_loop.vertices == nullptr) {
     return error_result(HairTubeStatus::kNullRootVertices, "root loop vertices is null");
   }
 
-  std::array<std::uint32_t, 4> root{};
+  std::vector<std::uint32_t> root(static_cast<std::size_t>(root_loop.count));
   std::unordered_set<std::uint32_t> root_vertices;
   std::uint64_t root_cap_face = kNoHairTubeFace;
   bool root_has_boundary_edge = false;
@@ -202,8 +199,9 @@ HairTubeTopologyResult extract_hair_tube_topology(const RawTopologyView& topolog
   }
 
   HairTubeTopology extracted;
+  extracted.rail_count = root.size();
   extracted.rings.insert(extracted.rings.end(), root.begin(), root.end());
-  std::array<std::uint32_t, 4> current = root;
+  std::vector<std::uint32_t> current = root;
   std::vector<bool> visited_faces(static_cast<std::size_t>(topology.face_count), false);
   if (root_cap_face != kNoHairTubeFace) {
     visited_faces[static_cast<std::size_t>(root_cap_face)] = true;
@@ -212,8 +210,8 @@ HairTubeTopologyResult extract_hair_tube_topology(const RawTopologyView& topolog
   std::unordered_set<std::uint32_t> visited_vertices(root.begin(), root.end());
 
   while (true) {
-    std::array<std::uint64_t, 4> next_faces{};
-    std::array<std::size_t, 4> continuation_counts{};
+    std::vector<std::uint64_t> next_faces(current.size());
+    std::vector<std::size_t> continuation_counts(current.size());
     for (std::size_t rail = 0; rail < current.size(); ++rail) {
       const EdgeKey key = edge_key(current[rail], current[(rail + 1) % current.size()]);
       const auto found = edges.find(key);
@@ -258,16 +256,21 @@ HairTubeTopologyResult extract_hair_tube_topology(const RawTopologyView& topolog
                           "station edges do not share one continuation each");
     }
     std::unordered_set<std::uint64_t> unique_faces(next_faces.begin(), next_faces.end());
-    if (unique_faces.size() != 4) {
+    if (unique_faces.size() != current.size()) {
       return error_result(HairTubeStatus::kAmbiguousContinuation,
-                          "a station does not continue through four unique side faces");
+                          "a station does not continue through one unique side face per edge");
     }
 
     constexpr std::uint64_t kUnset = std::numeric_limits<std::uint64_t>::max();
-    std::array<std::uint64_t, 4> next_ring{kUnset, kUnset, kUnset, kUnset};
+    std::vector<std::uint64_t> next_ring(current.size(), kUnset);
     for (std::size_t rail = 0; rail < current.size(); ++rail) {
       const std::uint64_t face_id = next_faces[rail];
       const auto face = face_vertices(topology, face_id);
+      if (face.size() != 4) {
+        std::ostringstream message;
+        message << "side face " << face_id << " is not a quad";
+        return error_result(HairTubeStatus::kNonQuadFace, message.str());
+      }
       std::uint32_t next_first = 0;
       std::uint32_t next_second = 0;
       if (!opposite_vertices(face, current[rail], current[(rail + 1) % current.size()], next_first,
@@ -280,12 +283,12 @@ HairTubeTopologyResult extract_hair_tube_topology(const RawTopologyView& topolog
     }
 
     std::unordered_set<std::uint32_t> unique_next;
-    std::array<std::uint32_t, 4> next{};
+    std::vector<std::uint32_t> next(current.size());
     for (std::size_t rail = 0; rail < next.size(); ++rail) {
       if (next_ring[rail] == kUnset ||
           next_ring[rail] > std::numeric_limits<std::uint32_t>::max()) {
         return error_result(HairTubeStatus::kSectionCountChanged,
-                            "next station does not contain four vertices");
+                            "next station does not preserve the root vertex count");
       }
       next[rail] = static_cast<std::uint32_t>(next_ring[rail]);
       if (!unique_next.insert(next[rail]).second) {
@@ -313,11 +316,12 @@ HairTubeTopologyResult extract_hair_tube_topology(const RawTopologyView& topolog
                         "topology contains faces or vertices outside the extracted tube");
   }
 
-  extracted.station_count = extracted.rings.size() / 4;
+  extracted.station_count = extracted.rings.size() / extracted.rail_count;
   extracted.rails.reserve(extracted.rings.size());
-  for (std::size_t rail = 0; rail < 4; ++rail) {
+  for (std::size_t rail = 0; rail < extracted.rail_count; ++rail) {
     for (std::uint64_t station = 0; station < extracted.station_count; ++station) {
-      extracted.rails.push_back(extracted.rings[static_cast<std::size_t>(station) * 4 + rail]);
+      extracted.rails.push_back(
+          extracted.rings[static_cast<std::size_t>(station) * extracted.rail_count + rail]);
     }
   }
 

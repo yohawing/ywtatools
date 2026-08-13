@@ -48,31 +48,56 @@ struct CageFixture {
   std::vector<Point3d> positions;
 };
 
-CageFixture make_tube(const std::vector<Point3d>& centers) {
+CageFixture make_tube(const std::vector<Point3d>& centers, std::size_t rail_count = 4) {
   CageFixture fixture;
   fixture.topology.station_count = centers.size();
-  const std::vector<Point3d> corners{
+  fixture.topology.rail_count = rail_count;
+  std::vector<Point3d> corners{
       {-0.5, -0.5, 0.0},
       {0.5, -0.5, 0.0},
       {0.5, 0.5, 0.0},
       {-0.5, 0.5, 0.0},
   };
+  if (rail_count != 4) {
+    corners.clear();
+    for (std::size_t rail = 0; rail < rail_count; ++rail) {
+      const double angle = 6.283185307179586 * static_cast<double>(rail) /
+                           static_cast<double>(rail_count);
+      corners.push_back({0.5 * std::cos(angle), 0.5 * std::sin(angle), 0.0});
+    }
+  }
   for (const Point3d& center : centers) {
     for (const Point3d& corner : corners) {
       fixture.positions.push_back({center.x + corner.x, center.y + corner.y, center.z + corner.z});
       fixture.topology.rings.push_back(static_cast<std::uint32_t>(fixture.topology.rings.size()));
     }
   }
-  for (std::size_t rail = 0; rail < 4; ++rail) {
+  for (std::size_t rail = 0; rail < rail_count; ++rail) {
     for (std::size_t station = 0; station < centers.size(); ++station) {
-      fixture.topology.rails.push_back(static_cast<std::uint32_t>(station * 4 + rail));
+      fixture.topology.rails.push_back(
+          static_cast<std::uint32_t>(station * rail_count + rail));
     }
   }
-  fixture.topology.side_faces.resize((centers.size() - 1) * 4);
+  fixture.topology.side_faces.resize((centers.size() - 1) * rail_count);
   for (std::size_t face = 0; face < fixture.topology.side_faces.size(); ++face) {
     fixture.topology.side_faces[face] = face;
   }
   return fixture;
+}
+
+HairTubeCageResult build(CageFixture& fixture, double fit_tolerance);
+
+void test_five_sided_cage_regenerates_requested_density() {
+  CageFixture fixture =
+      make_tube({{0.0, 0.0, 0.0}, {0.0, 0.0, 1.0}, {0.0, 0.0, 2.0}}, 5);
+  const HairTubeCageResult built = build(fixture, 0.0);
+  const HairTubeGeneratedMeshResult generated = regenerate_hair_tube_fixed_density(built.cage, 4);
+
+  expect(built.ok() && built.cage.rail_count == 5,
+         "five-sided topology should build a five-rail cage");
+  expect(generated.ok() && generated.mesh.positions.size() == 25 &&
+             generated.mesh.quad_indices.size() == 80,
+         "five-sided cage should produce five stations and twenty side quads");
 }
 
 HairTubeCageResult build(CageFixture& fixture, double fit_tolerance) {
@@ -388,6 +413,7 @@ void test_multiple_lods_are_ordered_and_fail_atomically() {
 
 int main() {
   test_uniform_polyline_round_trip();
+  test_five_sided_cage_regenerates_requested_density();
   test_nonuniform_shared_t_uses_average_chord_length();
   test_cubic_interpolates_sources_and_obeys_tolerance();
   test_fixed_density_counts_mapping_and_determinism();

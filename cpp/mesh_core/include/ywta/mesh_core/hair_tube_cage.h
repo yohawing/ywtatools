@@ -53,8 +53,9 @@ struct CubicSegment3d {
   Point3d d;
 };
 
-/** 4 rail、共有t、source polyline、cubic fitを保持するCurve Cage。 */
+/** 3本以上のrail、共有t、source polyline、cubic fitを保持するCurve Cage。 */
 struct HairTubeCurveCage {
+  std::uint64_t rail_count = 0;
   std::uint64_t source_station_count = 0;
   std::vector<double> shared_t;
   std::vector<Point3d> source_points;
@@ -81,9 +82,9 @@ struct HairTubeSourceSample {
   double alpha = 0.0;
 };
 
-/** 共有tで評価した4 railの断面。 */
+/** 共有tで評価した全railの断面。 */
 struct HairTubeCageSample {
-  std::array<Point3d, 4> points;
+  std::vector<Point3d> points;
   HairTubeSourceSample source;
 };
 
