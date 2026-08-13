@@ -13,21 +13,23 @@ from typing import Any, Dict, Optional, Union, TypeVar, Generic
 from pathlib import Path
 import logging
 
+from ywta.exceptions import ErrorCode, YWTAError
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
 
-class ConfigError(Exception):
+class ConfigError(YWTAError):
     """設定システムの基本例外クラス"""
 
-    pass
+    default_code = ErrorCode.CONFIGURATION
 
 
 class ValidationError(ConfigError):
     """設定値の検証エラー"""
 
-    pass
+    default_code = ErrorCode.VALIDATION
 
 
 class ConfigValue(Generic[T]):
