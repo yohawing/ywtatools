@@ -123,6 +123,13 @@ Point3d evaluate_cubic(const HairTubeCurveCage& cage, std::size_t rail,
                             add(multiply(segment.c, x * x), multiply(segment.d, x * x * x))));
 }
 
+Point3d evaluate_cubic_derivative(const HairTubeCurveCage& cage, std::size_t rail,
+                                  std::uint64_t interval, double t) {
+  const CubicSegment3d& segment = cage.cubic_segments[cubic_index(cage, rail, interval)];
+  const double x = t - segment.t0;
+  return add(segment.b, add(multiply(segment.c, 2.0 * x), multiply(segment.d, 3.0 * x * x)));
+}
+
 std::vector<double> natural_second_derivatives(const std::vector<double>& t,
                                                const std::vector<double>& values) {
   const std::size_t count = t.size();
@@ -642,27 +649,30 @@ HairTubeCageSampleResult evaluate_hair_tube_curve_cage(const HairTubeCurveCage& 
   return result;
 }
 
-HairTubeGeneratedMeshResult regenerate_hair_tube_fixed_density(const HairTubeCurveCage& cage,
-                                                               std::uint64_t target_segments) {
-  if (target_segments == 0) {
-    return mesh_error(HairTubeCageStatus::kTargetSegmentsZero,
-                      "target_segments must be at least one");
+namespace {
+
+HairTubeGeneratedMeshResult regenerate_at_parameters(const HairTubeCurveCage& cage,
+                                                     const std::vector<double>& parameters) {
+  if (parameters.size() < 2 || parameters.front() != 0.0 || parameters.back() != 1.0 ||
+      std::adjacent_find(parameters.begin(), parameters.end(), [](double first, double second) {
+        return !std::isfinite(first) || !std::isfinite(second) || second <= first;
+      }) != parameters.end()) {
+    return mesh_error(HairTubeCageStatus::kInvalidTopologyLayout,
+                      "output parameters must increase from zero to one");
   }
-  constexpr std::uint64_t kMaxStation =
-      static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()) / kRailCount;
-  if (target_segments >= kMaxStation ||
-      target_segments > std::numeric_limits<std::size_t>::max() / kRailCount - 1) {
+  constexpr std::size_t kMaxStation =
+      static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) / kRailCount;
+  if (parameters.size() > kMaxStation ||
+      parameters.size() > std::numeric_limits<std::size_t>::max() / kRailCount) {
     return mesh_error(HairTubeCageStatus::kOutputOverflow,
                       "generated mesh exceeds index or container limits");
   }
-
   HairTubeGeneratedMesh generated;
-  const std::size_t output_station_count = static_cast<std::size_t>(target_segments + 1);
+  const std::size_t output_station_count = parameters.size();
   generated.positions.reserve(output_station_count * kRailCount);
   generated.source_mapping.reserve(output_station_count * kRailCount);
-  generated.quad_indices.reserve(static_cast<std::size_t>(target_segments) * kRailCount * 4);
-  for (std::uint64_t station = 0; station <= target_segments; ++station) {
-    const double t = static_cast<double>(station) / static_cast<double>(target_segments);
+  generated.quad_indices.reserve((output_station_count - 1) * kRailCount * 4);
+  for (const double t : parameters) {
     const HairTubeCageSampleResult sampled = evaluate_hair_tube_curve_cage(cage, t);
     if (!sampled.ok()) {
       return mesh_error(sampled.status, sampled.message);
@@ -676,7 +686,7 @@ HairTubeGeneratedMeshResult regenerate_hair_tube_fixed_density(const HairTubeCur
     }
   }
 
-  for (std::uint64_t station = 0; station < target_segments; ++station) {
+  for (std::size_t station = 0; station + 1 < output_station_count; ++station) {
     const std::uint32_t first_station = static_cast<std::uint32_t>(station * kRailCount);
     const std::uint32_t next_station = static_cast<std::uint32_t>((station + 1) * kRailCount);
     for (std::uint32_t rail = 0; rail < kRailCount; ++rail) {
@@ -733,6 +743,157 @@ HairTubeGeneratedMeshResult regenerate_hair_tube_fixed_density(const HairTubeCur
 
   HairTubeGeneratedMeshResult result;
   result.mesh = std::move(generated);
+  return result;
+}
+
+struct ChordErrorResult {
+  HairTubeCageStatus status = HairTubeCageStatus::kOk;
+  std::string message;
+  double error = 0.0;
+};
+
+ChordErrorResult measure_chord_error(const HairTubeCurveCage& cage, double begin, double end) {
+  const HairTubeCageSampleResult first = evaluate_hair_tube_curve_cage(cage, begin);
+  const HairTubeCageSampleResult last = evaluate_hair_tube_curve_cage(cage, end);
+  if (!first.ok()) {
+    return {first.status, first.message, 0.0};
+  }
+  if (!last.ok()) {
+    return {last.status, last.message, 0.0};
+  }
+  if (!cage.cubic_active) {
+    return {};
+  }
+  const std::uint64_t interval = locate_source_interval(cage, (begin + end) * 0.5).interval;
+  const double duration = end - begin;
+  double error = 0.0;
+  for (std::size_t rail = 0; rail < kRailCount; ++rail) {
+    const Point3d first_control =
+        add(first.sample.points[rail],
+            multiply(evaluate_cubic_derivative(cage, rail, interval, begin), duration / 3.0));
+    const Point3d second_control =
+        subtract(last.sample.points[rail],
+                 multiply(evaluate_cubic_derivative(cage, rail, interval, end), duration / 3.0));
+    error =
+        std::max({error,
+                  distance(first_control,
+                           lerp(first.sample.points[rail], last.sample.points[rail], 1.0 / 3.0)),
+                  distance(second_control,
+                           lerp(first.sample.points[rail], last.sample.points[rail], 2.0 / 3.0))});
+  }
+  if (!std::isfinite(error)) {
+    return {HairTubeCageStatus::kNonFiniteEvaluation,
+            "adaptive chord bound produced a non-finite value", 0.0};
+  }
+  return {HairTubeCageStatus::kOk, {}, error};
+}
+
+}  // namespace
+
+HairTubeGeneratedMeshResult regenerate_hair_tube_fixed_density(const HairTubeCurveCage& cage,
+                                                               std::uint64_t target_segments) {
+  if (target_segments == 0) {
+    return mesh_error(HairTubeCageStatus::kTargetSegmentsZero,
+                      "target_segments must be at least one");
+  }
+  constexpr std::uint64_t kMaxStation =
+      static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()) / kRailCount;
+  if (target_segments >= kMaxStation ||
+      target_segments > std::numeric_limits<std::size_t>::max() / kRailCount - 1) {
+    return mesh_error(HairTubeCageStatus::kOutputOverflow,
+                      "generated mesh exceeds index or container limits");
+  }
+  std::vector<double> parameters(static_cast<std::size_t>(target_segments + 1));
+  for (std::uint64_t station = 0; station <= target_segments; ++station) {
+    parameters[static_cast<std::size_t>(station)] =
+        static_cast<double>(station) / static_cast<double>(target_segments);
+  }
+  return regenerate_at_parameters(cage, parameters);
+}
+
+HairTubeGeneratedMeshResult regenerate_hair_tube_adaptive(const HairTubeCurveCage& cage,
+                                                          const HairTubeAdaptiveOptions& options) {
+  if (!std::isfinite(options.max_chord_error) || options.max_chord_error < 0.0 ||
+      options.min_segments == 0 || options.max_segments < options.min_segments) {
+    return mesh_error(
+        HairTubeCageStatus::kInvalidAdaptiveOptions,
+        "adaptive options require finite non-negative error and valid segment limits");
+  }
+  constexpr std::uint64_t kMaxStation =
+      static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()) / kRailCount;
+  if (options.max_segments >= kMaxStation ||
+      options.max_segments > std::numeric_limits<std::size_t>::max() / kRailCount - 1) {
+    return mesh_error(HairTubeCageStatus::kOutputOverflow,
+                      "adaptive segment limit exceeds index or container limits");
+  }
+
+  std::vector<double> parameters = cage.shared_t;
+  parameters.reserve(parameters.size() + static_cast<std::size_t>(options.min_segments + 1));
+  for (std::uint64_t station = 0; station <= options.min_segments; ++station) {
+    const double uniform = static_cast<double>(station) / static_cast<double>(options.min_segments);
+    const bool matches_source = std::any_of(
+        cage.shared_t.begin(), cage.shared_t.end(),
+        [uniform](double source) { return std::abs(source - uniform) <= kLengthEpsilon; });
+    if (!matches_source) {
+      parameters.push_back(uniform);
+    }
+  }
+  std::sort(parameters.begin(), parameters.end());
+  if (parameters.size() - 1 > options.max_segments) {
+    return mesh_error(HairTubeCageStatus::kAdaptiveLimitExceeded,
+                      "source stations and minimum samples exceed max_segments");
+  }
+  while (true) {
+    double worst_error = -1.0;
+    std::size_t worst_interval = 0;
+    for (std::size_t interval = 0; interval + 1 < parameters.size(); ++interval) {
+      const ChordErrorResult measured =
+          measure_chord_error(cage, parameters[interval], parameters[interval + 1]);
+      if (measured.status != HairTubeCageStatus::kOk) {
+        return mesh_error(measured.status, measured.message);
+      }
+      if (measured.error > worst_error) {
+        worst_error = measured.error;
+        worst_interval = interval;
+      }
+    }
+    if (worst_error <= options.max_chord_error) {
+      return regenerate_at_parameters(cage, parameters);
+    }
+    if (parameters.size() - 1 >= options.max_segments) {
+      return mesh_error(HairTubeCageStatus::kAdaptiveLimitExceeded,
+                        "adaptive sampling reached max_segments before meeting chord error");
+    }
+    const double midpoint = (parameters[worst_interval] + parameters[worst_interval + 1]) * 0.5;
+    parameters.insert(parameters.begin() + static_cast<std::ptrdiff_t>(worst_interval + 1),
+                      midpoint);
+  }
+}
+
+HairTubeLodResult regenerate_hair_tube_lods(const HairTubeCurveCage& cage,
+                                            const std::vector<std::uint64_t>& segment_counts) {
+  HairTubeLodResult result;
+  if (segment_counts.empty() ||
+      std::adjacent_find(segment_counts.begin(), segment_counts.end(),
+                         [](std::uint64_t first, std::uint64_t second) {
+                           return first == 0 || second <= first;
+                         }) != segment_counts.end() ||
+      segment_counts.front() == 0) {
+    result.status = HairTubeCageStatus::kInvalidLodLevels;
+    result.message = "LOD segment counts must be non-empty and strictly increasing";
+    return result;
+  }
+  result.levels.reserve(segment_counts.size());
+  for (const std::uint64_t segment_count : segment_counts) {
+    HairTubeGeneratedMeshResult generated = regenerate_hair_tube_fixed_density(cage, segment_count);
+    if (!generated.ok()) {
+      result.status = generated.status;
+      result.message = generated.message;
+      result.levels.clear();
+      return result;
+    }
+    result.levels.push_back(std::move(generated.mesh));
+  }
   return result;
 }
 

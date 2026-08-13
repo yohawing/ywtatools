@@ -12,6 +12,7 @@ namespace {
 
 using ywta::mesh_core::build_hair_tube_curve_cage;
 using ywta::mesh_core::evaluate_hair_tube_curve_cage;
+using ywta::mesh_core::HairTubeAdaptiveOptions;
 using ywta::mesh_core::HairTubeCageResult;
 using ywta::mesh_core::HairTubeCageStatus;
 using ywta::mesh_core::HairTubeCurveCage;
@@ -19,7 +20,9 @@ using ywta::mesh_core::HairTubeGeneratedMeshResult;
 using ywta::mesh_core::HairTubeTopology;
 using ywta::mesh_core::Point3d;
 using ywta::mesh_core::Point3dView;
+using ywta::mesh_core::regenerate_hair_tube_adaptive;
 using ywta::mesh_core::regenerate_hair_tube_fixed_density;
+using ywta::mesh_core::regenerate_hair_tube_lods;
 
 constexpr double kTolerance = 1.0e-9;
 int failures = 0;
@@ -282,6 +285,88 @@ void test_invalid_regeneration_and_zero_area_fail_without_partial_output() {
   }
 }
 
+void test_adaptive_sampling_meets_error_and_is_deterministic() {
+  CageFixture fixture = make_tube({{0.0, 0.0, 0.0}, {1.0, 0.0, 1.0}, {0.0, 0.0, 2.0}});
+  const HairTubeCageResult built = build(fixture, 10.0);
+  expect(built.ok() && built.cage.cubic_active, "curved fixture should use cubic fit");
+  const HairTubeAdaptiveOptions options{0.02, 1, 64};
+  const HairTubeGeneratedMeshResult first = regenerate_hair_tube_adaptive(built.cage, options);
+  const HairTubeGeneratedMeshResult second = regenerate_hair_tube_adaptive(built.cage, options);
+  expect(first.ok(), "adaptive sampling should meet a practical error limit");
+  expect(first.mesh.positions.size() > 8 && first.mesh.positions.size() <= (64 + 1) * 4,
+         "adaptive sampling should refine within configured limits");
+  expect(first.mesh.positions.size() == second.mesh.positions.size() &&
+             first.mesh.quad_indices == second.mesh.quad_indices,
+         "adaptive sampling should be deterministic");
+  for (std::size_t index = 0; index < first.mesh.positions.size(); ++index) {
+    expect(near(first.mesh.positions[index], second.mesh.positions[index]),
+           "adaptive positions should be deterministic");
+  }
+  const std::size_t output_stations = first.mesh.positions.size() / 4;
+  for (std::size_t station = 0; station + 1 < output_stations; ++station) {
+    const auto& source_first = first.mesh.source_mapping[station * 4];
+    const auto& source_last = first.mesh.source_mapping[(station + 1) * 4];
+    const double t_first = built.cage.shared_t[source_first.interval] * (1.0 - source_first.alpha) +
+                           built.cage.shared_t[source_first.interval + 1] * source_first.alpha;
+    const double t_last = built.cage.shared_t[source_last.interval] * (1.0 - source_last.alpha) +
+                          built.cage.shared_t[source_last.interval + 1] * source_last.alpha;
+    for (std::size_t sample_index = 1; sample_index < 100; ++sample_index) {
+      const double alpha = static_cast<double>(sample_index) / 100.0;
+      const auto sampled =
+          evaluate_hair_tube_curve_cage(built.cage, t_first + (t_last - t_first) * alpha);
+      expect(sampled.ok(), "dense adaptive verification sample should evaluate");
+      if (!sampled.ok()) {
+        continue;
+      }
+      for (std::size_t rail = 0; rail < 4; ++rail) {
+        const Point3d chord = Point3d{first.mesh.positions[station * 4 + rail].x * (1.0 - alpha) +
+                                          first.mesh.positions[(station + 1) * 4 + rail].x * alpha,
+                                      first.mesh.positions[station * 4 + rail].y * (1.0 - alpha) +
+                                          first.mesh.positions[(station + 1) * 4 + rail].y * alpha,
+                                      first.mesh.positions[station * 4 + rail].z * (1.0 - alpha) +
+                                          first.mesh.positions[(station + 1) * 4 + rail].z * alpha};
+        const Point3d delta{sampled.sample.points[rail].x - chord.x,
+                            sampled.sample.points[rail].y - chord.y,
+                            sampled.sample.points[rail].z - chord.z};
+        expect(std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z) <=
+                   options.max_chord_error + 1.0e-12,
+               "adaptive Bezier bound should contain dense sampled chord error");
+      }
+    }
+  }
+  expect(near(first.mesh.positions.front(), fixture.positions.front()) &&
+             near(first.mesh.positions[first.mesh.positions.size() - 4], fixture.positions[8]),
+         "adaptive sampling should preserve root and tip endpoints");
+
+  const HairTubeGeneratedMeshResult limited =
+      regenerate_hair_tube_adaptive(built.cage, {0.0, 1, 1});
+  expect_empty_mesh_failure(limited, HairTubeCageStatus::kAdaptiveLimitExceeded,
+                            "adaptive max segment limit");
+  expect_empty_mesh_failure(regenerate_hair_tube_adaptive(built.cage, {-1.0, 1, 4}),
+                            HairTubeCageStatus::kInvalidAdaptiveOptions,
+                            "invalid adaptive options");
+}
+
+void test_multiple_lods_are_ordered_and_fail_atomically() {
+  CageFixture fixture = make_tube({{0.0, 0.0, 0.0}, {0.0, 0.0, 1.0}});
+  const HairTubeCageResult built = build(fixture, 0.0);
+  const auto lods = regenerate_hair_tube_lods(built.cage, {1, 2, 4});
+  expect(lods.ok() && lods.levels.size() == 3, "three valid LOD levels should be generated");
+  expect(lods.levels[0].positions.size() == 8 && lods.levels[1].positions.size() == 12 &&
+             lods.levels[2].positions.size() == 20,
+         "LOD levels should follow requested segment counts");
+  expect(near(lods.levels[0].positions.front(), lods.levels[2].positions.front()) &&
+             near(lods.levels[0].positions.back(), lods.levels[2].positions.back()),
+         "all LOD levels should preserve root and tip");
+
+  const auto duplicate = regenerate_hair_tube_lods(built.cage, {2, 2});
+  expect(duplicate.status == HairTubeCageStatus::kInvalidLodLevels && duplicate.levels.empty(),
+         "duplicate LOD levels should fail without partial output");
+  const auto empty = regenerate_hair_tube_lods(built.cage, {});
+  expect(empty.status == HairTubeCageStatus::kInvalidLodLevels && empty.levels.empty(),
+         "empty LOD levels should fail without partial output");
+}
+
 }  // namespace
 
 int main() {
@@ -291,6 +376,8 @@ int main() {
   test_fixed_density_counts_mapping_and_determinism();
   test_invalid_cage_inputs_fail_without_partial_output();
   test_invalid_regeneration_and_zero_area_fail_without_partial_output();
+  test_adaptive_sampling_meets_error_and_is_deterministic();
+  test_multiple_lods_are_ordered_and_fail_atomically();
 
   if (failures != 0) {
     std::cerr << failures << " test(s) failed\n";

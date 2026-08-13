@@ -38,6 +38,9 @@ enum class HairTubeCageStatus {
   kZeroAreaQuad,
   kInvertedQuad,
   kSelfIntersection,
+  kInvalidAdaptiveOptions,
+  kAdaptiveLimitExceeded,
+  kInvalidLodLevels,
 };
 
 /** 1区間の自然三次スプライン係数。P(x)=a+b*x+c*x^2+d*x^3。 */
@@ -108,6 +111,22 @@ struct HairTubeGeneratedMeshResult {
   [[nodiscard]] bool ok() const noexcept { return status == HairTubeCageStatus::kOk; }
 };
 
+/** chord誤差で長手方向を適応分割する設定。 */
+struct HairTubeAdaptiveOptions {
+  double max_chord_error = 0.0;
+  std::uint64_t min_segments = 1;
+  std::uint64_t max_segments = 256;
+};
+
+/** 複数LODを入力順に保持する生成結果。 */
+struct HairTubeLodResult {
+  HairTubeCageStatus status = HairTubeCageStatus::kOk;
+  std::string message;
+  std::vector<HairTubeGeneratedMesh> levels;
+
+  [[nodiscard]] bool ok() const noexcept { return status == HairTubeCageStatus::kOk; }
+};
+
 /**
  * HairTubeTopologyとsource位置から共有t付きCurve Cageを構築する。
  *
@@ -125,5 +144,13 @@ struct HairTubeGeneratedMeshResult {
 /** Curve Cageから指定segment数のopen quad tubeを別bufferへ再生成する。 */
 [[nodiscard]] HairTubeGeneratedMeshResult regenerate_hair_tube_fixed_density(
     const HairTubeCurveCage& cage, std::uint64_t target_segments);
+
+/** chord誤差が上限以下になるよう非一様stationで再生成する。 */
+[[nodiscard]] HairTubeGeneratedMeshResult regenerate_hair_tube_adaptive(
+    const HairTubeCurveCage& cage, const HairTubeAdaptiveOptions& options);
+
+/** 指定したsegment数ごとに決定的なLOD meshを生成する。 */
+[[nodiscard]] HairTubeLodResult regenerate_hair_tube_lods(
+    const HairTubeCurveCage& cage, const std::vector<std::uint64_t>& segment_counts);
 
 }  // namespace ywta::mesh_core
