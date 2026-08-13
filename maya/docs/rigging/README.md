@@ -4,6 +4,8 @@
 
 Joint、Constraint、Skeleton、Control Curveを扱うツールです。
 
+- [Riggingツール棚卸しと整理決定](tool-inventory.md) — 現行配置、重複、UI/Undo要件、整理後のメニュー構成
+
 ## Joint
 
 - [Joint Editing](joint-editing.md) — Joint Edit Tools、作成、挿入、Orient、Mirror、複製
