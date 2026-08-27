@@ -3,6 +3,12 @@
 from .contract import NegotiationResult, SyncChannel, SyncContract
 from .camera import CAMERA_FIELDS, CAMERA_SCHEMA, FILM_FIT_VALUES, GATE_FIT_VALUES, Camera, CameraValidationError
 from .client import LinkClient, LinkClientError
+from .entity_ref import (
+    ENTITY_REFERENCE_FIELDS,
+    ENTITY_REFERENCE_SCHEMA,
+    EntityReference,
+    EntityReferenceValidationError,
+)
 from .envelope import Envelope, decode_envelope, encode_envelope
 from .frame import Frame, FrameError, FrameLimits, decode_frame, encode_frame, read_frame, write_frame
 from .presence import (
@@ -26,6 +32,10 @@ __all__ = (
     "GATE_FIT_VALUES",
     "Camera",
     "CameraValidationError",
+    "ENTITY_REFERENCE_FIELDS",
+    "ENTITY_REFERENCE_SCHEMA",
+    "EntityReference",
+    "EntityReferenceValidationError",
     "Envelope",
     "Frame",
     "FrameError",

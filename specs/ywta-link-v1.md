@@ -698,7 +698,9 @@ YWTA Commonは、複数DCCで共有できる意味を表すversioned schema群�
 - 長さ、角度、時間、色など、解釈が分かれる値はUnitまたはColor spaceを明示する。
 - 送信元、revision、change IDを追跡できる。
 - Adapterは適用結果を`exact`、`approximated`、`unsupported`のいずれかで報告する。
-- 未知Fieldは無視できるが、未知の必須意味を推測して適用しない。
+- version付きCommon schemaのtop-level Field集合は固定し、同じversionの未知Fieldは拒否する。Fieldを拡張する場合は
+  schema versionを上げ、未知の必須意味を推測して適用しない。未確定のnested objectをopaqueに保持する例外は、
+  個別schemaで明示する。
 
 OpenUSD、glTF、MaterialX、OpenTimelineIOはField選定と用語の参考にする。ただし、YWTA Linkの通信や
 DCC Adapterへ各Runtimeの導入を要求しない。
@@ -721,6 +723,21 @@ Schema定義とGolden JSON fixtureを正本とし、Clientごとの実装は小�
 
 `entity_id`はSync Session内で安定していなければならない。DCC object path、UUID、Node名との対応は
 ContractのBindingまたはAdapter設定へ置き、Common payloadへHost固有pathを必須化しない。
+
+#### v1 wire contract
+
+Entity Reference payloadのtop-level Fieldは`entity_id`、`kind`、`display_name`、`namespace`の4個に固定する。
+`schema` discriminatorはpayloadへ含めず、EnvelopeまたはSync Contractのschema ID
+（`ywta.common.entity-ref.v1`）で識別する。4 Fieldはすべて必須キーとし、未知Fieldは拒否する。
+
+`entity_id`、`kind`、`display_name`は空でないUTF-8文字列とする。`kind`は閉じたenumにせず、Adapterが拡張できる
+non-empty identifierとして扱う。3 Fieldおよび文字列の`namespace`は空白だけの値を拒否するが、表示名などの意味を
+持つ文字列に含まれる空白は許可する。`namespace`は`null`または空白でないUTF-8文字列で、`null`はnamespaceなしを表す。
+Host path、UUID、Node名をこれらのFieldへ要求しない。
+
+`entity_id`の安定性はSync Session内での意味上の要件であり、statelessなcodecはSession状態を保持せず、その要件を
+検証しない。Python codecは入力objectを検証してfrozen dataclassへ変換し、出力はtop-level Fieldを追加せず、
+sort keys、allow_nan=falseのdeterministic compact UTF-8 JSONとする。直接constructorもdecodeと同じField検証を行う。
 
 ### 10.3 Transform
 
@@ -1012,7 +1029,8 @@ Processに対する完全なsecurity boundaryは提供しない。
 - ProtocolとPayload schemaは個別にversion管理する。
 - v1 Clientは接続時に対応Protocol versionを広告する。
 - 共通Versionがない場合、Brokerは接続を拒否して理由を返す。
-- 互換追加Fieldは受信側が無視できるようにする。
+- 共通Envelope、および個別schemaが明示的に拡張可能としたobjectの互換追加Fieldは、受信側が無視できるようにする。
+  Common schemaの固定top-level Fieldを追加する場合は、同じversionへ追加せずschema versionを上げる。
 - 必須Field削除、型変更、意味変更は新しいschema versionを必要とする。
 - Optional機能はCapability negotiationを使い、全Clientへ実装を強制しない。
 
