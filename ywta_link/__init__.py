@@ -1,6 +1,7 @@
 """YWTA Link v1の依存なしProtocol foundation。"""
 
 from .contract import NegotiationResult, SyncChannel, SyncContract
+from .camera import CAMERA_FIELDS, CAMERA_SCHEMA, FILM_FIT_VALUES, GATE_FIT_VALUES, Camera, CameraValidationError
 from .client import LinkClient, LinkClientError
 from .envelope import Envelope, decode_envelope, encode_envelope
 from .frame import Frame, FrameError, FrameLimits, decode_frame, encode_frame, read_frame, write_frame
@@ -19,6 +20,12 @@ from .runtime import RuntimeError, RuntimeManifest, read_runtime_manifest, resol
 
 __all__ = (
     "ChannelRevisionTracker",
+    "CAMERA_FIELDS",
+    "CAMERA_SCHEMA",
+    "FILM_FIT_VALUES",
+    "GATE_FIT_VALUES",
+    "Camera",
+    "CameraValidationError",
     "Envelope",
     "Frame",
     "FrameError",

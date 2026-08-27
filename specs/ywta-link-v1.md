@@ -763,6 +763,38 @@ timebaseを表現し、29.97 fpsなどを丸めない。
 - Orthographic size
 - Film fitまたはGate fitの意図
 
+#### v1 wire contract
+
+Camera payloadのtop-level Fieldは次の15個に固定する。全Fieldを必須キーとし、projectionで適用しない
+値だけを`null`にする。`schema` discriminatorはpayloadへ含めず、EnvelopeまたはSync Contractのschema ID
+（`ywta.common.camera.v1`）で識別する。`entity_ref`、`transform`、`time`は対応するCommon型が確定するまで
+JSON objectとして保持し、object内の未知Fieldを含むJSON-compatibleな値を転送できる。ただし数値は有限値に
+限り、Adapterは未定義の意味を推測してはならない。
+
+| Field | wire type | 意味・制約 |
+| --- | --- | --- |
+| `entity_ref`、`transform`、`time` | object | Common object。JSON object以外は拒否する |
+| `projection` | string | `perspective` または `orthographic` |
+| `focal_length` | number または `null` | Perspective必須。長さはmm、正数 |
+| `horizontal_aperture`、`vertical_aperture` | number または `null` | Perspective必須。長さはmm、正数 |
+| `aperture_offset` | `[number, number]` または `null` | `[horizontal, vertical]` の順、長さはmm。Perspective必須 |
+| `clipping_range` | `[number, number]` | `[near, far]` の順、長さはmm、正数かつnear < far |
+| `focus_distance` | number または `null` | 長さはmm、正数。nullは未提供 |
+| `f_stop` | number または `null` | 正数、nullは未提供 |
+| `exposure` | number または `null` | EV（unitless）のscalar、nullは未提供 |
+| `orthographic_size` | number または `null` | Orthographic必須。長さはmm、正数 |
+| `film_fit`、`gate_fit` | string または `null` | `horizontal`、`vertical`、`fill`、`overscan` のいずれか |
+
+Orthographicでは`orthographic_size`を必須とし、`focal_length`、`horizontal_aperture`、
+`vertical_aperture`、`aperture_offset`は`null`にする。Perspectiveでは逆にそれらのLens Fieldを必須とし、
+`orthographic_size`は`null`にする。`focus_distance`、`f_stop`、`exposure`、fit意図は両Projectionで
+利用可能だが、未提供なら`null`にできる。Camera固有の全長さ値をmmへ統一することで、OpenUSD Cameraの
+focal/aperture語彙とclip/focus/orthographic sizeを同じwire unitで扱い、Transformのunitとは独立に
+AdapterがHostのscene unitへ変換する。
+
+Python codecは入力objectを再帰的に検証・immutable copyし、出力は未知Fieldを追加せず、UTF-8の
+deterministic compact JSON（sort keys、allow_nan=false）とする。
+
 DCCがFieldを直接表現できない場合は`approximated`または`unsupported`を返す。FOVだけを持つHostでは、
 ApertureとFocal lengthのどちらをAuthorityとしたかをAdapterのmapping profileで固定する。
 
