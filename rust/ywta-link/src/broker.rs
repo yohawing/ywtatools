@@ -19,6 +19,7 @@ const RUNTIME_CHALLENGE_FIELD: &str = "ywta_runtime_challenge";
 const RUNTIME_TOKEN_FIELD: &str = "ywta_runtime_token";
 const RUNTIME_BROKER_SENDER: &str = "ywta-link:broker";
 const MONITOR_PEER_PREFIX: &str = "ywta-link:monitor:";
+const MONITOR_INCLUDE_PRESENCE_FIELD: &str = "ywta_include_presence";
 
 /// Broker内で接続を区別する短命ID。
 pub type ConnectionId = u64;
@@ -32,18 +33,19 @@ pub struct Delivery {
 
 /// CLI Monitorが取得するBrokerの接続状態。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct BrokerSnapshot {
     pub protocol_version: u16,
     pub endpoint: String,
     pub pid: u32,
     pub peers: Vec<String>,
+    /// Presenceを広告したPeerだけをPeer ID順で収録する。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub presence: Vec<PeerPresence>,
     pub rooms: Vec<RoomSnapshot>,
 }
 
 /// Monitorへ返すRoomの一貫した状態。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RoomSnapshot {
     pub room: String,
     pub members: Vec<String>,
@@ -52,7 +54,6 @@ pub struct RoomSnapshot {
 
 /// Monitorへ返すTopic subscriptionの状態。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SubscriptionSnapshot {
     pub topic: String,
     pub members: Vec<String>,
@@ -268,6 +269,11 @@ impl BrokerCore {
                     || frame.envelope.correlation_id.is_some()
                     || frame.envelope.body.is_some()
                     || !frame.body.is_empty()
+                    || frame
+                        .envelope
+                        .extra
+                        .get(MONITOR_INCLUDE_PRESENCE_FIELD)
+                        .is_some_and(|value| !value.is_boolean())
                 {
                     return Err(BrokerError::InvalidMonitorRequest);
                 }
@@ -395,6 +401,11 @@ impl BrokerCore {
     ) -> Result<Vec<Delivery>, BrokerError> {
         if !matches!(frame.envelope.message_type, MessageType::Hello) {
             return Err(BrokerError::HelloRequired);
+        }
+        if is_monitor_peer(&frame.envelope.sender)
+            && frame.envelope.schema.as_deref() == Some(PEER_HELLO_SCHEMA)
+        {
+            return Err(BrokerError::MonitorNotAllowed);
         }
         let presence = parse_peer_presence(&frame)?;
         let peer_id = frame.envelope.sender.clone();
@@ -602,6 +613,15 @@ fn has_runtime_challenge(frame: &Frame) -> bool {
             .is_some_and(|challenge| !challenge.is_empty())
 }
 
+fn monitor_request_includes_presence(frame: &Frame) -> bool {
+    frame
+        .envelope
+        .extra
+        .get(MONITOR_INCLUDE_PRESENCE_FIELD)
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
 fn required_topic(frame: &Frame) -> Result<String, BrokerError> {
     frame.envelope.topic.clone().ok_or_else(|| {
         BrokerError::Frame(FrameError::from(crate::envelope::EnvelopeError::new(
@@ -761,8 +781,12 @@ impl BrokerServer {
                         frame.envelope.message_type,
                         MessageType::MonitorSnapshotRequest
                     );
-                    let monitor_request_id =
-                        is_monitor_request.then(|| frame.envelope.message_id.clone());
+                    let monitor_request = is_monitor_request.then(|| {
+                        (
+                            frame.envelope.message_id.clone(),
+                            monitor_request_includes_presence(&frame),
+                        )
+                    });
                     match self.core.receive_with_monitor_authorization(
                         connection_id,
                         frame,
@@ -775,8 +799,12 @@ impl BrokerServer {
                             if let Some(ack) = runtime_ack {
                                 self.send_to_connection(connection_id, ack);
                             }
-                            if let Some(request_id) = monitor_request_id {
-                                match self.monitor_snapshot_response(connection_id, &request_id) {
+                            if let Some((request_id, include_presence)) = monitor_request {
+                                match self.monitor_snapshot_response(
+                                    connection_id,
+                                    &request_id,
+                                    include_presence,
+                                ) {
                                     Ok(response) => {
                                         self.send_to_connection(connection_id, response)
                                     }
@@ -828,6 +856,7 @@ impl BrokerServer {
         &self,
         connection_id: ConnectionId,
         request_id: &str,
+        include_presence: bool,
     ) -> Result<Frame, BrokerError> {
         if !self.monitor_connections.contains(&connection_id)
             || !self.core.is_monitor_connection(connection_id)
@@ -840,12 +869,18 @@ impl BrokerServer {
             .get(&connection_id)
             .ok_or(BrokerError::MonitorNotAllowed)?;
         let (peers, rooms) = self.core.snapshot();
+        let presence = if include_presence {
+            self.core.presence_snapshot()
+        } else {
+            Vec::new()
+        };
         let endpoint = self.local_addr()?.to_string();
         let snapshot = BrokerSnapshot {
             protocol_version: 1,
             endpoint,
             pid: std::process::id(),
             peers,
+            presence,
             rooms,
         };
         let body = serde_json::to_value(snapshot).map_err(BrokerError::MonitorSerialization)?;
@@ -1122,10 +1157,13 @@ mod tests {
     }
 
     fn presence_hello(sender: &str) -> Frame {
-        let body: Value = serde_json::from_slice(include_bytes!(
+        let mut body: Value = serde_json::from_slice(include_bytes!(
             "../../../tests/link/fixtures/peer_hello_v1.json"
         ))
         .expect("presence fixture must decode");
+        body.as_object_mut()
+            .expect("presence fixture must be an object")
+            .insert("peer_id".to_owned(), Value::String(sender.to_owned()));
         Frame::new(
             Envelope {
                 protocol_version: 1,
@@ -1157,6 +1195,14 @@ mod tests {
     }
 
     fn monitor_request(sender: &str) -> Frame {
+        monitor_request_with_presence(sender, false)
+    }
+
+    fn monitor_request_with_presence(sender: &str, include_presence: bool) -> Frame {
+        let mut extra = Map::new();
+        if include_presence {
+            extra.insert(MONITOR_INCLUDE_PRESENCE_FIELD.to_owned(), Value::Bool(true));
+        }
         Frame::new(
             Envelope {
                 protocol_version: 1,
@@ -1169,7 +1215,7 @@ mod tests {
                 correlation_id: None,
                 schema: Some(MONITOR_SNAPSHOT_SCHEMA.to_owned()),
                 body: None,
-                extra: Default::default(),
+                extra,
             },
             Vec::new(),
         )
@@ -1241,6 +1287,16 @@ mod tests {
             core.receive_with_monitor_authorization(1, monitor_hello(monitor_id, None), true),
             Err(BrokerError::MonitorNotAllowed)
         ));
+        let mut monitor_presence = presence_hello(monitor_id);
+        monitor_presence.envelope.extra.insert(
+            RUNTIME_CHALLENGE_FIELD.to_owned(),
+            Value::String("challenge".to_owned()),
+        );
+        assert!(matches!(
+            core.receive_with_monitor_authorization(1, monitor_presence, true),
+            Err(BrokerError::MonitorNotAllowed)
+        ));
+        assert!(!core.is_registered(1));
 
         core.receive_with_monitor_authorization(
             1,
@@ -1256,6 +1312,15 @@ mod tests {
         malformed_request.body = vec![1];
         assert!(matches!(
             core.receive(1, malformed_request),
+            Err(BrokerError::InvalidMonitorRequest)
+        ));
+        let mut malformed_option = monitor_request(monitor_id);
+        malformed_option.envelope.extra.insert(
+            MONITOR_INCLUDE_PRESENCE_FIELD.to_owned(),
+            Value::String("true".to_owned()),
+        );
+        assert!(matches!(
+            core.receive(1, malformed_option),
             Err(BrokerError::InvalidMonitorRequest)
         ));
         assert!(matches!(
@@ -1315,6 +1380,63 @@ mod tests {
         core.disconnect(1);
         assert!(core.presence_for_peer("blender:peer-001").is_none());
         assert!(core.presence_snapshot().is_empty());
+    }
+
+    #[test]
+    fn monitor_snapshot_presence_is_opt_in_and_old_response_is_decodable() {
+        let mut server = BrokerServer::bind(BrokerConfig::default()).expect("server must bind");
+        let monitor_id = "ywta-link:monitor:one";
+        server
+            .core
+            .receive_with_monitor_authorization(
+                1,
+                monitor_hello(monitor_id, Some("challenge")),
+                true,
+            )
+            .expect("monitor hello must register");
+        server.monitor_connections.insert(1);
+        server
+            .core
+            .receive(2, presence_hello("blender:peer-001"))
+            .expect("presence peer must register");
+
+        let old_request = monitor_request(monitor_id);
+        server
+            .core
+            .receive(1, old_request)
+            .expect("old monitor request must remain valid");
+        let old_response = server
+            .monitor_snapshot_response(1, "old", false)
+            .expect("old response must encode");
+        let old_body = old_response
+            .envelope
+            .body
+            .expect("old response body must exist");
+        assert!(
+            old_body
+                .as_object()
+                .expect("old response must be an object")
+                .get("presence")
+                .is_none(),
+            "old-style response must omit the additive presence field"
+        );
+        let old_snapshot: BrokerSnapshot =
+            serde_json::from_value(old_body).expect("new monitor must decode old response");
+        assert!(old_snapshot.presence.is_empty());
+
+        let new_request = monitor_request_with_presence(monitor_id, true);
+        server
+            .core
+            .receive(1, new_request)
+            .expect("presence opt-in request must be valid");
+        let new_response = server
+            .monitor_snapshot_response(1, "new", true)
+            .expect("new response must encode");
+        let new_body = new_response
+            .envelope
+            .body
+            .expect("new response body must exist");
+        assert_eq!(new_body["presence"][0]["peer_id"], "blender:peer-001");
     }
 
     #[test]

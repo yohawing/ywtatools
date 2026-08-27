@@ -167,10 +167,22 @@ ywta-link rooms  [--json] [--runtime-file <absolute-path>]
 Monitorはruntime manifestのloopback endpointへ外向きTCP接続し、manifest tokenを含む一回限りの
 hello challengeを検証した後、versionedな`monitor.snapshot.request`を送る。Brokerは
 `monitor.snapshot.response`で、Broker endpoint、PID、protocol version、接続中Peer ID、Roomのmember、
-Topic Subscriptionを返す。Monitor自身のPeer IDはsnapshotから除外する。Binary bodyやMessage履歴は返さない。
+Topic Subscription、Presenceを広告したPeerの実装情報を返す。既存の`peers`はPresenceの有無にかかわらず
+接続中Peer ID全件を含み、追加の`presence`配列は広告済みPeerだけをPeer ID順で含む。Monitor自身のPeer IDは
+snapshotから除外する。Binary bodyやMessage履歴は返さない。
 
-既定の人間向け出力はstatusのBroker概要、peersのPeer ID一覧、roomsのRoom/member/Topic一覧とする。
-`--json`では機械可読なJSONを返し、すべての一覧は辞書順で安定させる。未知、重複、引数値の欠落、
+Presenceの返却は後方互換のためrequest opt-inとする。Presenceを取得するMonitorはrequestの`extra`へ
+`{"ywta_include_presence": true}`を指定し、新Brokerはその場合だけresponse bodyへ`presence`を含める。
+旧Monitorのようにこのextraを指定しないrequestでは、新Brokerも`presence` Field自体を省略するため、旧Broker
+snapshot形式を厳密にdecodeするMonitorとの相互運用を保つ。このFieldはboolean以外を受理しない。
+
+既定の人間向け出力はstatusのBroker概要、peersのPeer一覧、roomsのRoom/member/Topic一覧とする。`status`には
+接続Peer数とPresence広告済みPeer数を表示する。`peers`はPresence付きPeerについてapplication、
+application version、plugin version、capabilitiesをPeer単位で表示し、legacy PeerはPeer IDだけを表示する。
+`--json`では機械可読なJSONを返し、`peers`の`peers`配列は既存のPeer ID一覧として維持したまま、
+Presence詳細を追加の`presence`配列で返す。すべての一覧は辞書順で安定させる。旧Brokerのsnapshotで
+`presence`が省略された場合は空配列として扱う。snapshotの将来Fieldは無視できるが、既知Fieldの型、並び、
+重複、subset制約はfail closedで検証する。引数値の欠落、
 相対runtime path、malformed/stale manifest、token不一致、非loopback endpoint、Broker不在はfail closedとする。
 
 `monitor.snapshot.request`と`monitor.snapshot.response`は`ywta.monitor.snapshot.v1` schemaを必須とする
@@ -242,6 +254,7 @@ Presence/Capability広告を最初の`hello`へ含める。広告を含める場
 legacy形式とPresence付き形式の両方を受理する。Presence schemaを指定したbodyの省略や、bodyのdecode失敗は
 受理しない。Presence以外のschema/bodyはlegacy metadataとして解釈せず、既存実装との互換性のためBrokerでは
 保持も拒否も行わない。runtime manifest用のchallenge extraはPresence schema/bodyと同じ`hello`に共存できる。
+ただしMonitor予約PeerはPresenceを広告できず、Presence schema/body付きHelloを接続登録前に拒否する。
 再接続、`close()`後の再接続、Broker runtime replacementでも、同じClientに設定した広告をhelloへ一度だけ
 再掲する。Capabilityの意味解釈やnegotiation、routing拒否は各Adapterの次スライスで定義する。
 

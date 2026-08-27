@@ -11,12 +11,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::broker::BrokerSnapshot;
 use crate::envelope::{Envelope, MessageType, MONITOR_SNAPSHOT_SCHEMA};
 use crate::frame::{Frame, FrameError, FrameLimits};
+use crate::presence::PeerPresence;
 use crate::runtime::{RuntimeError, RuntimeManifest};
 use serde_json::{Map, Value};
 
 const BROKER_SENDER: &str = "ywta-link:broker";
 const MONITOR_TIMEOUT: Duration = Duration::from_secs(2);
 const RUNTIME_FILE_SUFFIX: &str = "YWTA\\Link\\runtime\\v1\\broker.json";
+const MONITOR_INCLUDE_PRESENCE_FIELD: &str = "ywta_include_presence";
 
 /// CLI Monitorが扱うsnapshotの種別。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -243,6 +245,24 @@ fn validate_snapshot(snapshot: &BrokerSnapshot) -> Result<(), MonitorError> {
             "snapshot peers are not sorted and unique".to_owned(),
         ));
     }
+    let mut previous_presence_peer = None;
+    for presence in &snapshot.presence {
+        presence.validate().map_err(|error| {
+            MonitorError::Protocol(format!(
+                "snapshot presence for {} is invalid: {error}",
+                presence.peer_id
+            ))
+        })?;
+        if previous_presence_peer.is_some_and(|previous| previous >= presence.peer_id.as_str())
+            || presence.peer_id.starts_with("ywta-link:monitor:")
+            || snapshot.peers.binary_search(&presence.peer_id).is_err()
+        {
+            return Err(MonitorError::Protocol(
+                "snapshot presence is not a sorted peer subset".to_owned(),
+            ));
+        }
+        previous_presence_peer = Some(presence.peer_id.as_str());
+    }
     let mut previous_room = None;
     for room in &snapshot.rooms {
         if room.room.is_empty()
@@ -315,6 +335,8 @@ fn hello_frame(peer_id: &str, challenge: &str) -> Result<Frame, MonitorError> {
 }
 
 fn snapshot_request(peer_id: &str) -> Result<Frame, MonitorError> {
+    let mut extra = Map::new();
+    extra.insert(MONITOR_INCLUDE_PRESENCE_FIELD.to_owned(), Value::Bool(true));
     Ok(Frame::new(
         Envelope {
             protocol_version: 1,
@@ -327,7 +349,7 @@ fn snapshot_request(peer_id: &str) -> Result<Frame, MonitorError> {
             correlation_id: None,
             schema: Some(MONITOR_SNAPSHOT_SCHEMA.to_owned()),
             body: None,
-            extra: Default::default(),
+            extra,
         },
         Vec::new(),
     )?)
@@ -344,7 +366,9 @@ fn unique_id(prefix: &str) -> String {
 fn format_json(command: MonitorCommand, snapshot: &BrokerSnapshot) -> Result<String, MonitorError> {
     let value = match command {
         MonitorCommand::Status => serde_json::to_value(snapshot)?,
-        MonitorCommand::Peers => serde_json::json!({ "peers": snapshot.peers }),
+        MonitorCommand::Peers => {
+            serde_json::json!({ "peers": snapshot.peers, "presence": snapshot.presence })
+        }
         MonitorCommand::Rooms => serde_json::json!({ "rooms": snapshot.rooms }),
     };
     Ok(serde_json::to_string_pretty(&value)?)
@@ -353,14 +377,29 @@ fn format_json(command: MonitorCommand, snapshot: &BrokerSnapshot) -> Result<Str
 fn format_human(command: MonitorCommand, snapshot: &BrokerSnapshot) -> String {
     match command {
         MonitorCommand::Status => format!(
-            "endpoint: {}\npid: {}\nprotocol: {}\npeers: {}\nrooms: {}",
+            "endpoint: {}\npid: {}\nprotocol: {}\npeers: {}\npresence: {}\nrooms: {}",
             snapshot.endpoint,
             snapshot.pid,
             snapshot.protocol_version,
             snapshot.peers.len(),
+            snapshot.presence.len(),
             snapshot.rooms.len()
         ),
-        MonitorCommand::Peers => snapshot.peers.join("\n"),
+        MonitorCommand::Peers => snapshot
+            .peers
+            .iter()
+            .map(|peer_id| {
+                let Some(presence) = snapshot
+                    .presence
+                    .iter()
+                    .find(|presence| presence.peer_id == *peer_id)
+                else {
+                    return peer_id.clone();
+                };
+                format_peer_presence(peer_id, presence)
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
         MonitorCommand::Rooms => snapshot
             .rooms
             .iter()
@@ -383,6 +422,20 @@ fn format_human(command: MonitorCommand, snapshot: &BrokerSnapshot) -> String {
             .collect::<Vec<_>>()
             .join("\n"),
     }
+}
+
+fn format_peer_presence(peer_id: &str, presence: &PeerPresence) -> String {
+    let capabilities = if presence.capabilities.is_empty() {
+        "(none)".to_owned()
+    } else {
+        presence.capabilities.join(", ")
+    };
+    format!(
+        "{peer_id}\n  application: {}\n  application_version: {}\n  plugin_version: {}\n  capabilities: {capabilities}",
+        presence.application,
+        presence.application_version,
+        presence.plugin_version,
+    )
 }
 
 struct MonitorOptions {
@@ -432,6 +485,7 @@ mod tests {
     use super::*;
     use crate::broker::{BrokerConfig, BrokerServer, RoomSnapshot, SubscriptionSnapshot};
     use crate::envelope::Envelope;
+    use crate::presence::PEER_HELLO_SCHEMA;
     use serde_json::json;
     use std::fs;
     use std::sync::mpsc;
@@ -458,6 +512,7 @@ mod tests {
             endpoint: "127.0.0.1:1234".to_owned(),
             pid: 1,
             peers: vec!["b".to_owned(), "a".to_owned()],
+            presence: Vec::new(),
             rooms: Vec::new(),
         };
         assert!(validate_snapshot(&snapshot).is_err());
@@ -472,6 +527,7 @@ mod tests {
             endpoint: "127.0.0.1:1234".to_owned(),
             pid: 1,
             peers: vec!["peer-a".to_owned()],
+            presence: Vec::new(),
             rooms: vec![RoomSnapshot {
                 room: "room-a".to_owned(),
                 members: vec!["peer-b".to_owned()],
@@ -510,12 +566,52 @@ mod tests {
     }
 
     #[test]
+    fn old_snapshot_json_decodes_without_presence_and_ignores_compatible_fields() {
+        let snapshot: BrokerSnapshot = serde_json::from_value(serde_json::json!({
+            "protocol_version": 1,
+            "endpoint": "127.0.0.1:1234",
+            "pid": 1,
+            "peers": ["legacy:peer"],
+            "rooms": [{
+                "room": "room-a",
+                "members": ["legacy:peer"],
+                "subscriptions": [],
+                "future_room_field": true
+            }],
+            "future_snapshot_field": "ignored"
+        }))
+        .expect("legacy snapshot must remain decodable");
+        assert!(snapshot.presence.is_empty());
+        validate_snapshot(&snapshot).expect("legacy snapshot must remain valid");
+    }
+
+    #[test]
+    fn snapshot_validation_rejects_invalid_presence_subset_or_order() {
+        let mut snapshot = BrokerSnapshot {
+            protocol_version: 1,
+            endpoint: "127.0.0.1:1234".to_owned(),
+            pid: 1,
+            peers: vec!["peer-a".to_owned(), "peer-b".to_owned()],
+            presence: vec![test_presence("peer-c")],
+            rooms: Vec::new(),
+        };
+        assert!(validate_snapshot(&snapshot).is_err());
+
+        snapshot.presence = vec![test_presence("peer-b"), test_presence("peer-a")];
+        validate_snapshot(&snapshot).expect_err("presence must be Peer ID sorted");
+
+        snapshot.presence = vec![test_presence("ywta-link:monitor:one")];
+        validate_snapshot(&snapshot).expect_err("monitor presence must be hidden");
+    }
+
+    #[test]
     fn monitor_outputs_are_command_specific_and_json_is_machine_readable() {
         let snapshot = BrokerSnapshot {
             protocol_version: 1,
             endpoint: "127.0.0.1:1234".to_owned(),
             pid: 1,
             peers: vec!["blender:one".to_owned()],
+            presence: Vec::new(),
             rooms: vec![RoomSnapshot {
                 room: "shot-a".to_owned(),
                 members: vec!["blender:one".to_owned()],
@@ -530,6 +626,7 @@ mod tests {
         )
         .expect("peers output must be JSON");
         assert_eq!(peers["peers"][0], "blender:one");
+        assert!(peers["presence"].as_array().is_some_and(Vec::is_empty));
         assert_eq!(
             format_human(MonitorCommand::Rooms, &snapshot),
             "shot-a: blender:one\n  camera: blender:one"
@@ -565,12 +662,12 @@ mod tests {
 
         let mut blender = TcpStream::connect(endpoint).expect("blender peer must connect");
         let mut maya = TcpStream::connect(endpoint).expect("maya peer must connect");
-        send_test_frame(&mut blender, test_hello("blender:one"));
+        send_test_frame(&mut blender, test_presence_hello("blender:peer-001"));
         send_test_frame(&mut maya, test_hello("maya:two"));
-        send_test_frame(&mut blender, test_join("blender:one", "shot-a"));
+        send_test_frame(&mut blender, test_join("blender:peer-001", "shot-a"));
         send_test_frame(&mut maya, test_join("maya:two", "shot-a"));
         send_test_frame(&mut maya, test_subscribe("maya:two", "shot-a", "camera"));
-        let expected_peers = ["blender:one".to_owned(), "maya:two".to_owned()];
+        let expected_peers = ["blender:peer-001".to_owned(), "maya:two".to_owned()];
         let deadline = Instant::now() + Duration::from_secs(2);
         let mut last_error = None;
         let snapshot = loop {
@@ -594,10 +691,16 @@ mod tests {
         };
         assert_eq!(snapshot.endpoint, endpoint.to_string());
         assert_eq!(snapshot.pid, std::process::id());
-        assert_eq!(snapshot.peers, vec!["blender:one", "maya:two"]);
+        assert_eq!(snapshot.peers, vec!["blender:peer-001", "maya:two"]);
+        assert_eq!(snapshot.presence.len(), 1);
+        assert_eq!(snapshot.presence[0].peer_id, "blender:peer-001");
+        assert_eq!(snapshot.presence[0].application, "Blender");
         assert_eq!(snapshot.rooms.len(), 1);
         assert_eq!(snapshot.rooms[0].room, "shot-a");
-        assert_eq!(snapshot.rooms[0].members, vec!["blender:one", "maya:two"]);
+        assert_eq!(
+            snapshot.rooms[0].members,
+            vec!["blender:peer-001", "maya:two"]
+        );
         assert_eq!(snapshot.rooms[0].subscriptions[0].topic, "camera");
         assert_eq!(snapshot.rooms[0].subscriptions[0].members, vec!["maya:two"]);
 
@@ -620,12 +723,23 @@ mod tests {
             .expect("JSON monitor command must succeed");
             let json: Value = serde_json::from_str(&json_output).expect("output must be JSON");
             match command {
-                "status" => assert_eq!(json["peers"][0], "blender:one"),
+                "status" => {
+                    assert_eq!(json["peers"][0], "blender:peer-001");
+                    assert_eq!(json["presence"][0]["peer_id"], "blender:peer-001");
+                }
                 "peers" => assert_eq!(json["peers"].as_array().map(Vec::len), Some(2)),
                 "rooms" => assert_eq!(json["rooms"][0]["room"], "shot-a"),
                 _ => unreachable!("command list is fixed"),
             }
         }
+        let human_peers = run_cli(
+            "peers",
+            &["--runtime-file".to_owned(), runtime_argument.clone()],
+        )
+        .expect("human peers monitor command must succeed");
+        assert!(human_peers.contains("application: Blender"));
+        assert!(human_peers.contains("capabilities: camera.apply.v1"));
+        assert!(human_peers.contains("maya:two"));
 
         let expected_token = manifest.token.clone();
         let mut wrong_manifest = manifest;
@@ -687,6 +801,44 @@ mod tests {
 
     fn test_hello(sender: &str) -> Frame {
         test_frame(sender, MessageType::Hello, None, None)
+    }
+
+    fn test_presence_hello(sender: &str) -> Frame {
+        let mut body: Value = serde_json::from_slice(include_bytes!(
+            "../../../tests/link/fixtures/peer_hello_v1.json"
+        ))
+        .expect("presence fixture must decode");
+        body.as_object_mut()
+            .expect("presence fixture must be an object")
+            .insert("peer_id".to_owned(), Value::String(sender.to_owned()));
+        Frame::new(
+            Envelope {
+                protocol_version: 1,
+                message_id: unique_id("presence-hello"),
+                message_type: MessageType::Hello,
+                sender: sender.to_owned(),
+                room: None,
+                target: None,
+                topic: None,
+                correlation_id: None,
+                schema: Some(PEER_HELLO_SCHEMA.to_owned()),
+                body: Some(body),
+                extra: Default::default(),
+            },
+            Vec::new(),
+        )
+        .expect("presence hello must be valid")
+    }
+
+    fn test_presence(peer_id: &str) -> PeerPresence {
+        let mut body: Value = serde_json::from_slice(include_bytes!(
+            "../../../tests/link/fixtures/peer_hello_v1.json"
+        ))
+        .expect("presence fixture must decode");
+        body.as_object_mut()
+            .expect("presence fixture must be an object")
+            .insert("peer_id".to_owned(), Value::String(peer_id.to_owned()));
+        PeerPresence::from_value(&body).expect("presence fixture must validate")
     }
 
     fn test_join(sender: &str, room: &str) -> Frame {
