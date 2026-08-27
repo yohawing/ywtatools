@@ -204,12 +204,13 @@ Brokerは管理者権限を要求せず、Windows user単位で次の場所へ�
 │   └── 0.2.0\ywta-link.exe
 ├── current.json
 ├── runtime\
-│   └── v1\
+│   └── v1\broker.json
 └── logs\
 ```
 
 Versionごとにside-by-side配置し、実行中Fileを上書きしてはならない。`current.json` は既定で起動する
 Broker versionと実行Fileを指す小さいmanifestとし、一時Fileへの書き込みとatomic replaceで更新する。
+`current.json` は `protocol_version`、非空の `version`、Install root内を指す相対 `executable` を必須とする。
 
 通常の利用でglobal PATH、system environment variable、Windows Service登録を要求してはならない。
 PATH追加はCLI利用者向けの明示的な任意Optionとする。
@@ -313,11 +314,29 @@ User environment variableを暗黙に変更してはならない。
 
 ### 5.1 自動起動
 
-1. Clientは既定のlocalhost endpointへ接続を試みる。
-2. 接続できなければ、OS level lockを取得する。
-3. lock取得に成功したClientだけがBrokerをbackground起動する。
-4. lock取得に失敗したClientは、別Clientによる起動完了をbackoff付きで待つ。
-5. Broker起動後、Clientは接続してHandshakeを実行する。
+1. Clientは `%LOCALAPPDATA%\YWTA\Link\runtime\v1\broker.json` を探索する。
+2. Manifestがなければ、ClientはBroker候補をbackground起動する。複数Clientが同時に候補を起動してよい。
+3. 各候補は完全なJSONを同一directoryの一時Fileへ書き、hard linkの排他的作成で
+   `broker.json` をclaimする。claimできなかった候補は終了する。
+4. Clientはclaim完了を上限付きで待ち、Manifestのnumeric loopback endpointへ接続する。
+5. Clientは `hello` に一回限りのchallengeを付け、Brokerが返すchallenge、correlation、
+   instance tokenをManifestと照合してから接続成功とする。
+
+Runtime manifestは短命な接続先情報だけを持つ。
+
+```json
+{
+  "protocol_version": 1,
+  "endpoint": "127.0.0.1:49152",
+  "pid": 12345,
+  "token": "12345-..."
+}
+```
+
+壊れたManifestまたは到達不能なBrokerは、Manifestの更新時刻、移動前後のbyte一致、instance token、
+Owner PIDの停止を確認した場合だけstaleとして回収する。PIDの生存を判定できない場合は、複数Brokerへの
+分裂を避けるため稼働中として扱う。起動候補がclaim前後に終了した場合、Clientはstartup timeout内で
+別候補を再起動できる。
 
 複数DCCを同時起動してもBroker Processは1つだけでなければならない。
 
@@ -325,6 +344,8 @@ User environment variableを暗黙に変更してはならない。
 
 Brokerは接続中Clientが0件になった後、設定されたidle timeoutを待って終了する。
 待機中にClientが再接続した場合は終了を取り消す。
+自動起動APIのidle timeoutは正の秒数を必須とする。CLIで明示した0秒は、接続の有無にかかわらず
+空のBrokerを直ちに終了させる診断用設定として扱う。
 
 BrokerはWindows Serviceとして常駐せず、Console WindowやTray Iconを必須としない。
 
@@ -1035,18 +1056,17 @@ Session解体を実Hostで確認する。
 
 実装開始前またはPhase 0で次を確定する。
 
-1. Brokerの既定Port、runtime endpoint manifest、OS lockの正確な名前と競合時処理
-2. Raw TCPの固定Header byte layoutとWebSocket framingの対応
-3. Message、chunk、queue、timeout、Event ring bufferの既定上限
-4. Room IDを保存するProject manifestのFile名と配置
-5. Rust crateの外部依存追加方針
-6. Photoshop UXPでlocalhost WebSocketへ許可する正確なmanifest設定
-7. Substance Painter Plugin環境で使用するTransportとMain Thread dispatch方法
-8. Material Specを既存Projectから共有するか、YWTA Link用schemaとして新設するか
-9. Broker artifact署名をv1必須にするか、同梱manifestのSHA-256検証をv1要件とするか
-10. Cameraの既定Length unit、座標系、Film fit mapping profile
-11. Sync SessionのContract保存場所と、CLIから開始する際のOwner identity
-12. Preview rate limit、coalesce、Baseline保持量、Commit timeoutの既定上限
-13. Session異常終了後にTarget AdapterがBaselineを保持する期限
+1. Raw TCPの固定Header byte layoutとWebSocket framingの対応
+2. Message、chunk、queue、timeout、Event ring bufferの既定上限
+3. Room IDを保存するProject manifestのFile名と配置
+4. Rust crateの外部依存追加方針
+5. Photoshop UXPでlocalhost WebSocketへ許可する正確なmanifest設定
+6. Substance Painter Plugin環境で使用するTransportとMain Thread dispatch方法
+7. Material Specを既存Projectから共有するか、YWTA Link用schemaとして新設するか
+8. Broker artifact署名をv1必須にするか、同梱manifestのSHA-256検証をv1要件とするか
+9. Cameraの既定Length unit、座標系、Film fit mapping profile
+10. Sync SessionのContract保存場所と、CLIから開始する際のOwner identity
+11. Preview rate limit、coalesce、Baseline保持量、Commit timeoutの既定上限
+12. Session異常終了後にTarget AdapterがBaselineを保持する期限
 
 未確定事項を暗黙の実装判断で固定せず、Protocol fixtureまたは本文書の改訂として記録する。

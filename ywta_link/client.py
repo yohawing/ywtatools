@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 from .envelope import Envelope
 from .frame import DEFAULT_FRAME_LIMITS, Frame, FrameError, FrameLimits
+
+_RUNTIME_CHALLENGE_FIELD = "ywta_runtime_challenge"
+_RUNTIME_TOKEN_FIELD = "ywta_runtime_token"
+_RUNTIME_BROKER_SENDER = "ywta-link:broker"
 
 
 class LinkClientError(ValueError):
@@ -44,18 +50,119 @@ class LinkClient:
 
         self.close()
 
-    def connect(self, timeout: float | None = None) -> "LinkClient":
-        """TCP接続後、必ず最初にhelloを送信する。"""
+    def connect(
+        self,
+        timeout: float | None = None,
+        *,
+        expected_runtime_token: str | None = None,
+    ) -> "LinkClient":
+        """TCP接続後、必要な場合だけruntime tokenのhello応答を検証する。"""
 
         if self._socket is not None:
             raise LinkClientError("client is already connected")
+        if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0):
+            raise LinkClientError("timeout must be a positive number")
+        if expected_runtime_token is not None and (not isinstance(expected_runtime_token, str) or not expected_runtime_token):
+            raise LinkClientError("expected_runtime_token must be a non-empty string")
         try:
             self._socket = _open_loopback_socket(self.endpoint, timeout)
-            self._send("hello")
+            if expected_runtime_token is None:
+                self._send("hello")
+            else:
+                challenge = _new_message_id()
+                hello_id = self._send(
+                    "hello",
+                    extra={_RUNTIME_CHALLENGE_FIELD: challenge},
+                )
+                self._verify_runtime_ack(
+                    hello_id,
+                    challenge,
+                    expected_runtime_token,
+                    timeout,
+                )
+        except LinkClientError:
+            self.close()
+            raise
         except (OSError, FrameError) as exc:
             self.close()
             raise LinkClientError(f"could not connect to Broker: {exc}") from exc
         return self
+
+    @classmethod
+    def connect_or_start(
+        cls,
+        peer_id: str,
+        *,
+        endpoint: str | tuple[str, int] | None = None,
+        runtime_file: str | None = None,
+        executable: str | None = None,
+        install_root: str | None = None,
+        idle_timeout: int = 30,
+        startup_timeout: float = 5.0,
+        stale_after: float = 5.0,
+    ) -> "LinkClient":
+        """既存Brokerへ接続するか、runtime manifestを介して起動する。"""
+
+        from .runtime import (
+            RuntimeError,
+            default_runtime_file,
+            read_runtime_manifest,
+            resolve_broker_executable,
+            retire_stale_runtime,
+            spawn_broker,
+        )
+
+        if isinstance(startup_timeout, bool) or not isinstance(startup_timeout, (int, float)) or startup_timeout <= 0:
+            raise LinkClientError("startup_timeout must be a positive number")
+        if isinstance(stale_after, bool) or not isinstance(stale_after, (int, float)) or stale_after < 0:
+            raise LinkClientError("stale_after must be a non-negative number")
+        if isinstance(idle_timeout, bool) or not isinstance(idle_timeout, int) or idle_timeout <= 0:
+            raise LinkClientError("idle_timeout must be a positive integer for bootstrap")
+        if endpoint is None:
+            endpoint = os_environ_endpoint()
+        if endpoint is not None:
+            return cls(endpoint, peer_id).connect(timeout=min(startup_timeout, 1.0))
+        runtime_path = Path(runtime_file) if runtime_file is not None else default_runtime_file()
+        if not runtime_path.is_absolute():
+            raise LinkClientError("runtime_file must be an absolute path")
+        deadline = time.monotonic() + startup_timeout
+        candidate = None
+        failed_connections = 0
+        while time.monotonic() < deadline:
+            if runtime_path.exists():
+                try:
+                    manifest = read_runtime_manifest(runtime_path)
+                except RuntimeError:
+                    if retire_stale_runtime(runtime_path, stale_after=stale_after):
+                        candidate = None
+                    time.sleep(0.05)
+                    continue
+                try:
+                    return cls(manifest.endpoint, peer_id).connect(
+                        timeout=0.5,
+                        expected_runtime_token=manifest.token,
+                    )
+                except LinkClientError:
+                    failed_connections += 1
+                    if failed_connections >= 2:
+                        if retire_stale_runtime(
+                            runtime_path,
+                            manifest.token,
+                            stale_after=stale_after,
+                        ):
+                            candidate = None
+                            failed_connections = 0
+            elif candidate is None or candidate.poll() is not None:
+                try:
+                    broker = resolve_broker_executable(
+                        executable,
+                        install_root=install_root,
+                    )
+                    candidate = spawn_broker(broker, runtime_path, idle_timeout=idle_timeout)
+                except RuntimeError as exc:
+                    raise LinkClientError(str(exc)) from exc
+            time.sleep(0.05)
+        raise LinkClientError("Broker did not become reachable before startup timeout")
 
     def close(self) -> None:
         """Clientが所有するsocketを閉じる。"""
@@ -196,6 +303,7 @@ class LinkClient:
         schema: str | None = None,
         body: Any = None,
         raw_body: bytes = b"",
+        extra: dict[str, Any] | None = None,
     ) -> str:
         """Client Peer IDに固定したEnvelopeを作り送信する。"""
 
@@ -213,9 +321,31 @@ class LinkClient:
             correlation_id=correlation_id,
             schema=schema,
             body=body,
+            extra={} if extra is None else extra,
         )
         Frame(envelope, raw_body).write_to(self._require_socket(), self.frame_limits)
         return message_id
+
+    def _verify_runtime_ack(
+        self,
+        hello_id: str,
+        challenge: str,
+        expected_token: str,
+        timeout: float | None,
+    ) -> None:
+        """runtime manifestと同じinstance tokenを持つBroker応答だけを受理する。"""
+
+        frame = self.receive(timeout)
+        envelope = frame.envelope
+        if (
+            frame.body
+            or envelope.type != "hello"
+            or envelope.sender != _RUNTIME_BROKER_SENDER
+            or envelope.correlation_id != hello_id
+            or envelope.extra.get(_RUNTIME_CHALLENGE_FIELD) != challenge
+            or envelope.extra.get(_RUNTIME_TOKEN_FIELD) != expected_token
+        ):
+            raise LinkClientError("Broker runtime token acknowledgement did not match manifest")
 
     def _require_socket(self) -> socket.socket:
         """接続済みsocketを返し、未接続なら拒否する。"""
@@ -269,6 +399,14 @@ def _new_message_id() -> str:
     """Protocolで要求される一意なMessage IDを生成する。"""
 
     return uuid.uuid4().hex
+
+
+def os_environ_endpoint() -> str | None:
+    """明示された環境変数endpointをPATH探索なしで返す。"""
+
+    import os
+
+    return os.environ.get("YWTA_LINK_ENDPOINT")
 
 
 def _open_loopback_socket(endpoint: tuple[str, int], timeout: float | None) -> socket.socket:

@@ -9,8 +9,13 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::envelope::MessageType;
+use crate::envelope::{Envelope, MessageType};
 use crate::frame::{Frame, FrameError, FrameLimits};
+use serde_json::{Map, Value};
+
+const RUNTIME_CHALLENGE_FIELD: &str = "ywta_runtime_challenge";
+const RUNTIME_TOKEN_FIELD: &str = "ywta_runtime_token";
+const RUNTIME_BROKER_SENDER: &str = "ywta-link:broker";
 
 /// Broker内で接続を区別する短命ID。
 pub type ConnectionId = u64;
@@ -430,8 +435,8 @@ pub struct BrokerServer {
     event_receiver: Receiver<NetworkEvent>,
     connections: HashMap<ConnectionId, NetworkConnection>,
     next_connection_id: ConnectionId,
-    saw_connection: bool,
     idle_since: Option<Instant>,
+    runtime_token: Option<String>,
 }
 
 impl BrokerServer {
@@ -449,14 +454,20 @@ impl BrokerServer {
             event_receiver,
             connections: HashMap::new(),
             next_connection_id: 1,
-            saw_connection: false,
-            idle_since: None,
+            // 0秒は、接続がない状態で直ちに終了するという従来の意味を保つ。
+            idle_since: Some(Instant::now()),
+            runtime_token: None,
         })
     }
 
     /// 実際に割り当てられたloopback endpointを返す。
     pub fn local_addr(&self) -> Result<SocketAddr, BrokerError> {
         self.listener.local_addr().map_err(BrokerError::Io)
+    }
+
+    /// runtime manifestを所有するBrokerだけのinstance tokenを設定する。
+    pub fn set_runtime_token(&mut self, token: String) {
+        self.runtime_token = Some(token);
     }
 
     /// idle条件を満たすまでBroker event loopを実行する。
@@ -507,7 +518,6 @@ impl BrokerServer {
                 accepted_at: Instant::now(),
             },
         );
-        self.saw_connection = true;
         self.idle_since = None;
         Ok(())
     }
@@ -519,8 +529,15 @@ impl BrokerServer {
                     connection_id,
                     frame,
                 } if self.connections.contains_key(&connection_id) => {
-                    match self.core.receive(connection_id, *frame) {
-                        Ok(deliveries) => self.dispatch(deliveries),
+                    let frame = *frame;
+                    let runtime_ack = self.runtime_ack_for(&frame);
+                    match self.core.receive(connection_id, frame) {
+                        Ok(deliveries) => {
+                            if let Some(ack) = runtime_ack {
+                                self.send_to_connection(connection_id, ack);
+                            }
+                            self.dispatch(deliveries);
+                        }
                         Err(_) => self.close_connection(connection_id),
                     }
                 }
@@ -550,13 +567,23 @@ impl BrokerServer {
         }
     }
 
+    fn send_to_connection(&mut self, connection_id: ConnectionId, frame: Frame) {
+        let failed = self
+            .connections
+            .get(&connection_id)
+            .is_none_or(|connection| connection.outgoing.send(frame).is_err());
+        if failed {
+            self.close_connection(connection_id);
+        }
+    }
+
     fn close_connection(&mut self, connection_id: ConnectionId) {
         let Some(connection) = self.connections.remove(&connection_id) else {
             return;
         };
         let _ = connection.closer.shutdown(Shutdown::Both);
         self.core.disconnect(connection_id);
-        if self.saw_connection && self.connections.is_empty() {
+        if self.connections.is_empty() {
             self.idle_since = Some(Instant::now());
         }
     }
@@ -578,11 +605,46 @@ impl BrokerServer {
     }
 
     fn should_shutdown(&self) -> bool {
-        self.saw_connection
-            && self.connections.is_empty()
+        self.connections.is_empty()
             && self
                 .idle_since
                 .is_some_and(|instant| instant.elapsed() >= self.config.idle_timeout)
+    }
+
+    fn runtime_ack_for(&self, frame: &Frame) -> Option<Frame> {
+        if !matches!(frame.envelope.message_type, MessageType::Hello) {
+            return None;
+        }
+        let challenge = frame
+            .envelope
+            .extra
+            .get(RUNTIME_CHALLENGE_FIELD)
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())?;
+        let token = self.runtime_token.as_ref()?;
+        let mut extra = Map::new();
+        extra.insert(
+            RUNTIME_CHALLENGE_FIELD.to_owned(),
+            Value::String(challenge.to_owned()),
+        );
+        extra.insert(RUNTIME_TOKEN_FIELD.to_owned(), Value::String(token.clone()));
+        Frame::new(
+            Envelope {
+                protocol_version: 1,
+                message_id: format!("broker-ack-{}", frame.envelope.message_id),
+                message_type: MessageType::Hello,
+                sender: RUNTIME_BROKER_SENDER.to_owned(),
+                room: None,
+                target: None,
+                topic: None,
+                correlation_id: Some(frame.envelope.message_id.clone()),
+                schema: None,
+                body: None,
+                extra,
+            },
+            Vec::new(),
+        )
+        .ok()
     }
 }
 
@@ -1172,6 +1234,36 @@ mod tests {
     }
 
     #[test]
+    fn runtime_hello_ack_echoes_challenge_and_instance_token() {
+        let mut server = BrokerServer::bind(BrokerConfig::default()).expect("server must bind");
+        server.set_runtime_token("runtime-token-001".to_owned());
+        let mut client_hello = hello("blender:one");
+        client_hello
+            .envelope
+            .extra
+            .insert(RUNTIME_CHALLENGE_FIELD.to_owned(), json!("challenge-001"));
+
+        let acknowledgement = server
+            .runtime_ack_for(&client_hello)
+            .expect("runtime hello must receive an acknowledgement");
+
+        assert_eq!(acknowledgement.envelope.message_type, MessageType::Hello);
+        assert_eq!(acknowledgement.envelope.sender, RUNTIME_BROKER_SENDER);
+        assert_eq!(
+            acknowledgement.envelope.correlation_id.as_deref(),
+            Some(client_hello.envelope.message_id.as_str())
+        );
+        assert_eq!(
+            acknowledgement.envelope.extra.get(RUNTIME_CHALLENGE_FIELD),
+            Some(&json!("challenge-001"))
+        );
+        assert_eq!(
+            acknowledgement.envelope.extra.get(RUNTIME_TOKEN_FIELD),
+            Some(&json!("runtime-token-001"))
+        );
+    }
+
+    #[test]
     fn tcp_broker_routes_binary_publish_between_room_members() {
         let config = BrokerConfig {
             bind_addr: "127.0.0.1:0".parse().expect("test address must parse"),
@@ -1285,5 +1377,38 @@ mod tests {
             .expect("server must finish within bounded timeout");
         assert!(result.is_ok());
         handle.join().expect("server thread must not panic");
+    }
+
+    #[test]
+    fn idle_shutdown_is_bounded_without_connections() {
+        let config = BrokerConfig {
+            bind_addr: "127.0.0.1:0".parse().expect("test address must parse"),
+            idle_timeout: Duration::from_millis(20),
+            ..BrokerConfig::default()
+        };
+        let mut server = BrokerServer::bind(config).expect("server must bind");
+        let (finished, receiver) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            let result = server.run();
+            let _ = finished.send(result);
+        });
+
+        let result = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("server must finish without a client");
+        assert!(result.is_ok());
+        handle.join().expect("server thread must not panic");
+    }
+
+    #[test]
+    fn zero_idle_timeout_shuts_down_immediately_when_empty() {
+        let config = BrokerConfig {
+            bind_addr: "127.0.0.1:0".parse().expect("test address must parse"),
+            idle_timeout: Duration::ZERO,
+            ..BrokerConfig::default()
+        };
+        let server = BrokerServer::bind(config).expect("server must bind");
+
+        assert!(server.should_shutdown());
     }
 }
