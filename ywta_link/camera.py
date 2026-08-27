@@ -5,13 +5,13 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass
-from types import MappingProxyType
 from typing import Any, Mapping
 
 from .entity_ref import EntityReference
 from .errors import ValidationError
 from .registry import DEFAULT_REGISTRY
 from .time import Time
+from .transform import Transform
 
 CAMERA_SCHEMA = "ywta.common.camera.v1"
 CAMERA_FIELDS = frozenset(DEFAULT_REGISTRY.require_schema(CAMERA_SCHEMA))
@@ -47,39 +47,6 @@ def _require_object(value: object, field_name: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise CameraValidationError(f"{field_name} must be a JSON object")
     return value
-
-
-def _freeze_json(value: object, field_name: str) -> object:
-    """JSON値を再帰的に検証し、変更不能な値へコピーする。"""
-
-    if value is None or isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        try:
-            value.encode("utf-8")
-        except UnicodeEncodeError as exc:
-            raise CameraValidationError(f"{field_name} must contain valid UTF-8 strings") from exc
-        return value
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise CameraValidationError(f"{field_name} must contain finite numbers")
-        return value
-    if isinstance(value, Mapping):
-        frozen: dict[str, object] = {}
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise CameraValidationError(f"{field_name} object keys must be strings")
-            try:
-                key.encode("utf-8")
-            except UnicodeEncodeError as exc:
-                raise CameraValidationError(f"{field_name} object keys must contain valid UTF-8 strings") from exc
-            frozen[key] = _freeze_json(item, f"{field_name}.{key}")
-        return MappingProxyType(frozen)
-    if isinstance(value, (list, tuple)):
-        return tuple(_freeze_json(item, f"{field_name}[{index}]") for index, item in enumerate(value))
-    raise CameraValidationError(f"{field_name} must contain JSON-compatible values")
 
 
 def _thaw_json(value: object) -> object:
@@ -154,12 +121,12 @@ def _optional_enum(value: object, allowed: frozenset[str], field_name: str) -> s
 class Camera:
     """DCC非依存なCamera Common v1 payload。
 
-    `entity_ref`と`time`は確定済みCommon型へ変換し、`transform`はJSON objectとして保持する。
+    `entity_ref`、`transform`、`time`は確定済みCommon型へ変換する。
     構築時にimmutable化するため、元入力やencode結果の変更でCameraは変化しない。
     """
 
     entity_ref: EntityReference | Mapping[str, Any]
-    transform: Mapping[str, Any]
+    transform: Transform | Mapping[str, Any]
     time: Time | Mapping[str, Any]
     projection: str
     focal_length: float | None
@@ -188,8 +155,17 @@ class Camera:
             raise CameraValidationError(f"invalid composed Common payload: {exc}") from exc
         object.__setattr__(self, "entity_ref", entity_ref)
         object.__setattr__(self, "time", time)
-        transform = _require_object(self.transform, "transform")
-        object.__setattr__(self, "transform", _freeze_json(transform, "transform"))
+        try:
+            transform = (
+                self.transform
+                if isinstance(self.transform, Transform)
+                else Transform.from_dict(_require_object(self.transform, "transform"))
+            )
+        except ValidationError as exc:
+            raise CameraValidationError(f"invalid composed transform: {exc}") from exc
+        if entity_ref != transform.entity_ref:
+            raise CameraValidationError("camera entity_ref and transform entity_ref must match exactly")
+        object.__setattr__(self, "transform", transform)
 
         if not isinstance(self.projection, str) or self.projection not in {"perspective", "orthographic"}:
             raise CameraValidationError(f"unsupported projection: {self.projection!r}")
@@ -263,7 +239,7 @@ class Camera:
 
         return {
             "entity_ref": self.entity_ref.to_dict(),
-            "transform": _thaw_json(self.transform),
+            "transform": self.transform.to_dict(),
             "time": self.time.to_dict(),
             "projection": self.projection,
             "focal_length": self.focal_length,

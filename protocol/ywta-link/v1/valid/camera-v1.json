@@ -6,10 +6,24 @@
     "namespace": "shot-010"
   },
   "transform": {
+    "entity_ref": {
+      "entity_id": "camera:shot-010-main",
+      "kind": "camera",
+      "display_name": "Shot010_Main",
+      "namespace": "shot-010"
+    },
     "translation": [0.0, 1200.0, 3500.0],
     "rotation": [0.0, 0.0, 0.0, 1.0],
     "scale": [1.0, 1.0, 1.0],
-    "coordinate_system": "world"
+    "coordinate_system": {
+      "space": "world",
+      "handedness": "right",
+      "up_axis": "+y",
+      "forward_axis": "-z",
+      "parent_entity_id": null
+    },
+    "unit": "millimeter",
+    "rotation_order": null
   },
   "time": {
     "time": 1001,

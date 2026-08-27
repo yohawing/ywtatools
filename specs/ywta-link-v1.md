@@ -753,6 +753,53 @@ sort keys、allow_nan=falseのdeterministic compact UTF-8 JSONとする。直接
 
 Adapterは座標系変換後の結果を報告する。Shear、負Scale、分解不能Matrixを黙って近似してはならない。
 
+#### v1 wire contract
+
+Transform payloadのtop-level Fieldは`entity_ref`、`translation`、`rotation`、`scale`、
+`coordinate_system`、`unit`、`rotation_order`の7個に固定する。全Fieldを必須キーとし、`schema` discriminatorは
+payloadへ含めず、EnvelopeまたはSync Contractのschema ID（`ywta.common.transform.v1`）で識別する。
+
+```json
+{
+  "entity_ref": {
+    "entity_id": "camera:shot-010-main",
+    "kind": "camera",
+    "display_name": "Shot010_Main",
+    "namespace": "shot-010"
+  },
+  "translation": [0.0, 1200.0, 3500.0],
+  "rotation": [0.0, 0.0, 0.0, 1.0],
+  "scale": [1.0, 1.0, 1.0],
+  "coordinate_system": {
+    "space": "world",
+    "handedness": "right",
+    "up_axis": "+y",
+    "forward_axis": "-z",
+    "parent_entity_id": null
+  },
+  "unit": "millimeter",
+  "rotation_order": null
+}
+```
+
+`entity_ref`は`ywta.common.entity-ref.v1`に適合するobjectで、Transformの対象Entityを安定IDで示す。
+`translation`、`rotation`、`scale`はそれぞれ3要素、4要素、3要素のfinite number配列とする。
+`rotation`は`[x, y, z, w]`のquaternionに固定し、normが1から1e-6以内の入力だけを受け入れる。codecは入力を
+正規化または符号反転せず、`q`と`-q`の両方を許可する。`scale`は0または負の値も表現可能とし、適用可否はAdapterが
+`exact`、`approximated`、`unsupported`で報告する。Shearはv1のFieldに含めない。
+
+`coordinate_system`は`space`、`handedness`、`up_axis`、`forward_axis`、`parent_entity_id`の5 Fieldに固定する。
+`space`は`world`または`parent`、`handedness`は`right`または`left`、axisは`+x`、`-x`、`+y`、`-y`、
+`+z`、`-z`のいずれかとする。UpとForwardは符号を除いた基底axisが異ならなければならない。`world`では
+`parent_entity_id`を`null`、`parent`では空白でないUTF-8文字列とし、Entity Reference全体を重複させない。
+Transform自身の`entity_id`を直接parentに指定してはならない。複数Entityにまたがる長いcycleの検証は、単一payloadの
+codecではなくSync SessionまたはAdapterのscene graph検証で行う。
+
+`unit`はTranslationの長さ単位であり、`millimeter`、`centimeter`、`meter`のいずれかとする。Scaleとquaternionは
+unitlessである。`rotation_order`はv1では必須キーかつ`null`に固定する。Euler回転順序はv2または明示的な拡張で
+追加する。未知Field、欠落Field、非文字列key、UTF-8へ変換できない文字列は拒否する。Python codecは入力objectを
+frozen dataclassへ変換し、出力はsort keys、allow_nan=falseのdeterministic compact UTF-8 JSONとする。
+
 ### 10.4 Time
 
 `ywta.common.time.v1`は、単一時刻、範囲、sample rateを表す。Frame番号だけを送らず、整数の分子と分母で
@@ -801,9 +848,12 @@ tickはJavaScript Clientでも丸めず扱える±(2^53-1)のJSON safe integer�
 Camera payloadのtop-level Fieldは次の15個に固定する。全Fieldを必須キーとし、projectionで適用しない
 値だけを`null`にする。`schema` discriminatorはpayloadへ含めず、EnvelopeまたはSync Contractのschema ID
 （`ywta.common.camera.v1`）で識別する。`entity_ref`と`time`は、それぞれ確定済みの
-`ywta.common.entity-ref.v1`と`ywta.common.time.v1`に適合しなければならない。`transform`は対応するCommon型が
-確定するまでJSON objectとして保持し、object内の未知Fieldを含むJSON-compatibleな値を転送できる。ただし数値は
-有限値に限り、Adapterは未定義の意味を推測してはならない。
+`ywta.common.entity-ref.v1`と`ywta.common.time.v1`に適合しなければならない。`transform`は
+`ywta.common.transform.v1`に適合するobjectとして保持し、Camera内の`entity_ref`と`transform.entity_ref`は
+4 Fieldすべてが一致しなければならない。Cameraの全長さFieldはmm、Transformのunitとは独立して扱う。
+
+本文書はDraftであり、Transform型の確定とCamera Golden fixtureへのcompositionをCamera v1の最初のcanonical
+Transform contractとする。先行するrelease済みAdapterはなく、以前のopaqueな説明用objectはfreeze前に置き換えた。
 
 | Field | wire type | 意味・制約 |
 | --- | --- | --- |

@@ -10,6 +10,7 @@ from pathlib import Path
 from ywta_link import Camera as ExportedCamera
 from ywta_link.camera import CAMERA_FIELDS, CAMERA_SCHEMA, Camera, CameraValidationError
 from ywta_link.registry import DEFAULT_REGISTRY
+from ywta_link.transform import Transform
 
 _FIXTURE = Path(__file__).resolve().parents[2] / "protocol" / "ywta-link" / "v1" / "valid" / "camera-v1.json"
 
@@ -167,20 +168,21 @@ class CameraTest(unittest.TestCase):
         payload["gate_fit"] = "vertical"
         self.assertEqual(Camera.from_dict(payload).gate_fit, "vertical")
 
-    def test_nested_objects_are_isolated_from_input_and_output_mutation(self) -> None:
-        """Common objectを深くコピーし、外部mutable stateを保持しない。"""
+    def test_composed_transform_is_typed_and_isolated_from_mutation(self) -> None:
+        """Transformをtyped Common objectへcomposeし、mutable stateを共有しない。"""
 
         payload = json.loads(_fixture())
-        payload["transform"]["metadata"] = {"tags": ["hero"]}
         camera = Camera.from_dict(payload)
-        payload["transform"]["metadata"]["tags"].append("changed-input")
-        self.assertEqual(camera.transform["metadata"]["tags"], ("hero",))
+        self.assertIsInstance(camera.transform, Transform)
+
+        payload["transform"]["translation"][0] = 999.0
+        self.assertEqual(camera.transform.translation[0], 0.0)
 
         output = camera.to_dict()
-        output["transform"]["metadata"]["tags"].append("changed-output")
-        self.assertEqual(camera.transform["metadata"]["tags"], ("hero",))
+        output["transform"]["translation"][0] = 999.0
+        self.assertEqual(camera.transform.translation[0], 0.0)
         with self.assertRaises(TypeError):
-            camera.transform["metadata"] = {}
+            camera.transform.translation[0] = 999.0  # type: ignore[index]
 
     def test_composed_entity_reference_and_time_are_validated(self) -> None:
         """確定済みCommon型をCamera境界でも検証する。"""
@@ -194,6 +196,16 @@ class CameraTest(unittest.TestCase):
         payload["time"]["time"] = 2**53
         with self.assertRaises(CameraValidationError):
             Camera.from_dict(payload)
+
+    def test_camera_and_transform_entity_references_match_exactly(self) -> None:
+        """重複するEntityReferenceのIDとmetadata矛盾を拒否する。"""
+
+        for field, value in (("entity_id", "camera:other"), ("display_name", "Other Camera")):
+            payload = json.loads(_fixture())
+            payload["transform"]["entity_ref"][field] = value
+            with self.subTest(field=field):
+                with self.assertRaises(CameraValidationError):
+                    Camera.from_dict(payload)
 
 
 if __name__ == "__main__":
