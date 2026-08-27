@@ -32,6 +32,9 @@ Photoshop 24.4 以降向けの UXP プラグインです。PSD のレイヤー�
 - [C++ Components](./cpp/README.md) — AutoRemesher
 - [Rust Components](./rust/README.md) — ボリューム保持メッシュスムージング
 
+DCC間のローカル連携基盤については、[YWTA Link v1 仕様](./specs/ywta-link-v1.md)を
+参照してください。
+
 Maya ツールの一部は [chadmv/cmt](https://github.com/chadmv/cmt) をベースに、個人制作で
 使いやすいよう機能追加と変更を行っています。
 
