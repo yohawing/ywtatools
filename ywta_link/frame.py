@@ -22,6 +22,16 @@ class FrameError(ValueError):
     """固定frameのencode/decodeまたはI/O失敗。"""
 
 
+class FrameTimeout(FrameError):
+    """read timeoutと、接続を次frameへ再利用できるかを表す。"""
+
+    def __init__(self, connection_reusable: bool) -> None:
+        """fixed header未読時だけ再利用可能なtimeoutを作る。"""
+
+        super().__init__("frame read timed out")
+        self.connection_reusable = connection_reusable
+
+
 @dataclass(frozen=True)
 class FrameLimits:
     """frame受信時に適用する明示的なbyte上限。"""
@@ -97,10 +107,10 @@ class Frame:
     def read_from(cls, source: Any, limits: FrameLimits = DEFAULT_FRAME_LIMITS) -> "Frame":
         """socketまたはbyte streamから正確に1個のframeを読む。"""
 
-        fixed_header = _read_exact(source, FIXED_HEADER_LENGTH)
+        fixed_header = _read_exact(source, FIXED_HEADER_LENGTH, idle_timeout_reusable=True)
         header_length, body_length = _decode_fixed_header(fixed_header, limits)
-        header = _read_exact(source, header_length)
-        body = _read_exact(source, body_length)
+        header = _read_exact(source, header_length, idle_timeout_reusable=False)
+        body = _read_exact(source, body_length, idle_timeout_reusable=False)
         return cls._from_wire(header, body)
 
     @classmethod
@@ -188,8 +198,8 @@ def _validate_lengths(header_length: int, body_length: int, limits: FrameLimits)
         raise FrameError("frame length exceeds configured limit")
 
 
-def _read_exact(source: Any, length: int) -> bytes:
-    """EOF、timeout、途中切断を区別せずfail closedで読む。"""
+def _read_exact(source: Any, length: int, *, idle_timeout_reusable: bool) -> bytes:
+    """timeout位置を保持し、途中frameなら再利用不可として返す。"""
 
     parts: list[bytes] = []
     remaining = length
@@ -200,7 +210,7 @@ def _read_exact(source: Any, length: int) -> bytes:
             else:
                 chunk = source.read(remaining)
         except (socket.timeout, TimeoutError) as exc:
-            raise FrameError("frame read timed out") from exc
+            raise FrameTimeout(idle_timeout_reusable and not parts) from exc
         except OSError as exc:
             raise FrameError(f"frame read failed: {exc}") from exc
         if not chunk:

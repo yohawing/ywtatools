@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import math
 import os
 import subprocess
 import sys
@@ -160,7 +161,12 @@ def retire_stale_runtime(
     """古い同一manifestだけをrename後に再検証して削除する。"""
 
     runtime_path = Path(runtime_file)
-    if isinstance(stale_after, bool) or not isinstance(stale_after, (int, float)) or stale_after < 0:
+    if (
+        isinstance(stale_after, bool)
+        or not isinstance(stale_after, (int, float))
+        or stale_after < 0
+        or not math.isfinite(stale_after)
+    ):
         raise RuntimeError("stale_after must be non-negative")
     if expected_token is not None and (not isinstance(expected_token, str) or not expected_token):
         raise RuntimeError("expected_token must be a non-empty string")

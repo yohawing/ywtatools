@@ -351,8 +351,21 @@ BrokerはWindows Serviceとして常駐せず、Console WindowやTray Iconを必
 
 ### 5.3 異常終了からの復旧
 
-ClientはBroker切断を検出したら、上限付きexponential backoffで再接続する。Brokerが存在しなければ、
-自動起動手順を再実行する。再接続後はPeer identity、Room、Capability、Subscriptionを再広告する。
+Thin Clientのv1基盤は、呼出元が明示的に呼ぶ同期`reconnect()`を提供してよい。これはbackground thread、
+自動DCC dispatch、暗黙のretryを開始しない。明示endpoint Clientは同じnumeric endpointとPeer IDを、runtime
+bootstrap Clientは保存済みのruntime bootstrap設定とPeer IDを再利用する。明示endpointの`reconnect()`は有限の
+timeoutを必須とし、runtime bootstrapは保存済みstartup timeoutを使う。再接続後は、成功済みRoom joinを
+Room名の辞書順で、成功済みSubscriptionを`(room, topic)`の辞書順で再広告する。`leave`は対象Roomとその
+Subscriptionを、`unsubscribe`は対象Subscriptionを再広告対象から除去する。再広告途中の失敗は接続を閉じ、
+広告状態を次回の明示retry用に保持する。通常のsend/receiveで検出した切断はClient errorとしてsocketを閉じるが、
+fixed headerを1 byteも読んでいないidle receive timeoutだけは切断と見なさず、明示retryまたは次のreceiveに
+備えてsocketを維持する。fixed header途中またはheader/body途中のtimeoutはframe同期を失うため切断として扱う。
+`subscribe`はlocalでjoin済みのRoomだけに許可する。`close(); connect()`でも同じ広告を一度だけ再送し、
+`reconnect()`が二重送信してはならない。
+
+AdapterはBroker切断を検出したら、上限付きexponential backoffで再接続してよい。Brokerが存在しなければ、
+自動起動手順を再実行してよい。自動retryを採用するAdapterも、再接続後はPeer identity、Room、Capability、
+Subscriptionを再広告する。
 
 Brokerは状態非保持を原則とし、再起動前の未完了Requestを成功扱いしてはならない。
 

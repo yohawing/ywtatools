@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ywta_link.client import LinkClient, LinkClientError
+from ywta_link.frame import FrameError
 from ywta_link.runtime import (
     RuntimeError,
     read_runtime_manifest,
@@ -56,7 +57,9 @@ class RuntimeUnitTest(unittest.TestCase):
 
         for arguments in (
             {"startup_timeout": 0},
+            {"startup_timeout": float("nan")},
             {"stale_after": -1},
+            {"stale_after": float("inf")},
             {"idle_timeout": 0},
             {"idle_timeout": True},
         ):
@@ -136,6 +139,17 @@ class RuntimeUnitTest(unittest.TestCase):
             self.assertTrue(retire_stale_runtime(path, "owner-token", stale_after=1))
             self.assertFalse(path.exists())
             self.assertFalse(list(Path(directory).glob("runtime.json.stale-*")))
+
+    def test_stale_retirement_rejects_non_finite_age_without_removing_file(self) -> None:
+        """NaNや無限値でfresh manifestを誤回収しない。"""
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.json"
+            path.write_text("{", encoding="utf-8")
+            for stale_after in (float("nan"), float("inf")):
+                with self.assertRaises(RuntimeError):
+                    retire_stale_runtime(path, stale_after=stale_after)
+                self.assertTrue(path.exists())
 
     def test_fresh_runtime_is_not_retired_during_startup_race(self) -> None:
         """新しいmanifestは接続直後のraceでも削除しない。"""
@@ -287,6 +301,56 @@ class RuntimeBootstrapSmokeTest(unittest.TestCase):
             while runtime_path.exists() and time.monotonic() < deadline:
                 time.sleep(0.05)
             self.assertFalse(runtime_path.exists(), "Broker did not remove its runtime manifest")
+
+    def test_runtime_client_reconnects_after_broker_shutdown(self) -> None:
+        """runtime bootstrap設定を同一Clientで再利用し、Room広告を復元する。"""
+
+        with tempfile.TemporaryDirectory() as directory:
+            runtime_path = Path(directory) / "runtime" / "broker.json"
+            client = LinkClient.connect_or_start(
+                "python:reconnect",
+                runtime_file=str(runtime_path.resolve()),
+                executable=str(_BROKER_BINARY),
+                idle_timeout=1,
+                startup_timeout=6,
+                stale_after=0.1,
+            )
+            receiver: LinkClient | None = None
+            try:
+                client.join("room-reconnect")
+                client.subscribe("room-reconnect", "topic-reconnect")
+                client.close()
+                self._wait_for_runtime_removal(runtime_path)
+
+                self.assertIs(client.reconnect(), client)
+                receiver = LinkClient(client.endpoint, "python:receiver").connect(timeout=1)
+                receiver.join("room-reconnect")
+                delivered = None
+                for _ in range(5):
+                    client.publish("room-reconnect", raw_body=b"reconnected-bytes")
+                    try:
+                        delivered = receiver.receive(timeout=0.2)
+                        break
+                    except FrameError:
+                        pass
+                self.assertIsNotNone(delivered, "receiver did not observe reconnected room publish")
+
+                assert delivered is not None
+                self.assertEqual(delivered.envelope.sender, "python:reconnect")
+                self.assertEqual(delivered.body, b"reconnected-bytes")
+            finally:
+                client.close()
+                if receiver is not None:
+                    receiver.close()
+            self._wait_for_runtime_removal(runtime_path)
+
+    def _wait_for_runtime_removal(self, runtime_path: Path) -> None:
+        """idle Brokerがmanifestを削除するまで短く待機する。"""
+
+        deadline = time.monotonic() + 4
+        while runtime_path.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertFalse(runtime_path.exists(), "Broker did not remove its runtime manifest")
 
     @staticmethod
     def _connect_worker(

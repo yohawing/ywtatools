@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import ipaddress
+import math
 import socket
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .envelope import Envelope
-from .frame import DEFAULT_FRAME_LIMITS, Frame, FrameError, FrameLimits
+from .frame import DEFAULT_FRAME_LIMITS, Frame, FrameError, FrameLimits, FrameTimeout
 
 _RUNTIME_CHALLENGE_FIELD = "ywta_runtime_challenge"
 _RUNTIME_TOKEN_FIELD = "ywta_runtime_token"
@@ -19,6 +21,18 @@ _RUNTIME_BROKER_SENDER = "ywta-link:broker"
 
 class LinkClientError(ValueError):
     """Client設定または接続状態の不正。"""
+
+
+@dataclass(frozen=True)
+class _RuntimeBootstrap:
+    """同じClient instanceで再利用するruntime bootstrap設定。"""
+
+    runtime_file: str | None
+    executable: str | None
+    install_root: str | None
+    idle_timeout: int
+    startup_timeout: float
+    stale_after: float
 
 
 class LinkClient:
@@ -39,6 +53,9 @@ class LinkClient:
         self.peer_id = peer_id
         self.frame_limits = frame_limits
         self._socket: socket.socket | None = None
+        self._joined_rooms: set[str] = set()
+        self._subscriptions: set[tuple[str, str]] = set()
+        self._runtime_bootstrap: _RuntimeBootstrap | None = None
 
     def __enter__(self) -> "LinkClient":
         """接続し、helloを送信してからClientを返す。"""
@@ -60,7 +77,7 @@ class LinkClient:
 
         if self._socket is not None:
             raise LinkClientError("client is already connected")
-        if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0):
+        if timeout is not None and not _is_positive_timeout(timeout):
             raise LinkClientError("timeout must be a positive number")
         if expected_runtime_token is not None and (not isinstance(expected_runtime_token, str) or not expected_runtime_token):
             raise LinkClientError("expected_runtime_token must be a non-empty string")
@@ -80,6 +97,7 @@ class LinkClient:
                     expected_runtime_token,
                     timeout,
                 )
+            self._reannounce_membership()
         except LinkClientError:
             self.close()
             raise
@@ -112,9 +130,9 @@ class LinkClient:
             spawn_broker,
         )
 
-        if isinstance(startup_timeout, bool) or not isinstance(startup_timeout, (int, float)) or startup_timeout <= 0:
+        if not _is_positive_timeout(startup_timeout):
             raise LinkClientError("startup_timeout must be a positive number")
-        if isinstance(stale_after, bool) or not isinstance(stale_after, (int, float)) or stale_after < 0:
+        if not _is_non_negative_timeout(stale_after):
             raise LinkClientError("stale_after must be a non-negative number")
         if isinstance(idle_timeout, bool) or not isinstance(idle_timeout, int) or idle_timeout <= 0:
             raise LinkClientError("idle_timeout must be a positive integer for bootstrap")
@@ -138,10 +156,19 @@ class LinkClient:
                     time.sleep(0.05)
                     continue
                 try:
-                    return cls(manifest.endpoint, peer_id).connect(
+                    client = cls(manifest.endpoint, peer_id).connect(
                         timeout=0.5,
                         expected_runtime_token=manifest.token,
                     )
+                    client._runtime_bootstrap = _RuntimeBootstrap(
+                        runtime_file=str(runtime_path),
+                        executable=executable,
+                        install_root=install_root,
+                        idle_timeout=idle_timeout,
+                        startup_timeout=startup_timeout,
+                        stale_after=stale_after,
+                    )
+                    return client
                 except LinkClientError:
                     failed_connections += 1
                     if failed_connections >= 2:
@@ -175,25 +202,66 @@ class LinkClient:
             self._socket.close()
             self._socket = None
 
+    def reconnect(self, *, timeout: float | None = None) -> "LinkClient":
+        """同一Peerと広告済みRoom/Topicを使い、同期的に接続し直す。"""
+
+        if self._runtime_bootstrap is None and not _is_positive_timeout(timeout):
+            raise LinkClientError("explicit endpoint reconnect requires a positive timeout")
+        self.close()
+        try:
+            if self._runtime_bootstrap is None:
+                self.connect(timeout)
+            else:
+                options = self._runtime_bootstrap
+                replacement = type(self).connect_or_start(
+                    self.peer_id,
+                    runtime_file=options.runtime_file,
+                    executable=options.executable,
+                    install_root=options.install_root,
+                    idle_timeout=options.idle_timeout,
+                    startup_timeout=options.startup_timeout,
+                    stale_after=options.stale_after,
+                )
+                self.endpoint = replacement.endpoint
+                self._socket = replacement._socket
+                replacement._socket = None
+                self._runtime_bootstrap = replacement._runtime_bootstrap
+                self._reannounce_membership()
+        except (LinkClientError, FrameError):
+            self.close()
+            raise
+        return self
+
     def join(self, room: str) -> str:
         """Roomへ参加する。"""
 
-        return self._send("join", room=room)
+        message_id = self._send("join", room=room)
+        self._joined_rooms.add(room)
+        return message_id
 
     def leave(self, room: str) -> str:
         """Roomから退出する。"""
 
-        return self._send("leave", room=room)
+        message_id = self._send("leave", room=room)
+        self._joined_rooms.discard(room)
+        self._subscriptions = {subscription for subscription in self._subscriptions if subscription[0] != room}
+        return message_id
 
     def subscribe(self, room: str, topic: str) -> str:
         """Room内Topicを購読する。"""
 
-        return self._send("subscribe", room=room, topic=topic)
+        if room not in self._joined_rooms:
+            raise LinkClientError("subscribe requires a locally joined room")
+        message_id = self._send("subscribe", room=room, topic=topic)
+        self._subscriptions.add((room, topic))
+        return message_id
 
     def unsubscribe(self, room: str, topic: str) -> str:
         """Room内Topicの購読を解除する。"""
 
-        return self._send("unsubscribe", room=room, topic=topic)
+        message_id = self._send("unsubscribe", room=room, topic=topic)
+        self._subscriptions.discard((room, topic))
+        return message_id
 
     def publish(
         self,
@@ -282,14 +350,24 @@ class LinkClient:
     def receive(self, timeout: float | None = None) -> Frame:
         """次のframeを同期的に待ち、必要なら一時timeoutを適用する。"""
 
+        if timeout is not None and not _is_positive_timeout(timeout):
+            raise LinkClientError("timeout must be a positive number")
         client_socket = self._require_socket()
         previous_timeout = client_socket.gettimeout()
         if timeout is not None:
             client_socket.settimeout(timeout)
         try:
             return Frame.read_from(client_socket, self.frame_limits)
+        except FrameError as exc:
+            if isinstance(exc, FrameTimeout) and exc.connection_reusable:
+                raise
+            self.close()
+            raise LinkClientError(f"Broker connection lost while receiving: {exc}") from exc
+        except OSError as exc:
+            self.close()
+            raise LinkClientError(f"Broker connection lost while receiving: {exc}") from exc
         finally:
-            if timeout is not None:
+            if timeout is not None and self._socket is not None:
                 client_socket.settimeout(previous_timeout)
 
     def _send(
@@ -323,8 +401,22 @@ class LinkClient:
             body=body,
             extra={} if extra is None else extra,
         )
-        Frame(envelope, raw_body).write_to(self._require_socket(), self.frame_limits)
+        try:
+            Frame(envelope, raw_body).write_to(self._require_socket(), self.frame_limits)
+        except FrameError as exc:
+            if _is_send_disconnect(exc):
+                self.close()
+                raise LinkClientError(f"Broker connection lost while sending: {exc}") from exc
+            raise
         return message_id
+
+    def _reannounce_membership(self) -> None:
+        """成功済み広告をRoom、Topicの辞書順で再送する。"""
+
+        for room in sorted(self._joined_rooms):
+            self._send("join", room=room)
+        for room, topic in sorted(self._subscriptions):
+            self._send("subscribe", room=room, topic=topic)
 
     def _verify_runtime_ack(
         self,
@@ -407,6 +499,24 @@ def os_environ_endpoint() -> str | None:
     import os
 
     return os.environ.get("YWTA_LINK_ENDPOINT")
+
+
+def _is_positive_timeout(value: float | None) -> bool:
+    """明示endpoint再接続で必須の有限なtimeoutかを返す。"""
+
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0 and math.isfinite(value)
+
+
+def _is_non_negative_timeout(value: float) -> bool:
+    """有限な0以上のtimeoutかを返す。"""
+
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0 and math.isfinite(value)
+
+
+def _is_send_disconnect(error: FrameError) -> bool:
+    """送信時のtransport切断だけをsocket破棄対象にする。"""
+
+    return str(error).startswith("frame write failed:") or str(error) == "frame write was truncated"
 
 
 def _open_loopback_socket(endpoint: tuple[str, int], timeout: float | None) -> socket.socket:

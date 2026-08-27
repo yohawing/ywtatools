@@ -7,9 +7,9 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from ywta_link.client import LinkClient, LinkClientError
+from ywta_link.client import LinkClient, LinkClientError, _RuntimeBootstrap
 from ywta_link.envelope import Envelope
-from ywta_link.frame import Frame
+from ywta_link.frame import DEFAULT_FRAME_LIMITS, FIXED_HEADER_LENGTH, Frame, FrameError, FrameLimits
 
 
 class LinkClientTest(unittest.TestCase):
@@ -40,6 +40,8 @@ class LinkClientTest(unittest.TestCase):
 
         client = LinkClient(("127.0.0.1", 24567), "blender:peer-001")
 
+        with self.assertRaises(LinkClientError):
+            client.subscribe("room-a", "topic-a")
         with self.assertRaises(LinkClientError):
             client.request("", "maya:peer-001")
         with self.assertRaises(LinkClientError):
@@ -116,6 +118,238 @@ class LinkClientTest(unittest.TestCase):
         responder.join(timeout=1)
 
         self.assertFalse(responder.is_alive())
+        self.assertIsNone(client._socket)
+
+    def test_reconnect_reuses_instance_and_reannounces_remaining_state_in_order(self) -> None:
+        """同じClientがRoom、Topicを辞書順で再広告し、解除済み状態を送らない。"""
+
+        first_client, first_broker = socket.socketpair()
+        second_client, second_broker = socket.socketpair()
+        self.addCleanup(first_broker.close)
+        self.addCleanup(second_broker.close)
+        client = LinkClient("127.0.0.1:24567", "blender:peer-001")
+        self.addCleanup(client.close)
+
+        with patch(
+            "ywta_link.client._open_loopback_socket",
+            side_effect=[first_client, second_client],
+        ):
+            client.connect()
+            Frame.read_from(first_broker)
+            client.join("room-b")
+            client.join("room-a")
+            client.subscribe("room-a", "topic-z")
+            client.subscribe("room-a", "topic-a")
+            client.subscribe("room-b", "topic-gone")
+            client.leave("room-b")
+            client.unsubscribe("room-a", "topic-z")
+            client.reconnect(timeout=1)
+
+        replayed = [Frame.read_from(second_broker) for _ in range(3)]
+        self.assertEqual(replayed[0].envelope.sender, client.peer_id)
+        self.assertEqual(
+            [(frame.envelope.type, frame.envelope.room, frame.envelope.topic) for frame in replayed],
+            [
+                ("hello", None, None),
+                ("join", "room-a", None),
+                ("subscribe", "room-a", "topic-a"),
+            ],
+        )
+        self.assertEqual(client.peer_id, "blender:peer-001")
+
+    def test_reconnect_failure_closes_new_socket_and_keeps_state_for_retry(self) -> None:
+        """再広告が失敗しても古いsocketは復活せず、次回用の状態は残る。"""
+
+        class FailingSocket:
+            """hello後の再広告だけを失敗させるsocket代替。"""
+
+            def __init__(self) -> None:
+                self._writes = 0
+
+            def sendall(self, _data: bytes) -> None:
+                if self._writes:
+                    raise BrokenPipeError("test disconnect")
+                self._writes += 1
+
+            @staticmethod
+            def shutdown(_how: int) -> None:
+                pass
+
+            @staticmethod
+            def close() -> None:
+                pass
+
+        initial_client, initial_broker = socket.socketpair()
+        self.addCleanup(initial_broker.close)
+        client = LinkClient("127.0.0.1:24567", "blender:peer-001")
+        self.addCleanup(client.close)
+        with patch("ywta_link.client._open_loopback_socket", return_value=initial_client):
+            client.connect()
+        Frame.read_from(initial_broker)
+        client.join("room-a")
+
+        with patch("ywta_link.client._open_loopback_socket", return_value=FailingSocket()):
+            with self.assertRaises(LinkClientError):
+                client.reconnect(timeout=1)
+
+        self.assertIsNone(client._socket)
+        self.assertEqual(client._joined_rooms, {"room-a"})
+
+    def test_explicit_reconnect_requires_finite_timeout_before_closing_socket(self) -> None:
+        """明示endpointのreconnectは無期限待機を許可しない。"""
+
+        client_socket, broker_socket = socket.socketpair()
+        self.addCleanup(client_socket.close)
+        self.addCleanup(broker_socket.close)
+        client = LinkClient("127.0.0.1:24567", "blender:peer-001")
+        client._socket = client_socket
+
+        for timeout in (None, 0, float("inf")):
+            with self.assertRaises(LinkClientError):
+                client.reconnect(timeout=timeout)
+            self.assertIs(client._socket, client_socket)
+
+    def test_connect_and_receive_reject_non_finite_timeout_before_socket_io(self) -> None:
+        """無限値とNaNをsocket APIへ渡す前に拒否する。"""
+
+        client = LinkClient("127.0.0.1:24567", "blender:peer-001")
+        for timeout in (float("inf"), float("nan")):
+            with self.assertRaises(LinkClientError):
+                client.connect(timeout=timeout)
+            with self.assertRaises(LinkClientError):
+                client.receive(timeout=timeout)
+
+    def test_close_then_connect_reannounces_state_once(self) -> None:
+        """通常connect再利用でも成功済みRoom/Topicを一度だけ再広告する。"""
+
+        first_client, first_broker = socket.socketpair()
+        second_client, second_broker = socket.socketpair()
+        self.addCleanup(first_broker.close)
+        self.addCleanup(second_broker.close)
+        client = LinkClient("127.0.0.1:24567", "blender:peer-001")
+        self.addCleanup(client.close)
+
+        with patch(
+            "ywta_link.client._open_loopback_socket",
+            side_effect=[first_client, second_client],
+        ):
+            client.connect()
+            Frame.read_from(first_broker)
+            client.join("room-a")
+            client.subscribe("room-a", "topic-a")
+            client.close()
+            client.connect()
+
+        replayed = [Frame.read_from(second_broker) for _ in range(3)]
+        self.assertEqual(
+            [(frame.envelope.type, frame.envelope.room, frame.envelope.topic) for frame in replayed],
+            [
+                ("hello", None, None),
+                ("join", "room-a", None),
+                ("subscribe", "room-a", "topic-a"),
+            ],
+        )
+
+    def test_runtime_replay_nontransport_frame_error_closes_socket_and_keeps_state(self) -> None:
+        """replayのframe limit失敗でもreplacement socketを閉じ、広告状態を残す。"""
+
+        class AcceptingSocket:
+            """sendallを受理し、close呼出を記録するsocket代替。"""
+
+            def __init__(self) -> None:
+                self.closed = False
+
+            @staticmethod
+            def sendall(_data: bytes) -> None:
+                pass
+
+            @staticmethod
+            def shutdown(_how: int) -> None:
+                pass
+
+            def close(self) -> None:
+                self.closed = True
+
+        peer_id = "blender:peer-001"
+        header_length = (
+            len(
+                Frame(
+                    Envelope(
+                        protocol_version=1,
+                        message_id="x" * 32,
+                        type="join",
+                        sender=peer_id,
+                        room="room-a",
+                    )
+                ).to_bytes()
+            )
+            - FIXED_HEADER_LENGTH
+        )
+        client = LinkClient("127.0.0.1:24567", peer_id)
+        client.frame_limits = FrameLimits(
+            max_header_length=header_length,
+            max_body_length=DEFAULT_FRAME_LIMITS.max_body_length,
+        )
+        client._joined_rooms.add("room-a")
+        client._subscriptions.add(("room-a", "topic-a"))
+        options = _RuntimeBootstrap(None, None, None, 1, 1.0, 0.0)
+        client._runtime_bootstrap = options
+        replacement = LinkClient("127.0.0.1:24567", peer_id)
+        replacement._socket = AcceptingSocket()
+        replacement._runtime_bootstrap = options
+
+        with patch.object(LinkClient, "connect_or_start", return_value=replacement):
+            with self.assertRaises(FrameError):
+                client.reconnect()
+
+        self.assertIsNone(client._socket)
+        self.assertTrue(replacement._socket is None)
+        self.assertTrue(client._joined_rooms)
+        self.assertTrue(client._subscriptions)
+
+    def test_transport_disconnects_are_normalized_but_receive_timeout_keeps_socket(self) -> None:
+        """send/EOFはLinkClientErrorへ正規化し、read timeoutは接続を維持する。"""
+
+        client_socket, broker_socket = socket.socketpair()
+        self.addCleanup(broker_socket.close)
+        client = LinkClient("127.0.0.1:24567", "blender:peer-001")
+        self.addCleanup(client.close)
+        client._socket = client_socket
+
+        with self.assertRaises(FrameError):
+            client.receive(timeout=0.01)
+        self.assertIs(client._socket, client_socket)
+        broker_socket.close()
+        with self.assertRaises(LinkClientError):
+            client.receive(timeout=0.1)
+        self.assertIsNone(client._socket)
+
+        partial_client, partial_broker = socket.socketpair()
+        self.addCleanup(partial_broker.close)
+        client._socket = partial_client
+        partial_broker.sendall(b"Y")
+        with self.assertRaises(LinkClientError):
+            client.receive(timeout=0.01)
+        self.assertIsNone(client._socket)
+
+        class BrokenSocket:
+            """即時BrokenPipeを返す最小socket代替。"""
+
+            @staticmethod
+            def sendall(_data: bytes) -> None:
+                raise BrokenPipeError("test disconnect")
+
+            @staticmethod
+            def shutdown(_how: int) -> None:
+                pass
+
+            @staticmethod
+            def close() -> None:
+                pass
+
+        client._socket = BrokenSocket()
+        with self.assertRaises(LinkClientError):
+            client.join("room-a")
         self.assertIsNone(client._socket)
 
     def test_non_loopback_or_non_numeric_endpoint_is_rejected(self) -> None:

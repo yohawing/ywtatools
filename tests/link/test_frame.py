@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from ywta_link.envelope import Envelope
-from ywta_link.frame import Frame, FrameError
+from ywta_link.frame import FIXED_HEADER_LENGTH, Frame, FrameError, FrameTimeout
 
 _FIXTURE = Path(__file__).resolve().parents[2] / "protocol" / "ywta-link" / "v1" / "valid" / "frame-publish.hex"
 
@@ -69,6 +69,29 @@ class FrameTest(unittest.TestCase):
         left.close()
         with self.assertRaises(FrameError):
             Frame.read_from(right)
+
+    def test_timeout_marks_only_unread_fixed_header_as_reusable(self) -> None:
+        """idle timeoutだけを再利用可能とし、途中frame timeoutはfail closedにする。"""
+
+        golden = bytes.fromhex(_FIXTURE.read_text(encoding="ascii").strip())
+        header_length = int.from_bytes(golden[8:12], "big")
+        for payload, reusable in (
+            (b"", True),
+            (golden[:1], False),
+            (golden[: FIXED_HEADER_LENGTH + 1], False),
+            (golden[: FIXED_HEADER_LENGTH + header_length + 1], False),
+        ):
+            left, right = socket.socketpair()
+            try:
+                if payload:
+                    left.sendall(payload)
+                right.settimeout(0.01)
+                with self.assertRaises(FrameTimeout) as raised:
+                    Frame.read_from(right)
+                self.assertEqual(raised.exception.connection_reusable, reusable)
+            finally:
+                left.close()
+                right.close()
 
 
 if __name__ == "__main__":
