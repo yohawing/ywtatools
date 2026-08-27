@@ -1,0 +1,12 @@
+{
+  "peer_id": "blender:peer-001",
+  "application": "Blender",
+  "application_version": "4.5.0",
+  "plugin_version": "0.1.0",
+  "protocol_versions": [1],
+  "capabilities": [
+    "camera.apply.v1",
+    "camera.read.v1",
+    "transform.read.v1"
+  ]
+}

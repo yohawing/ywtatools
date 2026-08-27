@@ -214,6 +214,37 @@ Client SDKは次の責務だけを持つ。
 - Binary bodyのchunk送受信
 - Network ThreadからDCC Main Threadへの安全なdispatch
 
+#### 4.3.1 Peer PresenceとCapability広告
+
+Clientは、他のPeerが接続先や実装言語を知らなくても利用可能な機能を判定できるよう、任意で
+Presence/Capability広告を最初の`hello`へ含める。広告を含める場合、Envelopeの`schema`は
+`ywta.peer.hello.v1`、`body`は次の厳密なJSON objectとする。
+
+```json
+{
+  "peer_id": "blender:peer-001",
+  "application": "Blender",
+  "application_version": "4.5.0",
+  "plugin_version": "0.1.0",
+  "protocol_versions": [1],
+  "capabilities": ["camera.apply.v1", "camera.read.v1"]
+}
+```
+
+`peer_id`はEnvelopeの`sender`と完全一致し、全Stringは空でない256文字以内のUTF-8文字列とする。
+`protocol_versions`は1以上65535以下の整数の昇順unique配列で、1を含む16件以内とする。
+`capabilities`は0件以上128件以内の配列とし、含まれる各IDは空でないversioned identifierの昇順unique値、
+256文字以内のUTF-8文字列とする。
+未知Field、型違い、上限超過、未versioned ID、不正な並び、`protocol_versions`に1がない広告は
+接続登録前にfail closedで拒否する。広告状態はBrokerが接続中だけ保持し、切断時に破棄する。
+
+広告を指定しないClientは、schemaとbodyを省略したlegacy bare `hello`を送信できる。Brokerはこの
+legacy形式とPresence付き形式の両方を受理する。Presence schemaを指定したbodyの省略や、bodyのdecode失敗は
+受理しない。Presence以外のschema/bodyはlegacy metadataとして解釈せず、既存実装との互換性のためBrokerでは
+保持も拒否も行わない。runtime manifest用のchallenge extraはPresence schema/bodyと同じ`hello`に共存できる。
+再接続、`close()`後の再接続、Broker runtime replacementでも、同じClientに設定した広告をhelloへ一度だけ
+再掲する。Capabilityの意味解釈やnegotiation、routing拒否は各Adapterの次スライスで定義する。
+
 Material変換、Camera適用、Morph Weight更新、Texture出力、Node生成などのDCC操作はClient SDKではなく
 各DCC Adapterが所有する。
 

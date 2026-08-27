@@ -4,6 +4,16 @@ from .contract import NegotiationResult, SyncChannel, SyncContract
 from .client import LinkClient, LinkClientError
 from .envelope import Envelope, decode_envelope, encode_envelope
 from .frame import Frame, FrameError, FrameLimits, decode_frame, encode_frame, read_frame, write_frame
+from .presence import (
+    PEER_HELLO_SCHEMA,
+    PRESENCE_MAX_CAPABILITIES,
+    PRESENCE_MAX_CAPABILITY_LENGTH,
+    PRESENCE_MAX_PROTOCOL_VERSION,
+    PRESENCE_MAX_PROTOCOL_VERSIONS,
+    PRESENCE_MAX_STRING_LENGTH,
+    PeerPresence,
+    PresenceValidationError,
+)
 from .session import ChannelRevisionTracker, SessionState, SyncSession
 from .runtime import RuntimeError, RuntimeManifest, read_runtime_manifest, resolve_broker_executable
 
@@ -15,6 +25,14 @@ __all__ = (
     "FrameLimits",
     "LinkClient",
     "LinkClientError",
+    "PEER_HELLO_SCHEMA",
+    "PRESENCE_MAX_CAPABILITIES",
+    "PRESENCE_MAX_CAPABILITY_LENGTH",
+    "PRESENCE_MAX_PROTOCOL_VERSION",
+    "PRESENCE_MAX_PROTOCOL_VERSIONS",
+    "PRESENCE_MAX_STRING_LENGTH",
+    "PeerPresence",
+    "PresenceValidationError",
     "NegotiationResult",
     "SessionState",
     "SyncChannel",

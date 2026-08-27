@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use crate::envelope::{Envelope, MessageType, MONITOR_SNAPSHOT_SCHEMA};
 use crate::frame::{Frame, FrameError, FrameLimits};
+use crate::presence::{PeerPresence, PresenceError, PEER_HELLO_SCHEMA};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -76,6 +77,7 @@ pub enum BrokerError {
     MonitorNotAllowed,
     InvalidMonitorRequest,
     MonitorSerialization(serde_json::Error),
+    InvalidPresence(PresenceError),
     Io(io::Error),
 }
 
@@ -133,6 +135,7 @@ impl fmt::Display for BrokerError {
             Self::MonitorSerialization(error) => {
                 write!(formatter, "cannot encode monitor snapshot: {error}")
             }
+            Self::InvalidPresence(error) => write!(formatter, "invalid peer presence: {error}"),
             Self::Io(error) => write!(formatter, "broker I/O error: {error}"),
         }
     }
@@ -143,6 +146,7 @@ impl Error for BrokerError {
         match self {
             Self::Frame(error) => Some(error),
             Self::MonitorSerialization(error) => Some(error),
+            Self::InvalidPresence(error) => Some(error),
             Self::Io(error) => Some(error),
             _ => None,
         }
@@ -155,11 +159,18 @@ impl From<FrameError> for BrokerError {
     }
 }
 
+impl From<PresenceError> for BrokerError {
+    fn from(error: PresenceError) -> Self {
+        Self::InvalidPresence(error)
+    }
+}
+
 /// 接続状態を持たないrouting core。ネットワークなしで検証できる。
 #[derive(Debug, Default)]
 pub struct BrokerCore {
     connection_peers: HashMap<ConnectionId, String>,
     peer_connections: HashMap<String, ConnectionId>,
+    peer_presence: HashMap<String, PeerPresence>,
     monitor_connections: HashSet<ConnectionId>,
     rooms: HashMap<String, HashSet<String>>,
     subscriptions: HashMap<(String, String), HashSet<String>>,
@@ -274,6 +285,7 @@ impl BrokerCore {
         };
         self.monitor_connections.remove(&connection_id);
         self.peer_connections.remove(&peer_id);
+        self.peer_presence.remove(&peer_id);
         self.rooms.retain(|_, members| {
             members.remove(&peer_id);
             !members.is_empty()
@@ -289,6 +301,18 @@ impl BrokerCore {
     /// Peer IDに対応する接続IDを返す。
     pub fn connection_id_for_peer(&self, peer_id: &str) -> Option<ConnectionId> {
         self.peer_connections.get(peer_id).copied()
+    }
+
+    /// Peer IDに対応するPresence広告を読み取り専用で返す。
+    pub fn presence_for_peer(&self, peer_id: &str) -> Option<&PeerPresence> {
+        self.peer_presence.get(peer_id)
+    }
+
+    /// 現在登録されているPresence広告をPeer ID順のSnapshotで返す。
+    pub fn presence_snapshot(&self) -> Vec<PeerPresence> {
+        let mut presences = self.peer_presence.values().cloned().collect::<Vec<_>>();
+        presences.sort_by(|left, right| left.peer_id.cmp(&right.peer_id));
+        presences
     }
 
     /// 現在登録されているPeer数を返す。
@@ -372,6 +396,7 @@ impl BrokerCore {
         if !matches!(frame.envelope.message_type, MessageType::Hello) {
             return Err(BrokerError::HelloRequired);
         }
+        let presence = parse_peer_presence(&frame)?;
         let peer_id = frame.envelope.sender.clone();
         let monitor_reserved = is_monitor_peer(&peer_id);
         let monitor_peer = is_valid_monitor_peer(&peer_id);
@@ -384,7 +409,10 @@ impl BrokerCore {
             return Err(BrokerError::DuplicatePeerId(peer_id));
         }
         self.connection_peers.insert(connection_id, peer_id.clone());
-        self.peer_connections.insert(peer_id, connection_id);
+        self.peer_connections.insert(peer_id.clone(), connection_id);
+        if let Some(presence) = presence {
+            self.peer_presence.insert(peer_id, presence);
+        }
         if monitor_peer {
             self.monitor_connections.insert(connection_id);
         }
@@ -524,6 +552,34 @@ fn required_room(frame: &Frame) -> Result<String, BrokerError> {
             "room is required",
         )))
     })
+}
+
+fn parse_peer_presence(frame: &Frame) -> Result<Option<PeerPresence>, BrokerError> {
+    match frame.envelope.schema.as_deref() {
+        None if frame.envelope.body.is_none() && frame.body.is_empty() => Ok(None),
+        Some(PEER_HELLO_SCHEMA) => {
+            if !frame.body.is_empty() {
+                return Err(BrokerError::InvalidPresence(PresenceError::new(
+                    "peer hello presence must not have a raw binary body",
+                )));
+            }
+            let body = frame.envelope.body.as_ref().ok_or_else(|| {
+                BrokerError::InvalidPresence(PresenceError::new(
+                    "peer hello presence body is required",
+                ))
+            })?;
+            let presence = PeerPresence::from_value(body)?;
+            if presence.peer_id != frame.envelope.sender {
+                return Err(BrokerError::InvalidPresence(PresenceError::new(
+                    "peer hello peer_id must match envelope sender",
+                )));
+            }
+            Ok(Some(presence))
+        }
+        // Helloの未定義metadataは、Presenceとして解釈せず既存のlegacy接続を保つ。
+        // Presenceを名乗るschemaだけは上の厳格なdecodeを通る。
+        _ => Ok(None),
+    }
 }
 
 fn is_monitor_peer(peer_id: &str) -> bool {
@@ -1065,6 +1121,30 @@ mod tests {
         frame(sender, MessageType::Hello, None, None, None, &[])
     }
 
+    fn presence_hello(sender: &str) -> Frame {
+        let body: Value = serde_json::from_slice(include_bytes!(
+            "../../../tests/link/fixtures/peer_hello_v1.json"
+        ))
+        .expect("presence fixture must decode");
+        Frame::new(
+            Envelope {
+                protocol_version: 1,
+                message_id: format!("{sender}-presence-hello"),
+                message_type: MessageType::Hello,
+                sender: sender.to_owned(),
+                room: None,
+                target: None,
+                topic: None,
+                correlation_id: None,
+                schema: Some(PEER_HELLO_SCHEMA.to_owned()),
+                body: Some(body),
+                extra: Default::default(),
+            },
+            Vec::new(),
+        )
+        .expect("presence hello must be valid")
+    }
+
     fn monitor_hello(sender: &str, challenge: Option<&str>) -> Frame {
         let mut frame = hello(sender);
         if let Some(challenge) = challenge {
@@ -1214,6 +1294,52 @@ mod tests {
             core.receive(2, hello("blender:one")),
             Err(BrokerError::DuplicatePeerId(_))
         ));
+    }
+
+    #[test]
+    fn registers_presence_and_cleans_it_on_disconnect() {
+        let mut core = BrokerCore::default();
+        core.receive(1, presence_hello("blender:peer-001"))
+            .expect("presence hello must register");
+
+        let presence = core
+            .presence_for_peer("blender:peer-001")
+            .expect("presence must be retained");
+        assert_eq!(presence.application, "Blender");
+        assert_eq!(core.presence_snapshot().len(), 1);
+
+        assert!(matches!(
+            core.receive(2, presence_hello("blender:peer-001")),
+            Err(BrokerError::DuplicatePeerId(peer_id)) if peer_id == "blender:peer-001"
+        ));
+        core.disconnect(1);
+        assert!(core.presence_for_peer("blender:peer-001").is_none());
+        assert!(core.presence_snapshot().is_empty());
+    }
+
+    #[test]
+    fn rejects_invalid_presence_before_registering_connection() {
+        let mut unknown_field = presence_hello("blender:peer-001");
+        unknown_field
+            .envelope
+            .body
+            .as_mut()
+            .expect("presence body must exist")
+            .as_object_mut()
+            .expect("presence body must be an object")
+            .insert("unexpected".to_owned(), Value::Bool(true));
+        assert!(matches!(
+            core_receive_invalid_presence(unknown_field),
+            Err(BrokerError::InvalidPresence(_))
+        ));
+    }
+
+    fn core_receive_invalid_presence(frame: Frame) -> Result<Vec<Delivery>, BrokerError> {
+        let mut core = BrokerCore::default();
+        let result = core.receive(1, frame);
+        assert!(!core.is_registered(1));
+        assert!(core.presence_snapshot().is_empty());
+        result
     }
 
     #[test]

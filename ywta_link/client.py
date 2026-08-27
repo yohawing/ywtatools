@@ -13,6 +13,7 @@ from typing import Any
 
 from .envelope import Envelope
 from .frame import DEFAULT_FRAME_LIMITS, Frame, FrameError, FrameLimits, FrameTimeout
+from .presence import PEER_HELLO_SCHEMA, PeerPresence
 
 _RUNTIME_CHALLENGE_FIELD = "ywta_runtime_challenge"
 _RUNTIME_TOKEN_FIELD = "ywta_runtime_token"
@@ -43,6 +44,7 @@ class LinkClient:
         endpoint: str | tuple[str, int],
         peer_id: str,
         *,
+        presence: PeerPresence | None = None,
         frame_limits: FrameLimits = DEFAULT_FRAME_LIMITS,
     ) -> None:
         """endpointとPeer IDを検証し、未接続Clientを作る。"""
@@ -50,7 +52,12 @@ class LinkClient:
         self.endpoint = _parse_endpoint(endpoint)
         if not isinstance(peer_id, str) or not peer_id:
             raise LinkClientError("peer_id must be a non-empty string")
+        if presence is not None and not isinstance(presence, PeerPresence):
+            raise LinkClientError("presence must be a PeerPresence")
+        if presence is not None and presence.peer_id != peer_id:
+            raise LinkClientError("presence.peer_id must match peer_id")
         self.peer_id = peer_id
+        self.presence = presence
         self.frame_limits = frame_limits
         self._socket: socket.socket | None = None
         self._joined_rooms: set[str] = set()
@@ -81,14 +88,20 @@ class LinkClient:
             raise LinkClientError("timeout must be a positive number")
         if expected_runtime_token is not None and (not isinstance(expected_runtime_token, str) or not expected_runtime_token):
             raise LinkClientError("expected_runtime_token must be a non-empty string")
+        if self.presence is not None:
+            self.presence.validate()
         try:
             self._socket = _open_loopback_socket(self.endpoint, timeout)
+            hello_schema = PEER_HELLO_SCHEMA if self.presence is not None else None
+            hello_body = self.presence.to_dict() if self.presence is not None else None
             if expected_runtime_token is None:
-                self._send("hello")
+                self._send("hello", schema=hello_schema, body=hello_body)
             else:
                 challenge = _new_message_id()
                 hello_id = self._send(
                     "hello",
+                    schema=hello_schema,
+                    body=hello_body,
                     extra={_RUNTIME_CHALLENGE_FIELD: challenge},
                 )
                 self._verify_runtime_ack(
@@ -111,6 +124,7 @@ class LinkClient:
         cls,
         peer_id: str,
         *,
+        presence: PeerPresence | None = None,
         endpoint: str | tuple[str, int] | None = None,
         runtime_file: str | None = None,
         executable: str | None = None,
@@ -139,7 +153,7 @@ class LinkClient:
         if endpoint is None:
             endpoint = os_environ_endpoint()
         if endpoint is not None:
-            return cls(endpoint, peer_id).connect(timeout=min(startup_timeout, 1.0))
+            return cls(endpoint, peer_id, presence=presence).connect(timeout=min(startup_timeout, 1.0))
         runtime_path = Path(runtime_file) if runtime_file is not None else default_runtime_file()
         if not runtime_path.is_absolute():
             raise LinkClientError("runtime_file must be an absolute path")
@@ -156,7 +170,7 @@ class LinkClient:
                     time.sleep(0.05)
                     continue
                 try:
-                    client = cls(manifest.endpoint, peer_id).connect(
+                    client = cls(manifest.endpoint, peer_id, presence=presence).connect(
                         timeout=0.5,
                         expected_runtime_token=manifest.token,
                     )
@@ -215,6 +229,7 @@ class LinkClient:
                 options = self._runtime_bootstrap
                 replacement = type(self).connect_or_start(
                     self.peer_id,
+                    presence=self.presence,
                     runtime_file=options.runtime_file,
                     executable=options.executable,
                     install_root=options.install_root,
