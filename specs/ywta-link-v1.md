@@ -882,7 +882,38 @@ deterministic compact JSON（sort keys、allow_nan=false）とする。
 DCCがFieldを直接表現できない場合は`approximated`または`unsupported`を返す。FOVだけを持つHostでは、
 ApertureとFocal lengthのどちらをAuthorityとしたかをAdapterのmapping profileで固定する。
 
-### 10.6 Morph Weight
+### 10.6 Playback
+
+`ywta.common.playback.v1`は、DCCの再生ボタン操作、停止位置、再生範囲、速度、方向、Loop意図を表す。
+再生中の毎Frame値を配信するためのAnimation Streamではなく、再生状態の変更を同期するためのCommon schemaである。
+
+#### v1 wire contract
+
+Playback payloadのtop-level Fieldは`state`、`position`、`playback_range`、`speed`、`direction`、
+`loop_mode`、`change_id`の7個に固定する。全Fieldを必須キーとし、`schema` discriminatorはpayloadへ含めず、
+EnvelopeまたはSync Contractのschema ID（`ywta.common.playback.v1`）で識別する。`position`は
+`ywta.common.time.v1`のsingle-mode object、`playback_range`は同schemaのrange-mode objectでなければならない。
+両者の`timebase`は分子・分母が完全一致しなければならず、`position`が範囲外でもpaused seekまたはpre-rollを
+表現できるため拒否しない。
+
+| Field | wire type | 意味・制約 |
+| --- | --- | --- |
+| `state` | string | `playing`または`paused`。`playing`は受信したpositionから再生を開始するstate transition、`paused`はその位置で停止する状態 |
+| `position` | object | single-modeのTime。再生位置またはpaused seek位置 |
+| `playback_range` | object | range-modeのTime。半開区間として扱う |
+| `speed` | number | finiteかつ正の再生倍率。bool、0、負数は不可。0をpauseの代用にしない |
+| `direction` | string | `forward`または`reverse` |
+| `loop_mode` | string | `once`、`loop`、`ping-pong`。Hostが表現できない場合はnegotiation/apply resultを`approximated`または`unsupported`とする |
+| `change_id` | string | 空白だけでないUTF-8文字列。Envelopeの`sender`由来の`origin_peer_id`と組み合わせてremote applyのecho再publishを判定するlogical key。Envelopeの`message_id`はtraceとtransport重複検出に使う |
+
+v1は`stop`をenumに含めない。Stop操作はHost間の意味差が大きいため、Adapterが`paused`と必要な別seekへ
+マッピングする。Scrub/seekは`paused`の`position`更新で表す。Playback codecは入力objectを検証してfrozen typed
+objectへ変換し、出力は未知Fieldを追加せず、UTF-8のdeterministic compact JSON（sort keys、allow_nan=false）とする。
+`change_id`はpayload必須のcontrol metadataであり、Contractの`field_subset`から除外されても全Adapterが消費して
+echo判定に使う。`field_subset`はDCCへ適用する意味Fieldだけを列挙する。Local operationが新たに発行した
+logical `change_id`は、同一origin／同一Session内で同じ値を再利用してはならない。
+
+### 10.7 Morph Weight
 
 `ywta.common.morph-weights.v1`は、Blendshape、Shape Key、Morph Targetの現在値を表す。
 
@@ -894,7 +925,7 @@ ApertureとFocal lengthのどちらをAuthorityとしたかをAdapterのmapping 
 v1はMorph形状、Driver Graph、Corrective relation、In-between定義を同期しない。Channelの対応は名前一致へ
 固定せず、Sync ContractのBindingで明示する。
 
-### 10.7 Motion Clip
+### 10.8 Motion Clip
 
 `ywta.common.motion-clip.v1`は、Transform ChannelとMorph Weight Channelの時間変化を表す。Clip ID、Time range、
 timebase、Channel binding、KeyまたはSample、Interpolation、Loop intentを持つ。
@@ -903,7 +934,7 @@ Motion同期はSkeleton階層、Rest pose、回転表現、補間、Retargetの�
 Cameraと現在Morph Weightの契約が実Hostで成立した後に導入する。異なるSkeleton間のRetargetはAdapterまたは
 別の明示的なmapping profileの責務とする。
 
-### 10.8 意味モデルの参照仕様
+### 10.9 意味モデルの参照仕様
 
 Common schemaの設計では、次の公開仕様を語彙とField粒度の参考にする。
 
@@ -1010,7 +1041,38 @@ Session終了時は、Binding、Authority、専用Subscription、revision cache�
 
 異常切断時は`require-explicit-commit`と同等にfail closedで扱う。自動的なCommitを行ってはならない。
 
-### 11.7 MessageとCLI
+### 11.7 Playback Sync Loop
+
+Playback操作も既存のsingle-writer Channel Authorityに従う。どのDCCからでも操作できるようにする場合は、
+現在Authority、次Authority、対象revisionを明示したAuthority handoffを先に完了させる。silent multi-writerや
+last-write-winsで再生状態を競合解決してはならない。
+Adapterはローカル再生ボタン操作を契機にAuthority handoffを自動要求してよいが、受理される前の操作を
+同期済みとして扱ってはならない。これにより、明示的なmulti-writerを導入せず、どのDCCからの操作も同じUIで開始できる。
+
+Envelopeの`message_id`はtransport eventの重複検出とtraceに使う。Playbackのlogical echo identityは
+Envelopeの`sender`由来の`origin_peer_id`と`change_id`の組であり、`message_id`だけで判定してはならない。
+Target Adapterはremote applyの`(origin_peer_id, change_id)`を有界cacheへ記憶し、同じ組を自DCCのlocal
+playback callbackへ関連付けるguardを持つ。callbackには両方の値を保持し、同じ組から発生したcallbackは、
+apply終了後に遅れて到着しても再publishしてはならない。
+
+`change_id`はlocal operationごとに新規発行し、同一origin／同一Session内でlocal logical IDを再利用してはならない。
+AdapterはPlaybackをremote applyしている間だけでなく、遅延callbackの判定に必要な期間、remote IDをcacheする。cacheはメモリを
+無制限に保持せず、有界FIFOまたは同等の有界集合とする。
+Echo GuardはSync Sessionごとに1個生成し、そのSessionがClosedまたはFailedになった時点で破棄する。Room単位や
+Client process単位でGuardを使い回し、別Sessionの合法な同一`(origin_peer_id, change_id)`を抑止してはならない。
+
+Authority handoffがpendingの間、local mutationを保留できるHostはacceptまで変更を適用・publishしない。
+保留できないHostはlast accepted Playback snapshotを保持し、handoffが拒否またはtimeoutになった場合は
+Main Thread上でそのsnapshotを復元する。pending中に追加されたlocal操作はlatestだけへcoalesceし、accept前に
+publishしてはならない。
+
+`playing`を受信したAdapterは、受信した`position`から`direction`と`speed`を使ってHostの再生stateへ遷移させる。
+`paused`またはseekを受信したときは、そのpositionで停止して再整合する。`loop_mode`は再生の意図であり、Hostが
+非対応の場合はnegotiation/apply resultで`approximated`または`unsupported`を返す。Loop再生中の毎Frame positionを
+publishして厳密なclock syncを実現すること、またそれをv1の正確性要件にすることは対象外である。Loopback遅延は
+イベント受信時のposition開始とpause/seek時の再整合で扱い、フレームごとのpublishは非推奨とする。
+
+### 11.8 MessageとCLI
 
 Session制御は通常の`publish`、`request`、`response`を使い、Payload schemaとして少なくとも次を定義する。
 
@@ -1212,11 +1274,12 @@ Presence、Publish、Target requestを実Hostで往復する。
 ### Phase 3: CommonとSync Contract基盤
 
 - Entity Reference、Transform、Time、Camera、Morph WeightのSchemaとGolden fixtureを確定する。
+- PlaybackのSchema、Golden fixture、single-writerの再生Sync Loop規則を確定する。
 - Contract validation、Negotiation、状態遷移、Authority、Preview、Commit、Cancel、Closeを実装する。
 - CLIへSessionの開始、一覧、検査、終了を追加する。
 
 完了条件: PythonとRustで同じContract fixtureを解釈でき、Broker単体TestでSession lifecycle、競合拒否、
-Broker再起動時のfail closedが成立する。
+Broker再起動時のfail closedが成立し、Playbackのchange ID/echo抑止規則をAdapter契約として検証できる。
 
 ### Phase 4: Camera実証
 

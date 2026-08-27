@@ -21,6 +21,16 @@ from .presence import (
     PeerPresence,
     PresenceValidationError,
 )
+from .playback import (
+    PLAYBACK_DIRECTION_VALUES,
+    PLAYBACK_FIELDS,
+    PLAYBACK_LOOP_MODE_VALUES,
+    PLAYBACK_SCHEMA,
+    PLAYBACK_STATE_VALUES,
+    Playback,
+    PlaybackEchoGuard,
+    PlaybackValidationError,
+)
 from .session import ChannelRevisionTracker, SessionState, SyncSession
 from .runtime import RuntimeError, RuntimeManifest, read_runtime_manifest, resolve_broker_executable
 from .time import RATE_FIELDS, TIME_FIELDS, TIME_SCHEMA, RationalRate, Time, TimeValidationError
@@ -63,6 +73,14 @@ __all__ = (
     "PRESENCE_MAX_STRING_LENGTH",
     "PeerPresence",
     "PresenceValidationError",
+    "PLAYBACK_DIRECTION_VALUES",
+    "PLAYBACK_FIELDS",
+    "PLAYBACK_LOOP_MODE_VALUES",
+    "PLAYBACK_SCHEMA",
+    "PLAYBACK_STATE_VALUES",
+    "Playback",
+    "PlaybackEchoGuard",
+    "PlaybackValidationError",
     "RATE_FIELDS",
     "RationalRate",
     "TIME_FIELDS",

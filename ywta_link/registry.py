@@ -22,6 +22,15 @@ COMMON_SCHEMAS = {
         "rotation_order",
     },
     "ywta.common.time.v1": {"time", "start", "end_exclusive", "timebase", "sample_rate"},
+    "ywta.common.playback.v1": {
+        "state",
+        "position",
+        "playback_range",
+        "speed",
+        "direction",
+        "loop_mode",
+        "change_id",
+    },
     "ywta.common.camera.v1": {
         "entity_ref",
         "transform",
@@ -93,6 +102,8 @@ CAPABILITY_IDS = frozenset(
         "time.apply.v1",
         "camera.read.v1",
         "camera.apply.v1",
+        "playback.read.v1",
+        "playback.apply.v1",
         "morph-weights.read.v1",
         "morph-weights.apply.v1",
         "motion.read.v1",
@@ -105,7 +116,9 @@ CAPABILITY_IDS = frozenset(
     }
 )
 
-MAPPING_PROFILE_IDS = frozenset({"identity.v1", "camera-default.v1", "morph-default.v1", "motion-default.v1"})
+MAPPING_PROFILE_IDS = frozenset(
+    {"identity.v1", "camera-default.v1", "playback-default.v1", "morph-default.v1", "motion-default.v1"}
+)
 
 
 def is_versioned_id(value: object) -> bool:
