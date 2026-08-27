@@ -9,13 +9,15 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::envelope::{Envelope, MessageType};
+use crate::envelope::{Envelope, MessageType, MONITOR_SNAPSHOT_SCHEMA};
 use crate::frame::{Frame, FrameError, FrameLimits};
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 const RUNTIME_CHALLENGE_FIELD: &str = "ywta_runtime_challenge";
 const RUNTIME_TOKEN_FIELD: &str = "ywta_runtime_token";
 const RUNTIME_BROKER_SENDER: &str = "ywta-link:broker";
+const MONITOR_PEER_PREFIX: &str = "ywta-link:monitor:";
 
 /// Broker内で接続を区別する短命ID。
 pub type ConnectionId = u64;
@@ -25,6 +27,34 @@ pub type ConnectionId = u64;
 pub struct Delivery {
     pub peer_id: String,
     pub frame: Frame,
+}
+
+/// CLI Monitorが取得するBrokerの接続状態。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BrokerSnapshot {
+    pub protocol_version: u16,
+    pub endpoint: String,
+    pub pid: u32,
+    pub peers: Vec<String>,
+    pub rooms: Vec<RoomSnapshot>,
+}
+
+/// Monitorへ返すRoomの一貫した状態。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoomSnapshot {
+    pub room: String,
+    pub members: Vec<String>,
+    pub subscriptions: Vec<SubscriptionSnapshot>,
+}
+
+/// Monitorへ返すTopic subscriptionの状態。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SubscriptionSnapshot {
+    pub topic: String,
+    pub members: Vec<String>,
 }
 
 /// Brokerがfail closedで返す失敗理由。
@@ -43,6 +73,9 @@ pub enum BrokerError {
     ResponseSenderMismatch(String),
     ResponseTargetMismatch(String),
     ResponseRoomMismatch(String),
+    MonitorNotAllowed,
+    InvalidMonitorRequest,
+    MonitorSerialization(serde_json::Error),
     Io(io::Error),
 }
 
@@ -93,6 +126,13 @@ impl fmt::Display for BrokerError {
                     "response room differs from request: {correlation_id}"
                 )
             }
+            Self::MonitorNotAllowed => {
+                formatter.write_str("monitor snapshot is restricted to monitor peers")
+            }
+            Self::InvalidMonitorRequest => formatter.write_str("invalid monitor snapshot request"),
+            Self::MonitorSerialization(error) => {
+                write!(formatter, "cannot encode monitor snapshot: {error}")
+            }
             Self::Io(error) => write!(formatter, "broker I/O error: {error}"),
         }
     }
@@ -102,6 +142,7 @@ impl Error for BrokerError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Frame(error) => Some(error),
+            Self::MonitorSerialization(error) => Some(error),
             Self::Io(error) => Some(error),
             _ => None,
         }
@@ -119,6 +160,7 @@ impl From<FrameError> for BrokerError {
 pub struct BrokerCore {
     connection_peers: HashMap<ConnectionId, String>,
     peer_connections: HashMap<String, ConnectionId>,
+    monitor_connections: HashSet<ConnectionId>,
     rooms: HashMap<String, HashSet<String>>,
     subscriptions: HashMap<(String, String), HashSet<String>>,
     pending_requests: HashMap<String, PendingRequest>,
@@ -138,16 +180,35 @@ impl BrokerCore {
         connection_id: ConnectionId,
         frame: Frame,
     ) -> Result<Vec<Delivery>, BrokerError> {
+        self.receive_with_monitor_authorization(connection_id, frame, false)
+    }
+
+    /// Server側でruntime challengeを検証済みのHelloを受け付ける。
+    pub fn receive_with_monitor_authorization(
+        &mut self,
+        connection_id: ConnectionId,
+        frame: Frame,
+        monitor_authorized: bool,
+    ) -> Result<Vec<Delivery>, BrokerError> {
         frame.envelope.validate().map_err(FrameError::from)?;
         let peer_id = match self.connection_peers.get(&connection_id) {
             Some(peer_id) => peer_id.clone(),
-            None => return self.register_hello(connection_id, frame),
+            None => return self.register_hello(connection_id, frame, monitor_authorized),
         };
         if matches!(frame.envelope.message_type, MessageType::Hello) {
             return Err(BrokerError::DuplicateHello);
         }
         if frame.envelope.sender != peer_id {
             return Err(BrokerError::SenderSpoofing);
+        }
+
+        if self.monitor_connections.contains(&connection_id)
+            && !matches!(
+                frame.envelope.message_type,
+                MessageType::MonitorSnapshotRequest
+            )
+        {
+            return Err(BrokerError::MonitorNotAllowed);
         }
 
         match frame.envelope.message_type {
@@ -185,6 +246,23 @@ impl BrokerCore {
             | MessageType::BinaryBegin
             | MessageType::BinaryChunk
             | MessageType::BinaryEnd => Ok(Vec::new()),
+            MessageType::MonitorSnapshotRequest => {
+                if !self.monitor_connections.contains(&connection_id) {
+                    return Err(BrokerError::MonitorNotAllowed);
+                }
+                if frame.envelope.schema.as_deref() != Some(MONITOR_SNAPSHOT_SCHEMA)
+                    || frame.envelope.room.is_some()
+                    || frame.envelope.target.is_some()
+                    || frame.envelope.topic.is_some()
+                    || frame.envelope.correlation_id.is_some()
+                    || frame.envelope.body.is_some()
+                    || !frame.body.is_empty()
+                {
+                    return Err(BrokerError::InvalidMonitorRequest);
+                }
+                Ok(Vec::new())
+            }
+            MessageType::MonitorSnapshotResponse => Err(BrokerError::InvalidMonitorRequest),
             MessageType::Hello => Err(BrokerError::DuplicateHello),
         }
     }
@@ -194,6 +272,7 @@ impl BrokerCore {
         let Some(peer_id) = self.connection_peers.remove(&connection_id) else {
             return;
         };
+        self.monitor_connections.remove(&connection_id);
         self.peer_connections.remove(&peer_id);
         self.rooms.retain(|_, members| {
             members.remove(&peer_id);
@@ -222,25 +301,93 @@ impl BrokerCore {
         self.connection_peers.contains_key(&connection_id)
     }
 
+    /// 接続がMonitor roleとして認証済みかを返す。
+    pub fn is_monitor_connection(&self, connection_id: ConnectionId) -> bool {
+        self.monitor_connections.contains(&connection_id)
+    }
+
     /// 未解決Request数を返す。
     pub fn pending_request_count(&self) -> usize {
         self.pending_requests.len()
+    }
+
+    /// Monitor用に接続中Peer、Room、Subscriptionを辞書順でSnapshot化する。
+    pub fn snapshot(&self) -> (Vec<String>, Vec<RoomSnapshot>) {
+        let mut peers = self
+            .peer_connections
+            .keys()
+            .filter(|peer_id| !is_monitor_peer(peer_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        peers.sort();
+
+        let mut rooms = self
+            .rooms
+            .iter()
+            .map(|(room, members)| {
+                let mut members = members
+                    .iter()
+                    .filter(|peer_id| !is_monitor_peer(peer_id))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                members.sort();
+                let mut subscriptions = self
+                    .subscriptions
+                    .iter()
+                    .filter_map(|((subscription_room, topic), members)| {
+                        if subscription_room != room {
+                            return None;
+                        }
+                        let mut members = members
+                            .iter()
+                            .filter(|peer_id| !is_monitor_peer(peer_id))
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        members.sort();
+                        (!members.is_empty()).then_some(SubscriptionSnapshot {
+                            topic: topic.clone(),
+                            members,
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                subscriptions.sort_by(|left, right| left.topic.cmp(&right.topic));
+                RoomSnapshot {
+                    room: room.clone(),
+                    members,
+                    subscriptions,
+                }
+            })
+            .filter(|room| !room.members.is_empty())
+            .collect::<Vec<_>>();
+        rooms.sort_by(|left, right| left.room.cmp(&right.room));
+        (peers, rooms)
     }
 
     fn register_hello(
         &mut self,
         connection_id: ConnectionId,
         frame: Frame,
+        monitor_authorized: bool,
     ) -> Result<Vec<Delivery>, BrokerError> {
         if !matches!(frame.envelope.message_type, MessageType::Hello) {
             return Err(BrokerError::HelloRequired);
         }
         let peer_id = frame.envelope.sender.clone();
+        let monitor_reserved = is_monitor_peer(&peer_id);
+        let monitor_peer = is_valid_monitor_peer(&peer_id);
+        if monitor_reserved
+            && (!monitor_peer || !monitor_authorized || !has_runtime_challenge(&frame))
+        {
+            return Err(BrokerError::MonitorNotAllowed);
+        }
         if self.peer_connections.contains_key(&peer_id) {
             return Err(BrokerError::DuplicatePeerId(peer_id));
         }
         self.connection_peers.insert(connection_id, peer_id.clone());
         self.peer_connections.insert(peer_id, connection_id);
+        if monitor_peer {
+            self.monitor_connections.insert(connection_id);
+        }
         Ok(Vec::new())
     }
 
@@ -379,6 +526,26 @@ fn required_room(frame: &Frame) -> Result<String, BrokerError> {
     })
 }
 
+fn is_monitor_peer(peer_id: &str) -> bool {
+    peer_id.starts_with(MONITOR_PEER_PREFIX)
+}
+
+fn is_valid_monitor_peer(peer_id: &str) -> bool {
+    peer_id
+        .strip_prefix(MONITOR_PEER_PREFIX)
+        .is_some_and(|suffix| !suffix.is_empty())
+}
+
+fn has_runtime_challenge(frame: &Frame) -> bool {
+    matches!(frame.envelope.message_type, MessageType::Hello)
+        && frame
+            .envelope
+            .extra
+            .get(RUNTIME_CHALLENGE_FIELD)
+            .and_then(Value::as_str)
+            .is_some_and(|challenge| !challenge.is_empty())
+}
+
 fn required_topic(frame: &Frame) -> Result<String, BrokerError> {
     frame.envelope.topic.clone().ok_or_else(|| {
         BrokerError::Frame(FrameError::from(crate::envelope::EnvelopeError::new(
@@ -437,6 +604,7 @@ pub struct BrokerServer {
     next_connection_id: ConnectionId,
     idle_since: Option<Instant>,
     runtime_token: Option<String>,
+    monitor_connections: HashSet<ConnectionId>,
 }
 
 impl BrokerServer {
@@ -457,6 +625,7 @@ impl BrokerServer {
             // 0秒は、接続がない状態で直ちに終了するという従来の意味を保つ。
             idle_since: Some(Instant::now()),
             runtime_token: None,
+            monitor_connections: HashSet::new(),
         })
     }
 
@@ -531,10 +700,32 @@ impl BrokerServer {
                 } if self.connections.contains_key(&connection_id) => {
                     let frame = *frame;
                     let runtime_ack = self.runtime_ack_for(&frame);
-                    match self.core.receive(connection_id, frame) {
+                    let monitor_hello_authorized = self.monitor_hello_is_authorized(&frame);
+                    let is_monitor_request = matches!(
+                        frame.envelope.message_type,
+                        MessageType::MonitorSnapshotRequest
+                    );
+                    let monitor_request_id =
+                        is_monitor_request.then(|| frame.envelope.message_id.clone());
+                    match self.core.receive_with_monitor_authorization(
+                        connection_id,
+                        frame,
+                        monitor_hello_authorized,
+                    ) {
                         Ok(deliveries) => {
+                            if monitor_hello_authorized {
+                                self.monitor_connections.insert(connection_id);
+                            }
                             if let Some(ack) = runtime_ack {
                                 self.send_to_connection(connection_id, ack);
+                            }
+                            if let Some(request_id) = monitor_request_id {
+                                match self.monitor_snapshot_response(connection_id, &request_id) {
+                                    Ok(response) => {
+                                        self.send_to_connection(connection_id, response)
+                                    }
+                                    Err(_) => self.close_connection(connection_id),
+                                }
                             }
                             self.dispatch(deliveries);
                         }
@@ -577,15 +768,68 @@ impl BrokerServer {
         }
     }
 
+    fn monitor_snapshot_response(
+        &self,
+        connection_id: ConnectionId,
+        request_id: &str,
+    ) -> Result<Frame, BrokerError> {
+        if !self.monitor_connections.contains(&connection_id)
+            || !self.core.is_monitor_connection(connection_id)
+        {
+            return Err(BrokerError::MonitorNotAllowed);
+        }
+        let peer_id = self
+            .core
+            .connection_peers
+            .get(&connection_id)
+            .ok_or(BrokerError::MonitorNotAllowed)?;
+        let (peers, rooms) = self.core.snapshot();
+        let endpoint = self.local_addr()?.to_string();
+        let snapshot = BrokerSnapshot {
+            protocol_version: 1,
+            endpoint,
+            pid: std::process::id(),
+            peers,
+            rooms,
+        };
+        let body = serde_json::to_value(snapshot).map_err(BrokerError::MonitorSerialization)?;
+        Frame::new(
+            Envelope {
+                protocol_version: 1,
+                message_id: format!("broker-monitor-{request_id}"),
+                message_type: MessageType::MonitorSnapshotResponse,
+                sender: RUNTIME_BROKER_SENDER.to_owned(),
+                room: None,
+                target: Some(peer_id.clone()),
+                topic: None,
+                correlation_id: Some(request_id.to_owned()),
+                schema: Some(MONITOR_SNAPSHOT_SCHEMA.to_owned()),
+                body: Some(body),
+                extra: Default::default(),
+            },
+            Vec::new(),
+        )
+        .map_err(BrokerError::Frame)
+    }
+
     fn close_connection(&mut self, connection_id: ConnectionId) {
         let Some(connection) = self.connections.remove(&connection_id) else {
             return;
         };
         let _ = connection.closer.shutdown(Shutdown::Both);
+        self.monitor_connections.remove(&connection_id);
         self.core.disconnect(connection_id);
         if self.connections.is_empty() {
             self.idle_since = Some(Instant::now());
         }
+    }
+
+    fn monitor_hello_is_authorized(&self, frame: &Frame) -> bool {
+        self.runtime_token
+            .as_deref()
+            .is_some_and(|token| !token.is_empty())
+            && is_valid_monitor_peer(&frame.envelope.sender)
+            && has_runtime_challenge(frame)
     }
 
     fn close_expired_handshakes_at(&mut self, now: Instant) {
@@ -821,6 +1065,37 @@ mod tests {
         frame(sender, MessageType::Hello, None, None, None, &[])
     }
 
+    fn monitor_hello(sender: &str, challenge: Option<&str>) -> Frame {
+        let mut frame = hello(sender);
+        if let Some(challenge) = challenge {
+            frame.envelope.extra.insert(
+                RUNTIME_CHALLENGE_FIELD.to_owned(),
+                Value::String(challenge.to_owned()),
+            );
+        }
+        frame
+    }
+
+    fn monitor_request(sender: &str) -> Frame {
+        Frame::new(
+            Envelope {
+                protocol_version: 1,
+                message_id: format!("{sender}-monitor-request"),
+                message_type: MessageType::MonitorSnapshotRequest,
+                sender: sender.to_owned(),
+                room: None,
+                target: None,
+                topic: None,
+                correlation_id: None,
+                schema: Some(MONITOR_SNAPSHOT_SCHEMA.to_owned()),
+                body: None,
+                extra: Default::default(),
+            },
+            Vec::new(),
+        )
+        .expect("monitor request must be valid")
+    }
+
     fn join(sender: &str, room: &str) -> Frame {
         frame(sender, MessageType::Join, Some(room), None, None, &[])
     }
@@ -864,6 +1139,70 @@ mod tests {
             core.receive(1, join("maya:spoof", "room-a")),
             Err(BrokerError::SenderSpoofing)
         ));
+    }
+
+    #[test]
+    fn monitor_role_requires_challenge_and_rejects_regular_routing() {
+        let mut core = BrokerCore::default();
+        let monitor_id = "ywta-link:monitor:one";
+        assert!(matches!(
+            core.receive(1, monitor_hello(monitor_id, Some("challenge"))),
+            Err(BrokerError::MonitorNotAllowed)
+        ));
+        assert!(matches!(
+            core.receive_with_monitor_authorization(
+                1,
+                monitor_hello("ywta-link:monitor:", Some("challenge")),
+                true
+            ),
+            Err(BrokerError::MonitorNotAllowed)
+        ));
+        assert!(matches!(
+            core.receive_with_monitor_authorization(1, monitor_hello(monitor_id, None), true),
+            Err(BrokerError::MonitorNotAllowed)
+        ));
+
+        core.receive_with_monitor_authorization(
+            1,
+            monitor_hello(monitor_id, Some("challenge")),
+            true,
+        )
+        .expect("authenticated monitor must register");
+        assert!(core.is_monitor_connection(1));
+        core.receive(2, hello("maya:two"))
+            .expect("regular peer must register");
+        assert!(core.receive(1, monitor_request(monitor_id)).is_ok());
+        let mut malformed_request = monitor_request(monitor_id);
+        malformed_request.body = vec![1];
+        assert!(matches!(
+            core.receive(1, malformed_request),
+            Err(BrokerError::InvalidMonitorRequest)
+        ));
+        assert!(matches!(
+            core.receive(1, join(monitor_id, "room-a")),
+            Err(BrokerError::MonitorNotAllowed)
+        ));
+        assert!(matches!(
+            core.receive(2, monitor_request("maya:two")),
+            Err(BrokerError::MonitorNotAllowed)
+        ));
+        core.disconnect(1);
+        assert!(!core.is_monitor_connection(1));
+    }
+
+    #[test]
+    fn server_requires_runtime_token_for_monitor_hello_authorization() {
+        let mut server = BrokerServer::bind(BrokerConfig::default()).expect("server must bind");
+        let monitor_id = "ywta-link:monitor:one";
+        let monitor_frame = monitor_hello(monitor_id, Some("challenge"));
+        assert!(!server.monitor_hello_is_authorized(&monitor_frame));
+
+        server.set_runtime_token("runtime-token".to_owned());
+        assert!(server.monitor_hello_is_authorized(&monitor_frame));
+        assert!(!server.monitor_hello_is_authorized(&hello("maya:two")));
+        assert!(!server.monitor_hello_is_authorized(&monitor_hello(monitor_id, None)));
+        server.set_runtime_token(String::new());
+        assert!(!server.monitor_hello_is_authorized(&monitor_frame));
     }
 
     #[test]

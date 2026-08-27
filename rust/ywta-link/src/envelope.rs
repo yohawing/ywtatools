@@ -37,7 +37,14 @@ pub enum MessageType {
     BinaryChunk,
     #[serde(rename = "binary.end")]
     BinaryEnd,
+    #[serde(rename = "monitor.snapshot.request")]
+    MonitorSnapshotRequest,
+    #[serde(rename = "monitor.snapshot.response")]
+    MonitorSnapshotResponse,
 }
+
+/// CLI Monitor snapshotのprotocol schema。
+pub const MONITOR_SNAPSHOT_SCHEMA: &str = "ywta.monitor.snapshot.v1";
 
 /// JSONの共通Headerを表すEnvelope。
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -135,15 +142,27 @@ impl Envelope {
         }
         if matches!(
             self.message_type,
-            MessageType::Request | MessageType::Response | MessageType::Error
+            MessageType::Request
+                | MessageType::Response
+                | MessageType::Error
+                | MessageType::MonitorSnapshotResponse
         ) {
             require_option(&self.target, "target")?;
         }
         if matches!(
             self.message_type,
-            MessageType::Response | MessageType::Error
+            MessageType::Response | MessageType::Error | MessageType::MonitorSnapshotResponse
         ) {
             require_option(&self.correlation_id, "correlation_id")?;
+        }
+        if matches!(
+            self.message_type,
+            MessageType::MonitorSnapshotRequest | MessageType::MonitorSnapshotResponse
+        ) && self.schema.as_deref() != Some(MONITOR_SNAPSHOT_SCHEMA)
+        {
+            return Err(EnvelopeError::new(
+                "monitor snapshot messages require the v1 schema",
+            ));
         }
         if let Some(schema) = &self.schema {
             if !is_versioned_schema_identifier(schema) {

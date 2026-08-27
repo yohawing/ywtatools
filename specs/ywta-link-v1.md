@@ -155,6 +155,30 @@ BrokerはDCC APIを読み込まず、MessageのDCC固有Payloadを解釈しな�
 
 MonitorはGUIを持たず、Brokerと同じ `ywta-link.exe` のsubcommandとして提供する。
 
+v1の最小実装では、次の3つのsnapshot commandを提供する。
+
+```powershell
+ywta-link status [--json] [--runtime-file <absolute-path>]
+ywta-link peers  [--json] [--runtime-file <absolute-path>]
+ywta-link rooms  [--json] [--runtime-file <absolute-path>]
+```
+
+`--runtime-file`を省略した場合は、`%LOCALAPPDATA%\YWTA\Link\runtime\v1\broker.json`を読む。
+Monitorはruntime manifestのloopback endpointへ外向きTCP接続し、manifest tokenを含む一回限りの
+hello challengeを検証した後、versionedな`monitor.snapshot.request`を送る。Brokerは
+`monitor.snapshot.response`で、Broker endpoint、PID、protocol version、接続中Peer ID、Roomのmember、
+Topic Subscriptionを返す。Monitor自身のPeer IDはsnapshotから除外する。Binary bodyやMessage履歴は返さない。
+
+既定の人間向け出力はstatusのBroker概要、peersのPeer ID一覧、roomsのRoom/member/Topic一覧とする。
+`--json`では機械可読なJSONを返し、すべての一覧は辞書順で安定させる。未知、重複、引数値の欠落、
+相対runtime path、malformed/stale manifest、token不一致、非loopback endpoint、Broker不在はfail closedとする。
+
+`monitor.snapshot.request`と`monitor.snapshot.response`は`ywta.monitor.snapshot.v1` schemaを必須とする
+v1の小さなprotocol拡張であり、通常のRoom/Topic/Target routingへ流さない。Monitor requestは予約した
+`ywta-link:monitor:` Peer IDだけが、非空challenge付きHelloと有効なruntime tokenによる専用接続で送信できる。
+Monitor接続はsnapshot request以外のrouting操作を行えず、通常Peerはsnapshot requestを送信できない。
+Brokerはruntime manifestを有効にした場合だけresponseを返す。
+
 想定Commandは次のとおり。
 
 ```powershell

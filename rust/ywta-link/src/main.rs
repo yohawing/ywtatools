@@ -1,4 +1,4 @@
-//! `ywta-link serve` の最小CLI入口。
+//! `ywta-link` BrokerとCLI Monitorの入口。
 
 use std::env;
 use std::net::SocketAddr;
@@ -7,6 +7,7 @@ use std::process;
 use std::time::Duration;
 
 use ywta_link::broker::{BrokerConfig, BrokerServer};
+use ywta_link::monitor;
 use ywta_link::runtime::{RuntimeLease, RuntimeManifest};
 
 fn main() {
@@ -21,14 +22,39 @@ fn run(arguments: impl Iterator<Item = String>) -> Result<(), String> {
     let Some(command) = arguments.next() else {
         return Err(usage());
     };
+    let remaining = arguments.collect::<Vec<_>>();
     if command == "--help" || command == "-h" {
+        if !remaining.is_empty() {
+            return Err(usage());
+        }
         println!("{}", usage());
         return Ok(());
     }
-    if command != "serve" {
-        return Err(usage());
+    match command.as_str() {
+        "serve" => {
+            if remaining.len() == 1 && matches!(remaining[0].as_str(), "--help" | "-h") {
+                println!("{}", usage());
+                return Ok(());
+            }
+            run_serve(remaining.into_iter())
+        }
+        "status" | "peers" | "rooms" => {
+            if remaining.len() == 1 && matches!(remaining[0].as_str(), "--help" | "-h") {
+                println!("{}", monitor::usage());
+                return Ok(());
+            }
+            monitor::run_cli(&command, &remaining)
+                .map_err(|error| error.to_string())
+                .map(|output| {
+                    println!("{output}");
+                })
+        }
+        _ => Err(usage()),
     }
+}
 
+fn run_serve(arguments: impl Iterator<Item = String>) -> Result<(), String> {
+    let mut arguments = arguments.peekable();
     let mut config = BrokerConfig::default();
     let mut runtime_file = None;
     while let Some(option) = arguments.next() {
@@ -60,10 +86,6 @@ fn run(arguments: impl Iterator<Item = String>) -> Result<(), String> {
                 }
                 runtime_file = Some(path);
             }
-            "--help" | "-h" => {
-                println!("{}", usage());
-                return Ok(());
-            }
             _ => return Err(usage()),
         }
     }
@@ -83,6 +105,34 @@ fn run(arguments: impl Iterator<Item = String>) -> Result<(), String> {
 }
 
 fn usage() -> String {
-    "usage: ywta-link serve [--bind 127.0.0.1:0] [--idle-timeout seconds] [--runtime-file absolute-path]"
-        .to_owned()
+    "usage: ywta-link <serve|status|peers|rooms> [options]".to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn monitor_help_only_succeeds_for_the_exact_help_argument() {
+        assert!(
+            run(["status".to_owned(), "--bad".to_owned(), "--help".to_owned()].into_iter())
+                .is_err()
+        );
+        assert!(run(["status".to_owned(), "--help".to_owned()].into_iter()).is_ok());
+        assert!(run([
+            "status".to_owned(),
+            "--help".to_owned(),
+            "--json".to_owned()
+        ]
+        .into_iter())
+        .is_err());
+        assert!(
+            run(["serve".to_owned(), "--bad".to_owned(), "--help".to_owned()].into_iter()).is_err()
+        );
+        assert!(
+            run(["serve".to_owned(), "--help".to_owned(), "--json".to_owned()].into_iter())
+                .is_err()
+        );
+        assert!(run(["--help".to_owned(), "extra".to_owned()].into_iter()).is_err());
+    }
 }
