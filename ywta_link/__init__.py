@@ -23,6 +23,7 @@ from .presence import (
 )
 from .session import ChannelRevisionTracker, SessionState, SyncSession
 from .runtime import RuntimeError, RuntimeManifest, read_runtime_manifest, resolve_broker_executable
+from .time import RATE_FIELDS, TIME_FIELDS, TIME_SCHEMA, RationalRate, Time, TimeValidationError
 
 __all__ = (
     "ChannelRevisionTracker",
@@ -50,6 +51,12 @@ __all__ = (
     "PRESENCE_MAX_STRING_LENGTH",
     "PeerPresence",
     "PresenceValidationError",
+    "RATE_FIELDS",
+    "RationalRate",
+    "TIME_FIELDS",
+    "TIME_SCHEMA",
+    "Time",
+    "TimeValidationError",
     "NegotiationResult",
     "SessionState",
     "SyncChannel",

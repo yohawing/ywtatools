@@ -12,9 +12,14 @@
     "coordinate_system": "world"
   },
   "time": {
-    "value": 1001,
-    "rate_num": 24000,
-    "rate_den": 1001
+    "time": 1001,
+    "start": null,
+    "end_exclusive": null,
+    "timebase": {
+      "rate_num": 24000,
+      "rate_den": 1001
+    },
+    "sample_rate": null
   },
   "projection": "perspective",
   "focal_length": 50.0,

@@ -1,0 +1,10 @@
+{
+  "time": null,
+  "start": -24000,
+  "end_exclusive": 24000,
+  "timebase": {
+    "rate_num": 24000,
+    "rate_den": 1001
+  },
+  "sample_rate": null
+}

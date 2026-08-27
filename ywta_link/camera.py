@@ -8,8 +8,10 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from .entity_ref import EntityReference
 from .errors import ValidationError
 from .registry import DEFAULT_REGISTRY
+from .time import Time
 
 CAMERA_SCHEMA = "ywta.common.camera.v1"
 CAMERA_FIELDS = frozenset(DEFAULT_REGISTRY.require_schema(CAMERA_SCHEMA))
@@ -152,13 +154,13 @@ def _optional_enum(value: object, allowed: frozenset[str], field_name: str) -> s
 class Camera:
     """DCC非依存なCamera Common v1 payload。
 
-    `entity_ref`、`transform`、`time`は将来のCommon型を先取りせず、JSON objectとして保持する。
-    構築時に再帰コピーするため、元入力やencode結果の変更でCameraは変化しない。
+    `entity_ref`と`time`は確定済みCommon型へ変換し、`transform`はJSON objectとして保持する。
+    構築時にimmutable化するため、元入力やencode結果の変更でCameraは変化しない。
     """
 
-    entity_ref: Mapping[str, Any]
+    entity_ref: EntityReference | Mapping[str, Any]
     transform: Mapping[str, Any]
-    time: Mapping[str, Any]
+    time: Time | Mapping[str, Any]
     projection: str
     focal_length: float | None
     horizontal_aperture: float | None
@@ -175,9 +177,19 @@ class Camera:
     def __post_init__(self) -> None:
         """直接構築でもwire contractの不変条件を適用する。"""
 
-        for field_name in ("entity_ref", "transform", "time"):
-            value = _require_object(getattr(self, field_name), field_name)
-            object.__setattr__(self, field_name, _freeze_json(value, field_name))
+        try:
+            entity_ref = (
+                self.entity_ref
+                if isinstance(self.entity_ref, EntityReference)
+                else EntityReference.from_dict(_require_object(self.entity_ref, "entity_ref"))
+            )
+            time = self.time if isinstance(self.time, Time) else Time.from_dict(_require_object(self.time, "time"))
+        except ValidationError as exc:
+            raise CameraValidationError(f"invalid composed Common payload: {exc}") from exc
+        object.__setattr__(self, "entity_ref", entity_ref)
+        object.__setattr__(self, "time", time)
+        transform = _require_object(self.transform, "transform")
+        object.__setattr__(self, "transform", _freeze_json(transform, "transform"))
 
         if not isinstance(self.projection, str) or self.projection not in {"perspective", "orthographic"}:
             raise CameraValidationError(f"unsupported projection: {self.projection!r}")
@@ -250,9 +262,9 @@ class Camera:
         """Cameraを新しいJSON-compatible dictへ変換する。"""
 
         return {
-            "entity_ref": _thaw_json(self.entity_ref),
+            "entity_ref": self.entity_ref.to_dict(),
             "transform": _thaw_json(self.transform),
-            "time": _thaw_json(self.time),
+            "time": self.time.to_dict(),
             "projection": self.projection,
             "focal_length": self.focal_length,
             "horizontal_aperture": self.horizontal_aperture,

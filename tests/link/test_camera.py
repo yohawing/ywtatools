@@ -88,7 +88,7 @@ class CameraTest(unittest.TestCase):
 
         for invalid_nested in (math.inf, "\ud800"):
             payload = json.loads(_fixture())
-            payload["entity_ref"]["invalid"] = invalid_nested
+            payload["transform"]["invalid"] = invalid_nested
             with self.subTest(invalid_nested=repr(invalid_nested)):
                 with self.assertRaises(CameraValidationError):
                     Camera.from_dict(payload)
@@ -171,16 +171,29 @@ class CameraTest(unittest.TestCase):
         """Common objectを深くコピーし、外部mutable stateを保持しない。"""
 
         payload = json.loads(_fixture())
-        payload["entity_ref"]["metadata"] = {"tags": ["hero"]}
+        payload["transform"]["metadata"] = {"tags": ["hero"]}
         camera = Camera.from_dict(payload)
-        payload["entity_ref"]["metadata"]["tags"].append("changed-input")
-        self.assertEqual(camera.entity_ref["metadata"]["tags"], ("hero",))
+        payload["transform"]["metadata"]["tags"].append("changed-input")
+        self.assertEqual(camera.transform["metadata"]["tags"], ("hero",))
 
         output = camera.to_dict()
-        output["entity_ref"]["metadata"]["tags"].append("changed-output")
-        self.assertEqual(camera.entity_ref["metadata"]["tags"], ("hero",))
+        output["transform"]["metadata"]["tags"].append("changed-output")
+        self.assertEqual(camera.transform["metadata"]["tags"], ("hero",))
         with self.assertRaises(TypeError):
-            camera.entity_ref["metadata"] = {}
+            camera.transform["metadata"] = {}
+
+    def test_composed_entity_reference_and_time_are_validated(self) -> None:
+        """確定済みCommon型をCamera境界でも検証する。"""
+
+        payload = json.loads(_fixture())
+        del payload["entity_ref"]["kind"]
+        with self.assertRaises(CameraValidationError):
+            Camera.from_dict(payload)
+
+        payload = json.loads(_fixture())
+        payload["time"]["time"] = 2**53
+        with self.assertRaises(CameraValidationError):
+            Camera.from_dict(payload)
 
 
 if __name__ == "__main__":

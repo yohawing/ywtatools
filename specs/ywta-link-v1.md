@@ -760,12 +760,28 @@ timebaseを表現し、29.97 fpsなどを丸めない。
 
 ```json
 {
-  "start": { "value": 1001, "rate_num": 24000, "rate_den": 1001 },
-  "end_exclusive": { "value": 1101, "rate_num": 24000, "rate_den": 1001 }
+  "time": null,
+  "start": 1001,
+  "end_exclusive": 1101,
+  "timebase": { "rate_num": 24000, "rate_den": 1001 },
+  "sample_rate": null
 }
 ```
 
 範囲の終端はexclusiveとする。DCC側のinclusiveなPlayback rangeへの変換はAdapterが行う。
+Time payloadのtop-level Fieldは`time`、`start`、`end_exclusive`、`timebase`、`sample_rate`の5個に固定し、
+すべて必須キーとする。単一時刻では`time`だけを整数にして`start`と`end_exclusive`を`null`、範囲では
+`time`を`null`にして`start`と`end_exclusive`を整数にする。範囲は`start < end_exclusive`の半開区間とする。
+tickはJavaScript Clientでも丸めず扱える±(2^53-1)のJSON safe integerに限定する。
+`timebase`は必須の`rate_num`/`rate_den` object、`sample_rate`は同じ形式または`null`である。rate objectは
+2 Fieldだけを必須とし、未知Fieldを拒否する。
+各rateの分子・分母は1以上2^31-1以下の既約整数とし、非既約の入力を正規化してはならない。
+同じ範囲の両端が同じrateを持つため、各pointへ`rate_num`と`rate_den`を重複して埋め込まず、payloadの
+`timebase`へ一度だけ置く。`sample_rate`はtimebaseとは独立したsampling cadenceを明示する場合に指定し、
+省略時は`null`とする。同じrateを明示することも許可する。
+
+本文書はDraftであり、このtyped codecとGolden fixtureを`ywta.common.time.v1`の最初のcanonical wire contractとする。
+先行する実装・release済みAdapterはなく、以前の説明用point objectはfreeze前にこの形式へ置き換えた。
 
 ### 10.5 Camera
 
@@ -784,9 +800,10 @@ timebaseを表現し、29.97 fpsなどを丸めない。
 
 Camera payloadのtop-level Fieldは次の15個に固定する。全Fieldを必須キーとし、projectionで適用しない
 値だけを`null`にする。`schema` discriminatorはpayloadへ含めず、EnvelopeまたはSync Contractのschema ID
-（`ywta.common.camera.v1`）で識別する。`entity_ref`、`transform`、`time`は対応するCommon型が確定するまで
-JSON objectとして保持し、object内の未知Fieldを含むJSON-compatibleな値を転送できる。ただし数値は有限値に
-限り、Adapterは未定義の意味を推測してはならない。
+（`ywta.common.camera.v1`）で識別する。`entity_ref`と`time`は、それぞれ確定済みの
+`ywta.common.entity-ref.v1`と`ywta.common.time.v1`に適合しなければならない。`transform`は対応するCommon型が
+確定するまでJSON objectとして保持し、object内の未知Fieldを含むJSON-compatibleな値を転送できる。ただし数値は
+有限値に限り、Adapterは未定義の意味を推測してはならない。
 
 | Field | wire type | 意味・制約 |
 | --- | --- | --- |
