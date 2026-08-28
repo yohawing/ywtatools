@@ -175,13 +175,21 @@ def compose_playback_session(
     host_factory: Callable[[Callable[[PlaybackHostEvent], bool]], object],
     lifecycle_factory: Callable[[object, PlaybackSyncRuntime], object],
     client_factory: Callable[[PlaybackSessionConfig], LinkClient] | None = None,
+    *,
+    authority_tracker: AuthorityHandoffTracker | None = None,
 ) -> PlaybackSession:
-    """専用Client、Host、Runtime、Lifecycleを未開始Sessionとして構成する。"""
+    """専用Client、Host、Runtime、Lifecycleを未開始Sessionとして構成する。
+
+    ``authority_tracker`` を指定した場合は、bootstrapでsnapshot照合済みの
+    trackerをそのままRuntimeへ引き渡す。
+    """
 
     if not isinstance(config, PlaybackSessionConfig):
         raise PlaybackSessionError("config must be a PlaybackSessionConfig")
     if not callable(host_factory) or not callable(lifecycle_factory):
         raise PlaybackSessionError("host_factory and lifecycle_factory must be callable")
+    if authority_tracker is not None:
+        _validate_prebuilt_tracker(authority_tracker, config)
     factory = _default_client_factory if client_factory is None else client_factory
     if not callable(factory):
         raise PlaybackSessionError("client_factory must be callable")
@@ -206,7 +214,11 @@ def compose_playback_session(
             host_unit_rate=config.host_unit_rate,
             time_unit=config.time_unit,
         )
-        tracker = AuthorityHandoffTracker({config.channel_id: config.initial_authority}, config.session_id)
+        tracker = (
+            authority_tracker
+            if authority_tracker is not None
+            else AuthorityHandoffTracker({config.channel_id: config.initial_authority}, config.session_id)
+        )
         authority_transport = AuthorityHandoffTransport(client, config.room, tracker)
         relay = _HostRelay()
         host = host_factory(relay)
@@ -300,6 +312,24 @@ def _validate_client_identity(client: object, expected_peer_id: str) -> None:
     _identifier(client_peer_id, "client.peer_id")
     if client_peer_id != expected_peer_id:
         raise PlaybackSessionError("client.peer_id must match config.peer_id")
+
+
+def _validate_prebuilt_tracker(
+    tracker: AuthorityHandoffTracker,
+    config: PlaybackSessionConfig,
+) -> None:
+    """既存TrackerのSession、Channel、現在AuthorityをConfigと照合する。"""
+
+    if not isinstance(tracker, AuthorityHandoffTracker):
+        raise PlaybackSessionError("authority_tracker must be exactly an AuthorityHandoffTracker")
+    if tracker.session_id != config.session_id:
+        raise PlaybackSessionError("authority_tracker session does not match config.session_id")
+    try:
+        state = tracker.state_for(config.channel_id)
+    except Exception as error:
+        raise PlaybackSessionError(f"authority_tracker channel is invalid: {_error_text(error)}") from error
+    if state.authority != config.initial_authority:
+        raise PlaybackSessionError("authority_tracker authority does not match config.initial_authority")
 
 
 def _require_methods(value: object, names: tuple[str, ...], name: str) -> None:

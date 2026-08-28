@@ -75,6 +75,19 @@ from .playback_handoff import (
     PlaybackHandoffStatus,
     PlaybackHandoffThreadError,
 )
+from .playback_bootstrap import (
+    ACCEPTED_FIELDS,
+    BROKER_PEER_ID,
+    PLAYBACK_SCHEMA as PLAYBACK_BOOTSTRAP_SCHEMA,
+    PLAYBACK_SLOT_METADATA_FIELDS,
+    SLOT_DESCRIPTOR_FIELDS,
+    SLOT_DESCRIPTOR_SCHEMA,
+    SLOT_JOIN_FIELDS,
+    SLOT_JOIN_SCHEMA,
+    PlaybackBootstrapConfig,
+    PlaybackBootstrapError,
+    bootstrap_playback_session,
+)
 from .playback_mapping import DEFAULT_REQUIRED_EXACT_FIELDS, PlaybackTimeMapper, PlaybackTimeMappingError
 from .playback_controller import (
     AuthorityProvider,
@@ -182,6 +195,17 @@ __all__ = (
     "PlaybackHandoffErrorInfo",
     "PlaybackHandoffStatus",
     "PlaybackHandoffThreadError",
+    "ACCEPTED_FIELDS",
+    "BROKER_PEER_ID",
+    "PLAYBACK_BOOTSTRAP_SCHEMA",
+    "PLAYBACK_SLOT_METADATA_FIELDS",
+    "SLOT_DESCRIPTOR_FIELDS",
+    "SLOT_DESCRIPTOR_SCHEMA",
+    "SLOT_JOIN_FIELDS",
+    "SLOT_JOIN_SCHEMA",
+    "PlaybackBootstrapConfig",
+    "PlaybackBootstrapError",
+    "bootstrap_playback_session",
     "DEFAULT_REQUIRED_EXACT_FIELDS",
     "PlaybackTimeMapper",
     "PlaybackTimeMappingError",

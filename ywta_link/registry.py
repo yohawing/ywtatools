@@ -128,6 +128,10 @@ SCHEMA_FIELDS = MappingProxyType(
         ),
         "ywta.sync.authority.snapshot.request.v1": frozenset({"session_id", "channel_id"}),
         "ywta.sync.authority.snapshot.v1": frozenset({"session_id", "channel_id", "authority", "authority_revision"}),
+        "ywta.session.slot.join.v1": frozenset({"slot_id", "metadata"}),
+        "ywta.session.slot.descriptor.v1": frozenset(
+            {"slot_id", "session_id", "initial_authority", "metadata", "created", "state_peer"}
+        ),
     }
 )
 SCHEMA_IDS = frozenset(SCHEMA_FIELDS)

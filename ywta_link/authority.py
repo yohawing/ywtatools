@@ -401,8 +401,18 @@ class AuthorityHandoffTracker:
     acceptはauthorityとrevisionの確認後にauthority、revision、pendingを同一操作で更新する。
     """
 
-    def __init__(self, contract: SyncContract | Mapping[str, str], session_id: str | None = None) -> None:
-        """Sync ContractまたはChannel/Authority対応からtrackerを作成する。"""
+    def __init__(
+        self,
+        contract: SyncContract | Mapping[str, str],
+        session_id: str | None = None,
+        *,
+        initial_authority_revisions: Mapping[str, int] | None = None,
+    ) -> None:
+        """Sync ContractまたはChannel/Authority対応からtrackerを作成する。
+
+        snapshotから再開する場合は、Channelごとのauthority revisionを
+        ``initial_authority_revisions`` に渡す。
+        """
 
         if isinstance(contract, SyncContract):
             self.session_id = contract.session_id
@@ -412,9 +422,27 @@ class AuthorityHandoffTracker:
             if session_id is None:
                 raise AuthorityValidationError("session_id is required for a channel authority mapping")
             self.session_id = _identifier(session_id, "session_id")
-        self._content_tracker = ChannelRevisionTracker(contract)
+        self._content_tracker = ChannelRevisionTracker(
+            contract,
+            initial_authority_revisions=initial_authority_revisions,
+        )
         self._lock = self._content_tracker.lock
         self._pending: dict[str, PendingHandoff] = {}
+
+    @classmethod
+    def from_snapshot(
+        cls,
+        snapshot: AuthoritySnapshot,
+    ) -> "AuthorityHandoffTracker":
+        """単一ChannelのAuthority snapshotを初期状態としてtrackerを作る。"""
+
+        if not isinstance(snapshot, AuthoritySnapshot):
+            raise AuthorityValidationError("snapshot must be an AuthoritySnapshot")
+        return cls(
+            {snapshot.channel_id: snapshot.authority},
+            snapshot.session_id,
+            initial_authority_revisions={snapshot.channel_id: snapshot.authority_revision},
+        )
 
     def state_for(self, channel_id: str) -> AuthorityState:
         """Channelの現在Authorityとauthority revisionを返す。"""

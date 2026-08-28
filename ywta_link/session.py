@@ -56,8 +56,18 @@ class SyncSession:
 class ChannelRevisionTracker:
     """Authorityとcontent revisionの検証を同じlockで一元管理する。"""
 
-    def __init__(self, contract: SyncContract | Mapping[str, str]) -> None:
-        """ContractまたはChannelとAuthorityの対応から追跡器を作る。"""
+    def __init__(
+        self,
+        contract: SyncContract | Mapping[str, str],
+        *,
+        initial_authority_revisions: Mapping[str, int] | None = None,
+    ) -> None:
+        """ContractまたはChannelとAuthorityの対応から追跡器を作る。
+
+        ``initial_authority_revisions`` は、snapshotで得たcontrol-plane
+        revisionを構築時に注入するためのものであり、Channel keyの過不足を
+        許可しない。
+        """
 
         if isinstance(contract, SyncContract):
             self._authorities = {channel.channel_id: channel.authority for channel in contract.channels}
@@ -66,14 +76,16 @@ class ChannelRevisionTracker:
                 raise ValidationError("contract must be a SyncContract or channel authority mapping")
             self._authorities = dict(contract)
         if not self._authorities or any(
-            not _identifier(channel_id, "channel_id")
-            or not _identifier(authority, "authority")
+            not _identifier(channel_id, "channel_id") or not _identifier(authority, "authority")
             for channel_id, authority in self._authorities.items()
         ):
             raise ValidationError("channel authorities must be non-empty strings")
         self._lock = threading.RLock()
         self._revisions: dict[str, int] = {}
-        self._authority_revisions = {channel_id: 0 for channel_id in self._authorities}
+        self._authority_revisions = _initial_revisions(
+            self._authorities,
+            initial_authority_revisions,
+        )
 
     @property
     def lock(self) -> Any:
@@ -190,3 +202,18 @@ def _non_negative_revision(value: object, field_name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValidationError(f"{field_name} must be a non-negative integer")
     return value
+
+
+def _initial_revisions(
+    authorities: Mapping[str, str],
+    revisions: Mapping[str, int] | None,
+) -> dict[str, int]:
+    """Channel keyを厳密に照合した初期authority revisionを作る。"""
+
+    if revisions is None:
+        return {channel_id: 0 for channel_id in authorities}
+    if not isinstance(revisions, Mapping):
+        raise ValidationError("initial_authority_revisions must be a mapping")
+    if set(revisions) != set(authorities):
+        raise ValidationError("initial_authority_revisions must contain exactly the contract channels")
+    return {channel_id: _non_negative_revision(revisions[channel_id], "authority_revision") for channel_id in authorities}

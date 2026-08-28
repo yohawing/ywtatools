@@ -18,6 +18,8 @@ from ywta_link import (
     AuthorityHandoffRejected,
     AuthorityHandoffRequest,
     AuthorityHandoffTracker,
+    AuthoritySnapshot,
+    AuthorityState,
     AuthorityValidationError,
 )
 from ywta_link.errors import AuthorityViolation, StaleRevision
@@ -149,6 +151,14 @@ class AuthorityTrackerTest(unittest.TestCase):
 
         self.assertEqual(self.tracker.state_for("timeline").revision, 0)
         self.assertEqual(self.tracker.state_for("camera").revision, 0)
+
+    def test_snapshot_constructor_seeds_authority_and_revision(self) -> None:
+        snapshot = AuthoritySnapshot("session-snapshot", "timeline", "maya:peer-002", 7)
+        tracker = AuthorityHandoffTracker.from_snapshot(snapshot)
+        self.assertEqual(
+            tracker.state_for("timeline"),
+            AuthorityState("maya:peer-002", 7),
+        )
 
     def test_accept_is_atomic_and_moves_authority_by_one_revision(self) -> None:
         """現在Authorityのacceptがauthority、revision、pendingを一括更新する。"""

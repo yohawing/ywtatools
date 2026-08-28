@@ -38,6 +38,20 @@ class ChannelRevisionTrackerTest(unittest.TestCase):
         with self.assertRaises(AuthorityViolation):
             tracker.accept_content("timeline", "blender:peer-001", 2)
 
+    def test_initial_authority_revisions_require_exact_channel_keys(self) -> None:
+        tracker = ChannelRevisionTracker(
+            {"timeline": "blender:peer-001"},
+            initial_authority_revisions={"timeline": 4},
+        )
+        self.assertEqual(tracker.authority_revision_for("timeline"), 4)
+        for revisions in ({}, {"timeline": 1, "extra": 2}, {"timeline": -1}, {"timeline": True}):
+            with self.subTest(revisions=revisions):
+                with self.assertRaises(ValidationError):
+                    ChannelRevisionTracker(
+                        {"timeline": "blender:peer-001"},
+                        initial_authority_revisions=revisions,
+                    )
+
     def test_transfer_rejects_unauthorized_or_stale_authority_without_mutation(self) -> None:
         """不正なAuthorityと古いauthority revisionはstateを変更しない。"""
 

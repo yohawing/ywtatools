@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from ywta_link import (
     AUTHORITY_REJECTED_SCHEMA,
+    AuthorityHandoffTracker,
     AuthorityHandoffRejected,
     Envelope,
     Frame,
@@ -222,6 +223,38 @@ class PlaybackSessionTest(unittest.TestCase):
 
         self.assertEqual(client.joined, [])
         self.assertEqual(client.closed, 1)
+
+    def test_prebuilt_tracker_is_reused_after_exact_identity_validation(self) -> None:
+        tracker = AuthorityHandoffTracker({"playback-main": "peer-remote"}, session_id="session-001")
+        client = _Client()
+        session = compose_playback_session(
+            _config(initial_authority="peer-remote"),
+            _Host,
+            lambda host, runtime: _Lifecycle(host, runtime),
+            lambda config: client,
+            authority_tracker=tracker,
+        )
+        self.assertIs(session.authority_tracker, tracker)
+        session.close()
+
+    def test_prebuilt_tracker_mismatch_is_rejected_before_client_factory(self) -> None:
+        tracker = AuthorityHandoffTracker({"playback-main": "peer-remote"}, session_id="other-session")
+        calls = 0
+
+        def make_client(_config: PlaybackSessionConfig) -> _Client:
+            nonlocal calls
+            calls += 1
+            return _Client()
+
+        with self.assertRaisesRegex(PlaybackSessionError, "session"):
+            compose_playback_session(
+                _config(initial_authority="peer-remote"),
+                _Host,
+                lambda host, runtime: _Lifecycle(host, runtime),
+                make_client,
+                authority_tracker=tracker,
+            )
+        self.assertEqual(calls, 0)
 
     def test_composition_binds_host_after_controller_and_uses_current_authority(self) -> None:
         session, client, host, lifecycle = self._compose()

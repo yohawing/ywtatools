@@ -11,6 +11,10 @@ from ywta_link import (
     AUTHORITY_SNAPSHOT_SCHEMA,
     AuthoritySnapshot,
     AuthoritySnapshotRequest,
+    SLOT_DESCRIPTOR_FIELDS,
+    SLOT_DESCRIPTOR_SCHEMA,
+    SLOT_JOIN_FIELDS,
+    SLOT_JOIN_SCHEMA,
 )
 from ywta_link.registry import DEFAULT_REGISTRY, SCHEMA_FIELDS, SYNC_SCHEMAS
 
@@ -49,6 +53,19 @@ class SchemaRegistryTest(unittest.TestCase):
         self.assertEqual(frozenset(snapshot.to_dict()), AUTHORITY_SNAPSHOT_FIELDS)
         self.assertEqual(AuthoritySnapshotRequest.from_dict(request.to_dict()), request)
         self.assertEqual(AuthoritySnapshot.from_dict(snapshot.to_dict()), snapshot)
+
+    def test_playback_slot_schemas_have_exact_registered_fields(self) -> None:
+        expected = {
+            SLOT_JOIN_SCHEMA: frozenset({"slot_id", "metadata"}),
+            SLOT_DESCRIPTOR_SCHEMA: frozenset(
+                {"slot_id", "session_id", "initial_authority", "metadata", "created", "state_peer"}
+            ),
+        }
+        for schema, fields in expected.items():
+            with self.subTest(schema=schema):
+                self.assertEqual(DEFAULT_REGISTRY.require_schema(schema), fields)
+        self.assertEqual(SLOT_JOIN_FIELDS, expected[SLOT_JOIN_SCHEMA])
+        self.assertEqual(SLOT_DESCRIPTOR_FIELDS, expected[SLOT_DESCRIPTOR_SCHEMA])
 
 
 if __name__ == "__main__":
