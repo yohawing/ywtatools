@@ -126,7 +126,7 @@ class AdapterDispatch:
 
         with self._lock:
             thread = self._thread
-            if thread is None or not self._running:
+            if thread is None or (not self._running and not thread.is_alive()):
                 return True
             self._stop_event.set()
 
@@ -234,12 +234,12 @@ class AdapterDispatch:
                     with self._lock:
                         if not self._stop_event.is_set():
                             self._receiver_error = _dispatch_error_info(exc)
+                            self._running = False
                     return
                 if not isinstance(frame, Frame):
                     with self._lock:
-                        self._receiver_error = _dispatch_error_info(
-                            AdapterDispatchError("client.receive must return a Frame")
-                        )
+                        self._receiver_error = _dispatch_error_info(AdapterDispatchError("client.receive must return a Frame"))
+                        self._running = False
                     return
                 with self._lock:
                     if self._stop_event.is_set() or self._closed:
@@ -247,14 +247,13 @@ class AdapterDispatch:
                     if len(self._queue) + len(self._failed) + self._reserved >= self._queue_capacity:
                         self._overflowed = True
                         self._receiver_error = _dispatch_error_info(DispatchOverflowError("receive queue capacity exceeded"))
+                        self._running = False
                         self._stop_event.set()
                         return
                     self._queue.append(frame)
         finally:
             with self._lock:
-                should_close = self._overflowed or (
-                    self._receiver_error is not None and not self._stop_event.is_set()
-                )
+                should_close = self._overflowed or (self._receiver_error is not None and not self._stop_event.is_set())
             if should_close:
                 self._close_client()
             with self._lock:

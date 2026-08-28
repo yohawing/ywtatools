@@ -210,9 +210,11 @@ class AdapterDispatchTest(unittest.TestCase):
         dispatch.start()
         _wait_until(lambda: dispatch.status.receiver_error is not None)
 
-        self.assertFalse(dispatch.status.running)
-        self.assertIsInstance(dispatch.status.receiver_error, DispatchErrorInfo)
-        self.assertEqual(dispatch.status.receiver_error.exception_type, "RuntimeError")
+        status = dispatch.status
+        self.assertFalse(status.running)
+        self.assertIsInstance(status.receiver_error, DispatchErrorInfo)
+        self.assertEqual(status.receiver_error.exception_type, "RuntimeError")
+        _wait_until(client.closed.is_set)
         self.assertTrue(client.closed.is_set())
         self.assertEqual(dispatch.drain(lambda _item: None), 0)
         with self.assertRaises(AdapterDispatchError):
