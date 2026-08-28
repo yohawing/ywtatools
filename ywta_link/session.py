@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import threading
 from enum import Enum
-from typing import Mapping
+from typing import Any, Mapping
 
 from .contract import SyncContract
 from .errors import AuthorityViolation, InvalidStateTransition, StaleRevision, ValidationError
@@ -53,7 +54,7 @@ class SyncSession:
 
 
 class ChannelRevisionTracker:
-    """Authority以外と古いrevisionをAdapter到達前に拒否する。"""
+    """Authorityとcontent revisionの検証を同じlockで一元管理する。"""
 
     def __init__(self, contract: SyncContract | Mapping[str, str]) -> None:
         """ContractまたはChannelとAuthorityの対応から追跡器を作る。"""
@@ -61,33 +62,131 @@ class ChannelRevisionTracker:
         if isinstance(contract, SyncContract):
             self._authorities = {channel.channel_id: channel.authority for channel in contract.channels}
         else:
+            if not isinstance(contract, Mapping):
+                raise ValidationError("contract must be a SyncContract or channel authority mapping")
             self._authorities = dict(contract)
         if not self._authorities or any(
-            not isinstance(channel_id, str) or not channel_id or not isinstance(authority, str) or not authority
+            not _identifier(channel_id, "channel_id")
+            or not _identifier(authority, "authority")
             for channel_id, authority in self._authorities.items()
         ):
             raise ValidationError("channel authorities must be non-empty strings")
+        self._lock = threading.RLock()
         self._revisions: dict[str, int] = {}
+        self._authority_revisions = {channel_id: 0 for channel_id in self._authorities}
+
+    @property
+    def lock(self) -> Any:
+        """Authority handoffとcontent updateを同一atomic sectionへ束ねるlockを返す。"""
+
+        return self._lock
 
     def accept(self, channel_id: str, sender: str, revision: int) -> int:
         """Authorityからの新しいrevisionだけを記録する。"""
 
-        authority = self._authorities.get(channel_id)
-        if authority is None:
-            raise ValidationError(f"unknown channel: {channel_id!r}")
-        if sender != authority:
-            raise AuthorityViolation(f"sender is not authority for channel: {channel_id!r}")
-        if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
-            raise ValidationError("revision must be a non-negative integer")
-        previous = self._revisions.get(channel_id)
-        if previous is not None and revision <= previous:
-            raise StaleRevision(f"revision {revision} is not newer than accepted revision {previous}")
-        self._revisions[channel_id] = revision
-        return revision
+        with self._lock:
+            authority = self._authority_for_unlocked(channel_id)
+            sender = _identifier(sender, "sender")
+            if sender != authority:
+                raise AuthorityViolation(f"sender is not authority for channel: {channel_id!r}")
+            _content_revision(revision)
+            previous = self._revisions.get(channel_id)
+            if previous is not None and revision <= previous:
+                raise StaleRevision(f"revision {revision} is not newer than accepted revision {previous}")
+            self._revisions[channel_id] = revision
+            return revision
+
+    def accept_content(self, channel_id: str, sender: str, revision: int) -> int:
+        """現在Authorityからのcontent revisionを受理するfacade。"""
+
+        return self.accept(channel_id, sender, revision)
+
+    def authority_for(self, channel_id: str) -> str:
+        """Channelの現在Authorityを返す。"""
+
+        with self._lock:
+            return self._authority_for_unlocked(channel_id)
+
+    def authority_revision_for(self, channel_id: str) -> int:
+        """Channelのcontrol-plane authority revisionを返す。"""
+
+        with self._lock:
+            self._authority_for_unlocked(channel_id)
+            return self._authority_revisions[channel_id]
+
+    def channels(self) -> tuple[str, ...]:
+        """追跡中Channel IDを辞書順のsnapshotで返す。"""
+
+        with self._lock:
+            return tuple(sorted(self._authorities))
+
+    def transfer_authority(
+        self,
+        channel_id: str,
+        current_authority: str,
+        next_authority: str,
+        expected_authority_revision: int,
+    ) -> int:
+        """期待revisionを検証し、Authorityと専用revisionをatomicに更新する。"""
+
+        _identifier(current_authority, "current_authority")
+        _identifier(next_authority, "next_authority")
+        if current_authority == next_authority:
+            raise ValidationError("current_authority and next_authority must differ")
+        _non_negative_revision(expected_authority_revision, "expected_authority_revision")
+        with self._lock:
+            authority = self._authority_for_unlocked(channel_id)
+            current_revision = self._authority_revisions[channel_id]
+            if expected_authority_revision != current_revision:
+                raise StaleRevision(
+                    f"authority revision {expected_authority_revision} is not current revision {current_revision}"
+                )
+            if current_authority != authority:
+                raise AuthorityViolation(f"current authority is not current for channel: {channel_id!r}")
+            new_revision = current_revision + 1
+            self._authorities[channel_id] = next_authority
+            self._authority_revisions[channel_id] = new_revision
+            return new_revision
 
     def revision_for(self, channel_id: str) -> int | None:
         """最後に受理したrevisionを返す。"""
 
-        if channel_id not in self._authorities:
-            raise ValidationError(f"unknown channel: {channel_id!r}")
-        return self._revisions.get(channel_id)
+        with self._lock:
+            self._authority_for_unlocked(channel_id)
+            return self._revisions.get(channel_id)
+
+    def _authority_for_unlocked(self, channel_id: str) -> str:
+        """lock取得済みのauthority lookup。"""
+
+        if not isinstance(channel_id, str) or not channel_id or not channel_id.strip():
+            raise ValidationError("channel_id must be a non-whitespace string")
+        try:
+            return self._authorities[channel_id]
+        except KeyError as exc:
+            raise ValidationError(f"unknown channel: {channel_id!r}") from exc
+
+
+def _identifier(value: object, field_name: str) -> str:
+    """空白だけでないUTF-8文字列を識別子として検証する。"""
+
+    if not isinstance(value, str) or not value or not value.strip():
+        raise ValidationError(f"{field_name} must be a non-whitespace string")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValidationError(f"{field_name} must be valid UTF-8") from exc
+    return value
+
+
+def _content_revision(value: object) -> int:
+    """content revisionの入力を検証する。"""
+
+    return _non_negative_revision(value, "revision")
+
+
+def _non_negative_revision(value: object, field_name: str) -> int:
+    """boolを除く0以上の整数を検証する。"""
+
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValidationError(f"{field_name} must be a non-negative integer")
+    return value

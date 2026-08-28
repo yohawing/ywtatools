@@ -78,6 +78,9 @@ SYNC_SCHEMAS = frozenset(
         "ywta.sync.contract.proposed.v1",
         "ywta.sync.contract.accepted.v1",
         "ywta.sync.contract.rejected.v1",
+        "ywta.sync.authority.request.v1",
+        "ywta.sync.authority.accepted.v1",
+        "ywta.sync.authority.rejected.v1",
         "ywta.sync.preview.v1",
         "ywta.sync.commit.v1",
         "ywta.sync.cancel.v1",
@@ -88,7 +91,39 @@ SYNC_SCHEMAS = frozenset(
 SCHEMA_FIELDS = MappingProxyType(
     {
         **{key: frozenset(value) for key, value in COMMON_SCHEMAS.items()},
-        **{key: frozenset() for key in SYNC_SCHEMAS},
+        **{key: frozenset() for key in SYNC_SCHEMAS if not key.startswith("ywta.sync.authority.")},
+        "ywta.sync.authority.request.v1": frozenset(
+            {
+                "session_id",
+                "channel_id",
+                "current_authority",
+                "next_authority",
+                "expected_authority_revision",
+                "change_id",
+            }
+        ),
+        "ywta.sync.authority.accepted.v1": frozenset(
+            {
+                "session_id",
+                "channel_id",
+                "current_authority",
+                "next_authority",
+                "expected_authority_revision",
+                "new_authority_revision",
+                "change_id",
+            }
+        ),
+        "ywta.sync.authority.rejected.v1": frozenset(
+            {
+                "session_id",
+                "channel_id",
+                "current_authority",
+                "next_authority",
+                "expected_authority_revision",
+                "change_id",
+                "reason",
+            }
+        ),
     }
 )
 SCHEMA_IDS = frozenset(SCHEMA_FIELDS)
@@ -109,6 +144,7 @@ CAPABILITY_IDS = frozenset(
         "motion.read.v1",
         "motion.apply.v1",
         "sync.contract.v1",
+        "sync.authority.v1",
         "sync.preview.v1",
         "sync.commit.v1",
         "sync.cancel.v1",

@@ -514,6 +514,7 @@ morph-weights.apply.v1
 motion.read.v1
 motion.apply.v1
 sync.contract.v1
+sync.authority.v1
 sync.preview.v1
 sync.commit.v1
 material.read.v1
@@ -526,6 +527,12 @@ typed-blob.inline.v1
 
 送信側は対象Peerが必要Capabilityを広告していることを確認する。未知または非対応Capabilityを
 暗黙に実行してはならない。
+
+Authority handoffへ参加するPeer（Requestを発行する次Authority、Requestを受理する現在Authority、
+Accepted/Rejectedを適用する他のParticipant）は、`sync.authority.v1`をCapabilityとして広告しなければならない。
+Session negotiationでは、このCapabilityと対象ChannelのAuthority/Target Bindingを全Participantについて検証し、
+不足または非対応の場合はhandoffをActiveとして扱ってはならない。Capabilityを広告しないlegacy Peerへ
+Authority handoffを暗黙に適用してはならない。
 
 ## 7. Message model
 
@@ -1010,10 +1017,48 @@ Broker再起動でActive Sessionのmetadataが失われた場合、未完了操�
 ### 11.4 Authorityと競合
 
 1つのChannelは既定で1つのAuthorityだけを持つ。Authority以外からの更新をAdapterへ適用してはならない。
-Authority移譲は、現在Authority、次Authority、対象revisionを明示したRequest/Responseとして行う。
+Authority移譲は、現在Authority、次Authority、対象revisionを明示したRequest、target Response、
+Acceptedのfan-out publishとして行う。現在Authorityが唯一のordering coordinatorである。
 
 v1はsilent last-write-winsとmulti-writer mergeを提供しない。Authority切断時はChannelを停止し、別Peerを
 自動昇格させない。
+
+Authority handoffの制御payloadは、次の3つのversioned schemaを使う。Payload自身へschema discriminatorは
+含めず、Envelopeの`schema`で識別する。Brokerはこれらのbodyを解釈せず、Envelopeの`target`、
+`correlation_id`、`message_id`に従って転送する。
+
+AcceptedはRoom内のSession control topicへ`publish`し、全Participantへfan-outする。control topicは
+`sync/<session_id>/control`とし、各ParticipantはSession開始時にこのtopicを購読する。Requestは例外として
+Envelope type=`request`で`target=current_authority`へ送信する。Requestを発行する次Authorityは送信前に
+local pendingを登録し、現在AuthorityはRequestを受信してpendingを登録する。RequestのEnvelope `message_id`が
+handoffのtransport identityとなる。現在Authorityは同じAccepted payload/schemaを、まずtype=`response`、
+`target=requester`、`correlation_id=request_message_id`でRequestへのtransport completionとして返し、Brokerは
+pendingをcloseする。その後、同じAccepted payload/schemaをtype=`publish`、Session control topic、
+`correlation_id=request_message_id`で確定通知としてfan-outする。Rejectedはtype=`response`、
+`target=requester`、`correlation_id=request_message_id`だけを返し、fan-outしない。`publish`における
+`correlation_id`は任意の一般Envelope Fieldだが、Accepted確定通知では必須である。Adapterはtarget responseを
+state変更に使わず、Accepted publish確定通知だけでstateを変更する。RequesterもAccepted publishを待つ。
+Authority handoffのordering coordinatorは現在Authorityだけであり、target ResponseをAuthority stateの確定や
+Peerごとの順序決定には使わない。Brokerはbody非解釈のまま、Envelopeのrouting情報とRequest pendingだけを処理する。
+
+- `ywta.sync.authority.request.v1`: `session_id`、`channel_id`、`current_authority`、`next_authority`、
+  `expected_authority_revision`、`change_id`を必須とする。
+- `ywta.sync.authority.accepted.v1`: Requestのidentityに加えて`new_authority_revision`を必須とする。
+- `ywta.sync.authority.rejected.v1`: Requestのidentityに加えて非空の`reason`を必須とする。
+
+`authority_revision`はContentの`revision`とは別のcontrol-plane revisionで、Channelごとに0から始める。
+Requestは現在のAuthorityと期待revisionが一致する場合だけ有効であり、同一Channelにpending Requestがある間の
+別Request、および古い`expected_authority_revision`は拒否する。Requestを受けた現在Authorityだけがacceptまたは
+rejectを返せる。acceptでは`new_authority_revision = expected_authority_revision + 1`を検証したうえで、
+Authority変更、revision更新、pending解放を一つのatomicな状態遷移として適用する。rejectでは非空理由を返し、
+Authorityとauthority revisionを変更せず、該当するlocal pendingだけを解放する。Acceptedを受信したPeerは、
+actorが現在Authorityであること、payloadの`current_authority`、`expected_authority_revision`、
+`new_authority_revision`が現在stateの次revisionであること、非空`correlation_id`を検証する。同一Requestの
+local pendingがある場合だけcorrelationを元Requestの`message_id`と一致させる。Requestを観測していない第三
+ParticipantはpendingなしでもAcceptedを適用でき、別Requestのlocal pendingがあっても現在Authorityが選んだ
+Acceptedをwinnerとして適用し、そのpendingを解放する。これはsilent last-write-winsではなく、明示されたAccepted
+winnerへの収束である。Rejectedは一致するlocal pendingだけを解放し、別RequestのpendingとChannel stateを
+変更しない。切断の観測はChannel停止にとどめ、自動的なAuthority昇格やrevision更新を行わない。
 
 ### 11.5 Preview、Commit、Cancel
 
@@ -1079,6 +1124,9 @@ Session制御は通常の`publish`、`request`、`response`を使い、Payload s
 - `ywta.sync.contract.proposed.v1`
 - `ywta.sync.contract.accepted.v1`
 - `ywta.sync.contract.rejected.v1`
+- `ywta.sync.authority.request.v1`
+- `ywta.sync.authority.accepted.v1`
+- `ywta.sync.authority.rejected.v1`
 - `ywta.sync.preview.v1`
 - `ywta.sync.commit.v1`
 - `ywta.sync.cancel.v1`

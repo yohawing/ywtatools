@@ -287,4 +287,38 @@ mod tests {
         }"#;
         assert!(Envelope::from_json(bad_schema).is_err());
     }
+
+    #[test]
+    fn accepts_targeted_request_and_correlated_publish_confirmation() {
+        let request = Envelope::from_json(
+            br#"{
+                "protocol_version": 1,
+                "message_id": "request-001",
+                "type": "request",
+                "sender": "maya:peer-001",
+                "room": "room-001",
+                "target": "blender:peer-001",
+                "schema": "ywta.sync.authority.request.v1",
+                "body": {"channel_id": "timeline"}
+            }"#,
+        )
+        .expect("authority request must be targeted");
+        assert_eq!(request.target.as_deref(), Some("blender:peer-001"));
+
+        let confirmation = Envelope::from_json(
+            br#"{
+                "protocol_version": 1,
+                "message_id": "accepted-001",
+                "type": "publish",
+                "sender": "blender:peer-001",
+                "room": "room-001",
+                "topic": "sync/session-001/control",
+                "correlation_id": "request-001",
+                "schema": "ywta.sync.authority.accepted.v1",
+                "body": {"channel_id": "timeline"}
+            }"#,
+        )
+        .expect("publish confirmation correlation is valid");
+        assert_eq!(confirmation.correlation_id.as_deref(), Some("request-001"));
+    }
 }

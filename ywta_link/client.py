@@ -283,16 +283,22 @@ class LinkClient:
         room: str,
         *,
         topic: str | None = None,
+        correlation_id: str | None = None,
         schema: str | None = None,
         body: Any = None,
         raw_body: bytes = b"",
     ) -> str:
-        """RoomまたはTopicへJSONとraw binary bodyをpublishする。"""
+        """RoomまたはTopicへJSONとraw binary bodyをpublishする。
+
+        `correlation_id`は、Authority handoffのようにTopicへfan-outする
+        応答を元のpublishへ関連付ける場合に指定する。
+        """
 
         return self._send(
             "publish",
             room=room,
             topic=topic,
+            correlation_id=correlation_id,
             schema=schema,
             body=body,
             raw_body=raw_body,

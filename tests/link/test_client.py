@@ -35,6 +35,55 @@ class LinkClientTest(unittest.TestCase):
         self.assertEqual(join.envelope.sender, "blender:peer-001")
         self.assertEqual(join.envelope.room, "shot-010")
 
+    def test_publish_can_correlate_topic_fanout_response(self) -> None:
+        """Topicへのpublish応答へ元Message IDを関連付けられる。"""
+
+        client_socket, broker_socket = socket.socketpair()
+        self.addCleanup(broker_socket.close)
+        client = LinkClient("127.0.0.1:24567", "blender:peer-001")
+        self.addCleanup(client.close)
+
+        with patch("ywta_link.client._open_loopback_socket", return_value=client_socket):
+            client.connect()
+        Frame.read_from(broker_socket)
+
+        client.publish(
+            "shot-010",
+            topic="sync/session-001/control",
+            correlation_id="request-001",
+            schema="ywta.sync.authority.accepted.v1",
+            body={"accepted": True},
+        )
+        published = Frame.read_from(broker_socket)
+
+        self.assertEqual(published.envelope.type, "publish")
+        self.assertEqual(published.envelope.topic, "sync/session-001/control")
+        self.assertEqual(published.envelope.correlation_id, "request-001")
+
+    def test_authority_request_targets_current_authority(self) -> None:
+        """Authority Requestをtarget=current_authorityのEnvelopeとして送信する。"""
+
+        client_socket, broker_socket = socket.socketpair()
+        self.addCleanup(broker_socket.close)
+        client = LinkClient("127.0.0.1:24567", "maya:peer-001")
+        self.addCleanup(client.close)
+
+        with patch("ywta_link.client._open_loopback_socket", return_value=client_socket):
+            client.connect()
+        Frame.read_from(broker_socket)
+
+        client.request(
+            "shot-010",
+            "blender:peer-001",
+            schema="ywta.sync.authority.request.v1",
+            body={"channel_id": "timeline"},
+        )
+        request = Frame.read_from(broker_socket)
+
+        self.assertEqual(request.envelope.type, "request")
+        self.assertEqual(request.envelope.target, "blender:peer-001")
+        self.assertIsNone(request.envelope.correlation_id)
+
     def test_target_messages_require_room_before_socket_access(self) -> None:
         """Request、Response、ErrorはRoomなしに作れない。"""
 

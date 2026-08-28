@@ -1632,6 +1632,23 @@ mod tests {
             request("blender:one", "request-003", "room-a", "maya:two"),
         )
         .expect("request must route");
+        core.receive(
+            2,
+            frame_with_id(
+                "maya:two",
+                "accepted-003",
+                MessageType::Publish,
+                Routing {
+                    room: Some("room-a"),
+                    topic: Some("sync/session-001/control"),
+                    target: None,
+                    correlation_id: Some("request-003"),
+                },
+                &[],
+            ),
+        )
+        .expect("publish confirmation must not close request pending");
+        assert_eq!(core.pending_request_count(), 1);
         assert!(matches!(
             core.receive(1, request("blender:one", "request-003", "room-a", "maya:two")),
             Err(BrokerError::DuplicatePendingRequest(message_id)) if message_id == "request-003"
@@ -1653,6 +1670,15 @@ mod tests {
         assert_eq!(deliveries.len(), 1);
         assert_eq!(deliveries[0].peer_id, "blender:one");
         assert_eq!(core.pending_request_count(), 0);
+
+        let redeliveries = core
+            .receive(
+                1,
+                request("blender:one", "request-003", "room-a", "maya:two"),
+            )
+            .expect("request message_id can be reused after response completion");
+        assert_eq!(redeliveries.len(), 1);
+        assert_eq!(core.pending_request_count(), 1);
     }
 
     #[test]
