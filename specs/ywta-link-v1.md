@@ -269,6 +269,22 @@ logical change IDを持つimmutable型である。変更種別は再生開始・
 Host callbackはnetwork送信を行わず、Controller callbackとの境界に留まる。適用中の同期callback抑止や
 遅延callbackのecho判定は各HostとControllerの責務として明示する。
 
+Host時刻からCommon Playbackへ変換するAdapterは、Host 1単位あたりの正の整数
+`ticks_per_host_unit`とHost unit rateを設定した`PlaybackTimeMapper`を使用する。wire timebaseは
+`host_unit_rate * ticks_per_host_unit`を既約化したRationalRateとし、RationalRateの上限を超える設定は
+fail closedとする。Hostのposition/range値は`Fraction(str(value)) * ticks_per_host_unit`が厳密な整数になる
+場合だけwire tickへ変換し、丸めや黙ったcoerceを行わない。逆変換はwire timebaseの完全一致を要求し、
+tickをscaleで割ってHost値へ戻す。Host floatで厳密に再表現できないtickは拒否する。forward変換では
+Host snapshotの`time_unit`が設定値と一致しなければならない。Mapperは`sample_rate`を表現しないため、
+逆変換では`sample_rate=null`だけを受理する。state、speed、direction、loop_mode、change_idも保持し、
+逆変換の`time_unit`は設定値を使用する。
+
+Hostの`approximated_fields`はwire payloadへそのまま表現できないため、Mapperは
+`required_exact_fields`に含まれる近似Fieldがある場合に拒否し、それ以外は変換を許可する。既定値は
+`state`、`position`、`playback_range`、`direction`とし、再生ボタンと位置同期を優先してHostが近似し得る
+`speed`/`loop_mode`は明示的な許可なしでも変換できる。これらの近似metadataはwireで失われるため、
+逆変換時の`approximated_fields`は空tupleとする。
+
 #### 4.3.3 Maya Playback Adapter
 
 Maya Adapterは`MConditionMessage`の`playingBack`と、`MEventMessage`の`timeChanged`、
