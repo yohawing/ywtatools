@@ -1268,6 +1268,28 @@ Envelopeの`message_id`はtrace専用であり、Playbackの`change_id`の代用
 同じClient上の同一Room/Topicは一つのPlayback Transportだけが排他的に所有し、close成功後にleaseを解放する。
 unsubscribe失敗中のleaseは保持し、別Transportによる購読解除との競合を防ぐ。
 
+### 11.8.1 Authority Handoff Transport
+
+`AuthorityHandoffTransport`は既存Clientと`AuthorityHandoffTracker`を借用し、Room内の
+`sync/<session_id>/control`だけを購読する。Transport自身はClient、Room、Brokerのlifecycleを所有せず、
+生成元のowner threadだけがsubscribe、Request、Frame処理、accept/reject、closeを呼び出す。Playback Topic
+Transportと同じClientを共有できるが、control topicのleaseは別に管理する。
+
+`request_handoff`はRequest Envelopeの`message_id`を送信前に確定し、同じIDでTrackerへlocal pendingを登録してから、
+type=`request`、`target=current_authority`、schema=`ywta.sync.authority.request.v1`で送信する。Clientは予約済み
+`message_id`を受け付ける。現在AuthorityがRequestを受信しても、Transportはpending登録だけを行い、acceptまたは
+rejectを自動実行してはならない。呼び出し側が明示的にaccept/rejectを選択する。
+
+acceptはTrackerの既存handoffを検証・適用した後、同じAccepted payload/schemaをtype=`response`、
+`target=next_authority`、`correlation_id=request_message_id`で先に返し、その後type=`publish`、control topic、
+同じ`correlation_id`でfan-outする。rejectはtype=`response`のRejectedだけを返し、fan-outしない。Requesterの
+Authority stateはAccepted target responseでは変更せず、Accepted control publishの検証・適用だけで変更する。
+受信FrameはRoom、control topic、schema、type、sender、target、correlation、Session、payload bodyをfail closedで
+検証し、raw binary bodyを拒否する。Client例外はTransport固有の型付き例外へ変換する。closeは冪等で、unsubscribe
+失敗時はactive/openを保持して再試行可能にする。pendingまたはAuthority stateを変更した後のRequest、Response、
+Publish I/O失敗はTransportをterminal failedへ固定し、failed後はcloseだけをunsubscribe再試行とlease解放のために
+許可する。送信前検証またはTracker検証の失敗は、partial mutationがない限りfailedへ遷移させない。
+
 ### 11.9 MessageとCLI
 
 Session制御は通常の`publish`、`request`、`response`を使い、Payload schemaとして少なくとも次を定義する。

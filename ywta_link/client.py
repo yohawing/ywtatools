@@ -309,16 +309,22 @@ class LinkClient:
         room: str,
         target: str,
         *,
+        message_id: str | None = None,
         schema: str | None = None,
         body: Any = None,
         raw_body: bytes = b"",
     ) -> str:
-        """同じRoom内のTargetへRequestを送る。"""
+        """同じRoom内のTargetへRequestを送る。
+
+        `message_id`を指定すると、送信前にwire identityを予約できる。
+        Authority handoffのように、送信前のlocal pending登録へ利用する。
+        """
 
         return self._send(
             "request",
             room=room,
             target=target,
+            message_id=message_id,
             schema=schema,
             body=body,
             raw_body=raw_body,
@@ -395,6 +401,7 @@ class LinkClient:
         self,
         message_type: str,
         *,
+        message_id: str | None = None,
         room: str | None = None,
         target: str | None = None,
         topic: str | None = None,
@@ -408,7 +415,10 @@ class LinkClient:
 
         if message_type in {"request", "response", "error"} and not room:
             raise LinkClientError("target messages require a room")
-        message_id = _new_message_id()
+        if message_id is None:
+            message_id = _new_message_id()
+        elif not isinstance(message_id, str) or not message_id:
+            raise LinkClientError("message_id must be a non-empty string")
         envelope = Envelope(
             protocol_version=1,
             message_id=message_id,

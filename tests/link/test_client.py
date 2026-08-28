@@ -84,6 +84,30 @@ class LinkClientTest(unittest.TestCase):
         self.assertEqual(request.envelope.target, "blender:peer-001")
         self.assertIsNone(request.envelope.correlation_id)
 
+    def test_authority_request_accepts_reserved_message_id(self) -> None:
+        """Requestへ予約済みmessage IDを渡すとwire identityへ反映する。"""
+
+        client_socket, broker_socket = socket.socketpair()
+        self.addCleanup(broker_socket.close)
+        client = LinkClient("127.0.0.1:24567", "maya:peer-001")
+        self.addCleanup(client.close)
+
+        with patch("ywta_link.client._open_loopback_socket", return_value=client_socket):
+            client.connect()
+        Frame.read_from(broker_socket)
+
+        message_id = client.request(
+            "shot-010",
+            "blender:peer-001",
+            message_id="request-reserved-001",
+            schema="ywta.sync.authority.request.v1",
+            body={"channel_id": "timeline"},
+        )
+        request = Frame.read_from(broker_socket)
+
+        self.assertEqual(message_id, "request-reserved-001")
+        self.assertEqual(request.envelope.message_id, "request-reserved-001")
+
     def test_target_messages_require_room_before_socket_access(self) -> None:
         """Request、Response、ErrorはRoomなしに作れない。"""
 

@@ -15,6 +15,7 @@ from .authority import (
     AuthorityValidationError,
     PendingHandoff,
 )
+from .authority_transport import AuthorityHandoffTransport, AuthorityTransportError, AuthorityTransportThreadError
 from .adapter import (
     AdapterDispatch,
     AdapterDispatchError,
@@ -110,6 +111,9 @@ __all__ = (
     "AuthorityHandoffRejected",
     "AuthorityHandoffRequest",
     "AuthorityHandoffTracker",
+    "AuthorityHandoffTransport",
+    "AuthorityTransportError",
+    "AuthorityTransportThreadError",
     "AuthorityState",
     "AuthorityValidationError",
     "PendingHandoff",
