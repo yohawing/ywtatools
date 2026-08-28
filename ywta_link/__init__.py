@@ -62,6 +62,16 @@ from .playback_host import (
     PlaybackHostValidationError,
 )
 from .playback_mapping import DEFAULT_REQUIRED_EXACT_FIELDS, PlaybackTimeMapper, PlaybackTimeMappingError
+from .playback_controller import (
+    AuthorityProvider,
+    PlaybackController,
+    PlaybackControllerError,
+    PlaybackControllerErrorInfo,
+    PlaybackControllerStatus,
+    PlaybackControllerThreadError,
+    PlaybackHostApply,
+    PlaybackPublisher,
+)
 from .session import ChannelRevisionTracker, SessionState, SyncSession
 from .runtime import RuntimeError, RuntimeManifest, read_runtime_manifest, resolve_broker_executable
 from .time import RATE_FIELDS, TIME_FIELDS, TIME_SCHEMA, RationalRate, Time, TimeValidationError
@@ -139,6 +149,14 @@ __all__ = (
     "DEFAULT_REQUIRED_EXACT_FIELDS",
     "PlaybackTimeMapper",
     "PlaybackTimeMappingError",
+    "AuthorityProvider",
+    "PlaybackController",
+    "PlaybackControllerError",
+    "PlaybackControllerErrorInfo",
+    "PlaybackControllerStatus",
+    "PlaybackControllerThreadError",
+    "PlaybackHostApply",
+    "PlaybackPublisher",
     "RATE_FIELDS",
     "RationalRate",
     "TIME_FIELDS",

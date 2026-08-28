@@ -1186,6 +1186,20 @@ AdapterはPlaybackをremote applyしている間だけでなく、遅延callback
 Echo GuardはSync Sessionごとに1個生成し、そのSessionがClosedまたはFailedになった時点で破棄する。Room単位や
 Client process単位でGuardを使い回し、別Sessionの合法な同一`(origin_peer_id, change_id)`を抑止してはならない。
 
+DCC Adapter内のDCC非依存境界は`PlaybackController`へ集約する。Controllerは生成元のowner threadだけが
+`handle_host_event`、`apply_remote`、`close`を呼び出せる。`handle_host_event`はeventをPlaybackへmappingし、
+現在Authorityがlocal peerの場合だけpublishする。remote applyに由来するcallbackは`origin_peer_id`を渡し、
+同じ`(origin_peer_id, change_id)`をEcho Guardが抑止する。`apply_remote`は現在Authorityのoriginだけを受理し、
+local self-originはloopbackとして無視する。mapping、publish、Host applyの実行失敗はFailedへ遷移し、原因の
+型名と上限付きmessageだけをstatusで観測できる。Close後のControllerおよびGuardは再利用してはならない。
+Guardを省略した場合はControllerが新規作成し、注入した場合もそのControllerへSession単位の所有権を移す。
+同じGuardの複数Controllerへの注入とClose後の再利用は拒否する。publisherからの同期再publish、Host applyからの
+入れ子remote applyもFailedとして拒否し、Host apply中は同じremote identityのecho抑止だけを再入許可する。
+
+現行Host bridgeは遅延して到着するcallbackへremote originを自動関連付けない。Controller利用側がcallback時に
+originを明示して即時echoを抑止することをv1の境界とし、Host bridge自身による遅延callbackへの自動相関は
+後続仕様とする。
+
 Authority handoffがpendingの間、local mutationを保留できるHostはacceptまで変更を適用・publishしない。
 保留できないHostはlast accepted Playback snapshotを保持し、handoffが拒否またはtimeoutになった場合は
 Main Thread上でそのsnapshotを復元する。pending中に追加されたlocal操作はlatestだけへcoalesceし、accept前に
