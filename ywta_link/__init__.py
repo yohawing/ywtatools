@@ -79,6 +79,7 @@ from .playback_sync import (
     PlaybackSyncRuntimeErrorInfo,
     PlaybackSyncRuntimeStatus,
 )
+from .playback_session import PlaybackSession, PlaybackSessionConfig, PlaybackSessionError, compose_playback_session
 from .session import ChannelRevisionTracker, SessionState, SyncSession
 from .runtime import RuntimeError, RuntimeManifest, read_runtime_manifest, resolve_broker_executable
 from .time import RATE_FIELDS, TIME_FIELDS, TIME_SCHEMA, RationalRate, Time, TimeValidationError
@@ -171,6 +172,9 @@ __all__ = (
     "PlaybackSyncRuntimeError",
     "PlaybackSyncRuntimeErrorInfo",
     "PlaybackSyncRuntimeStatus",
+    "PlaybackSession",
+    "PlaybackSessionConfig",
+    "PlaybackSessionError",
     "RATE_FIELDS",
     "RationalRate",
     "TIME_FIELDS",
@@ -202,4 +206,5 @@ __all__ = (
     "read_runtime_manifest",
     "resolve_broker_executable",
     "write_frame",
+    "compose_playback_session",
 )

@@ -361,6 +361,20 @@ Runtimeのstart、pump、closeは同期再入を拒否する。
 component例外があれば終了後にRuntimeをFailedとして原因を返す。共有Client自体のcloseはAdapterDispatchの
 所有責務であり、RuntimeやPlaybackTopicTransportは直接closeしない。
 
+#### 4.3.6 Playback Session composition
+
+`PlaybackSessionConfig`はPeer、Session、Room、Topic、Channel、初期Authority、Host時刻単位とtimebaseを
+すべて明示する。`compose_playback_session`は専用Clientを生成してRoomへjoinし、`AuthorityHandoffTracker`、
+`PlaybackTimeMapper`、`PlaybackTopicTransport`、`AdapterDispatch`、`PlaybackController`、
+`PlaybackSyncRuntime`を一つの未開始Sessionへ構成する。HostはControllerを生成する前にcallback relayを受け、
+relayはController handlerへ一度だけbindする。DCC固有のHostとLifecycleはfactory注入とし、Session自身はDCCを
+importしない。
+
+Sessionの`start`はLifecycleへ委譲する。開始済みSessionの`close`はLifecycle closeの成功後に専用Clientを閉じる。
+一度もstartを試行していない場合だけRuntimeを直接closeしてからClientを閉じる。start試行済みのSessionは、
+Lifecycleがrollback済みでもLifecycle cleanupを経由する。Lifecycle cleanup失敗時はClientを閉じず、同じowner
+threadからcloseを再試行する。
+
 Material変換、Camera適用、Morph Weight更新、Texture出力、Node生成などのDCC操作はClient SDKではなく
 各DCC Adapterが所有する。
 
