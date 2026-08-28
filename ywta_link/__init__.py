@@ -72,6 +72,7 @@ from .playback_controller import (
     PlaybackHostApply,
     PlaybackPublisher,
 )
+from .playback_transport import PlaybackTopicTransport, PlaybackTransportError, PlaybackTransportThreadError
 from .session import ChannelRevisionTracker, SessionState, SyncSession
 from .runtime import RuntimeError, RuntimeManifest, read_runtime_manifest, resolve_broker_executable
 from .time import RATE_FIELDS, TIME_FIELDS, TIME_SCHEMA, RationalRate, Time, TimeValidationError
@@ -157,6 +158,9 @@ __all__ = (
     "PlaybackControllerThreadError",
     "PlaybackHostApply",
     "PlaybackPublisher",
+    "PlaybackTopicTransport",
+    "PlaybackTransportError",
+    "PlaybackTransportThreadError",
     "RATE_FIELDS",
     "RationalRate",
     "TIME_FIELDS",

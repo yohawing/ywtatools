@@ -1211,7 +1211,27 @@ publishしてはならない。
 publishして厳密なclock syncを実現すること、またそれをv1の正確性要件にすることは対象外である。Loopback遅延は
 イベント受信時のposition開始とpause/seek時の再整合で扱い、フレームごとのpublishは非推奨とする。
 
-### 11.8 MessageとCLI
+### 11.8 Playback Topic Transport
+
+`PlaybackTopicTransport`はDCC非依存の薄い境界として、既存のLink Clientを借用し、1つのRoom/Topicに
+`ywta.common.playback.v1`だけをpublish/receiveする。Transport自身はClientをconnect、closeせず、Room参加や
+Brokerのlifecycleも所有しない。生成元のowner threadだけがsubscribe、publish、frame処理、closeを呼び出す。
+
+`subscribe`は冪等で、Clientのsubscribe成功後にだけactiveになる。失敗時は未購読のまま再試行できる。
+`publish`はactive中の厳密なPlayback型だけを受理し、EnvelopeのschemaへPlayback schemaを設定し、bodyへ
+`Playback.to_dict()`を渡す。返却されたtransport `message_id`は空でない文字列でなければならない。
+
+受信側はtype=`publish`かつbound Room/TopicのFrameだけを処理し、それ以外を無視する。対象Frameはschema一致、
+空のraw body、JSON object bodyを必須とし、Playbackへ厳密にdecodeしてから`PlaybackController.apply_remote`へ
+Envelopeのsenderをoriginとして渡す。Transportはself-originを先に捨てず、Controllerのloopback規則へ委譲する。
+Envelopeの`message_id`はtrace専用であり、Playbackの`change_id`の代用にしてはならない。
+
+`close`はactiveならunsubscribe成功後にだけclosedへ遷移する。unsubscribe失敗時はactive・未closedを保持して
+再試行可能とし、借用Client自体をcloseしない。未購読状態のcloseは安全に完了し、二回目以降は冪等に無操作とする。
+同じClient上の同一Room/Topicは一つのPlayback Transportだけが排他的に所有し、close成功後にleaseを解放する。
+unsubscribe失敗中のleaseは保持し、別Transportによる購読解除との競合を防ぐ。
+
+### 11.9 MessageとCLI
 
 Session制御は通常の`publish`、`request`、`response`を使い、Payload schemaとして少なくとも次を定義する。
 
