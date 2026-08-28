@@ -16,6 +16,7 @@ from ywta_link import (
     AuthorityHandoffTransport,
     Envelope,
     Frame,
+    Playback,
     PlaybackController,
     PlaybackHandoffCoordinator,
     PlaybackHandoffError,
@@ -26,6 +27,7 @@ from ywta_link import (
     PlaybackHostSnapshot,
     PlaybackTimeMapper,
     RationalRate,
+    Time,
 )
 
 
@@ -137,12 +139,24 @@ def _frame(
 class PlaybackHandoffCoordinatorTest(unittest.TestCase):
     """Playback eventとAuthority stateの結合を検証する。"""
 
+    def test_exposes_borrowed_component_properties(self) -> None:
+        """Runtimeが借用componentのidentityを公開契約だけで照合できる。"""
+
+        coordinator, tracker, client, _published, _applied = self._make()
+        self.assertIs(coordinator.tracker, tracker)
+        self.assertIs(coordinator.authority_transport.tracker, tracker)
+        self.assertIs(coordinator.authority_transport.client, client)
+        self.assertIs(type(coordinator.controller), PlaybackController)
+        with self.assertRaises(AttributeError):
+            coordinator.tracker = tracker  # type: ignore[misc]
+
     def _make(
         self,
         authority: str = "peer-remote",
         clock: _Clock | None = None,
         fail_publish: bool = False,
         rollback_apply: object | None = None,
+        observe_remote: bool = False,
     ) -> tuple[PlaybackHandoffCoordinator, AuthorityHandoffTracker, _Client, list[object], list[PlaybackHostSnapshot]]:
         """実Transport/Controllerを使ったCoordinatorを構成する。"""
 
@@ -186,8 +200,32 @@ class PlaybackHandoffCoordinatorTest(unittest.TestCase):
             1.0,
             time.monotonic if clock is None else clock,
         )
+        if observe_remote:
+
+            def observe_remote_apply(snapshot: PlaybackHostSnapshot) -> None:
+                """remote apply成功後にCoordinatorのbaselineを更新する。"""
+
+                applied.append(snapshot)
+                coordinator.observe_authoritative_snapshot(snapshot)
+
+            controller._host_apply = observe_remote_apply  # noqa: SLF001 - relay test seam
         self.addCleanup(coordinator.close)
         return coordinator, tracker, client, published, applied
+
+    @staticmethod
+    def _remote_playback(change_id: str) -> Playback:
+        """テスト用のremote Playback payloadを作る。"""
+
+        rate = RationalRate(24, 1)
+        return Playback(
+            state="paused",
+            position=Time(18, None, None, rate),
+            playback_range=Time(None, 0, 24, rate),
+            speed=1.0,
+            direction="forward",
+            loop_mode="once",
+            change_id=change_id,
+        )
 
     def test_local_authority_publishes_and_updates_baseline(self) -> None:
         """local Authority eventは直接publishし、成功後だけbaselineを進める。"""
@@ -300,6 +338,76 @@ class PlaybackHandoffCoordinatorTest(unittest.TestCase):
         self.assertTrue(coordinator.handle_authority_frame(frame))
         self.assertEqual([item.change_id for item in published], ["change-latest"])
         self.assertFalse(coordinator.status.pending)
+
+    def test_remote_apply_during_pending_is_overwritten_before_accepted_publish(self) -> None:
+        """pending中の旧Authority apply後もAccepted時は保留snapshotを最終適用する。"""
+
+        coordinator, tracker, _client, published, applied = self._make(observe_remote=True)
+        coordinator.handle_host_event(_event("change-latest"))
+        pending = tracker.pending_for("timeline")
+        self.assertIsNotNone(pending)
+        coordinator.controller.apply_remote("peer-remote", self._remote_playback("remote-old"))
+        self.assertEqual([snapshot.change_id for snapshot in applied], ["remote-old"])
+        request = pending.request  # type: ignore[union-attr]
+        accepted = AuthorityHandoffAccepted(
+            session_id=request.session_id,
+            channel_id=request.channel_id,
+            current_authority=request.current_authority,
+            next_authority=request.next_authority,
+            expected_authority_revision=request.expected_authority_revision,
+            new_authority_revision=request.expected_authority_revision + 1,
+            change_id=request.change_id,
+        )
+        frame = _frame(
+            message_id="accepted-after-remote",
+            message_type="publish",
+            sender="peer-remote",
+            target=None,
+            schema=AUTHORITY_ACCEPTED_SCHEMA,
+            body=accepted.to_dict(),
+            topic="sync/session-001/control",
+            correlation_id=pending.request_message_id,  # type: ignore[union-attr]
+        )
+        coordinator.handle_authority_frame(frame)
+        self.assertEqual([snapshot.change_id for snapshot in applied], ["remote-old", "change-latest"])
+        self.assertEqual([item.change_id for item in published], ["change-latest"])
+
+    def test_accepted_reapply_failure_does_not_publish_and_fails_closed(self) -> None:
+        """Accepted直前の保留snapshot再適用失敗はpublishせずFailedにする。"""
+
+        def fail_reapply(_snapshot: PlaybackHostSnapshot) -> None:
+            """Accepted直前のHost再適用を失敗させる。"""
+
+            raise RuntimeError("retained apply failed")
+
+        coordinator, tracker, _client, published, _applied = self._make(rollback_apply=fail_reapply)
+        coordinator.handle_host_event(_event("change-latest"))
+        pending = tracker.pending_for("timeline")
+        self.assertIsNotNone(pending)
+        request = pending.request  # type: ignore[union-attr]
+        accepted = AuthorityHandoffAccepted(
+            session_id=request.session_id,
+            channel_id=request.channel_id,
+            current_authority=request.current_authority,
+            next_authority=request.next_authority,
+            expected_authority_revision=request.expected_authority_revision,
+            new_authority_revision=request.expected_authority_revision + 1,
+            change_id=request.change_id,
+        )
+        frame = _frame(
+            message_id="accepted-reapply-failure",
+            message_type="publish",
+            sender="peer-remote",
+            target=None,
+            schema=AUTHORITY_ACCEPTED_SCHEMA,
+            body=accepted.to_dict(),
+            topic="sync/session-001/control",
+            correlation_id=pending.request_message_id,  # type: ignore[union-attr]
+        )
+        with self.assertRaises(PlaybackHandoffError):
+            coordinator.handle_authority_frame(frame)
+        self.assertEqual([], published)
+        self.assertTrue(coordinator.status.failed)
 
     def test_rejected_response_restores_baseline(self) -> None:
         """Rejected responseは保留eventを捨ててbaselineへrollbackする。"""

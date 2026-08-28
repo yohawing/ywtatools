@@ -59,6 +59,23 @@ def _event(change_id: str = "change-001", **overrides: object) -> PlaybackHostEv
 class PlaybackControllerTest(unittest.TestCase):
     """Playback ControllerのAuthority、mapping、echo、lifecycleを検証する。"""
 
+    def test_identity_properties_are_read_only(self) -> None:
+        """RuntimeがController identityを公開契約で検証できる。"""
+
+        controller = PlaybackController(
+            "blender:peer-001",
+            "timeline",
+            _mapper(),
+            lambda channel: "blender:peer-001",
+            lambda playback: None,
+            lambda snapshot: None,
+        )
+        self.addCleanup(controller.close)
+        self.assertEqual("blender:peer-001", controller.peer_id)
+        self.assertEqual("timeline", controller.channel_id)
+        with self.assertRaises(AttributeError):
+            controller.peer_id = "other"  # type: ignore[misc]
+
     def test_local_authority_event_is_mapped_and_published(self) -> None:
         """local AuthorityのeventだけをPlaybackへ変換してpublishする。"""
 

@@ -16,6 +16,11 @@ from ywta_link import (
     Frame,
     Playback,
     PlaybackController,
+    PlaybackHandoffCoordinator,
+    PlaybackHostRange,
+    PlaybackHostEvent,
+    PlaybackHostEventKind,
+    PlaybackHostSnapshot,
     PlaybackSyncRuntime,
     PlaybackSyncRuntimeError,
     PlaybackTopicTransport,
@@ -118,7 +123,7 @@ def _frame(message_id: str, *, room: str = "room", topic: str = "topic", schema:
     )
 
 
-def _controller() -> PlaybackController:
+def _controller(peer_id: str = "peer-local", channel_id: str = "timeline") -> PlaybackController:
     """テスト用Controllerを返す。"""
 
     mapper = PlaybackTimeMapper(
@@ -127,8 +132,8 @@ def _controller() -> PlaybackController:
         time_unit="frames",
     )
     return PlaybackController(
-        "peer-local",
-        "timeline",
+        peer_id,
+        channel_id,
         mapper,
         lambda _channel: "peer-remote",
         lambda _playback: None,
@@ -153,11 +158,33 @@ class PlaybackSyncRuntimeTest(unittest.TestCase):
 
         client = _Client()
         dispatch = AdapterDispatch(client)
-        authority_tracker = AuthorityHandoffTracker({"timeline": "peer-remote"}, session_id="session-001")
+        authority_tracker = AuthorityHandoffTracker(
+            {"timeline": "peer-remote", "other-channel": "peer-remote"},
+            session_id="session-001",
+        )
         authority_transport = AuthorityHandoffTransport(client, "room", authority_tracker)
         transport = PlaybackTopicTransport(client, "room", "topic")
         controller = _controller()
-        runtime = PlaybackSyncRuntime(dispatch, authority_transport, transport, controller)
+        coordinator = PlaybackHandoffCoordinator(
+            "peer-local",
+            "timeline",
+            authority_tracker,
+            authority_transport,
+            controller,
+            PlaybackHostSnapshot(
+                "paused",
+                0,
+                PlaybackHostRange(0, 24),
+                1.0,
+                "forward",
+                "once",
+                "frames",
+                "baseline-001",
+            ),
+            lambda _snapshot: None,
+            1.0,
+        )
+        runtime = PlaybackSyncRuntime(dispatch, authority_transport, transport, controller, coordinator)
         return runtime, client, dispatch, authority_transport, transport, controller
 
     @staticmethod
@@ -322,8 +349,8 @@ class PlaybackSyncRuntimeTest(unittest.TestCase):
         self._replace(transport, "subscribe", lambda: True)
         self._replace(dispatch, "start", lambda: True)
         self._replace(
-            authority,
-            "handle_frame",
+            runtime.coordinator,
+            "handle_authority_frame",
             lambda frame: events.append(("authority", frame.envelope.message_id)) or frame.envelope.message_id == "control",
         )
         self._replace(
@@ -349,6 +376,35 @@ class PlaybackSyncRuntimeTest(unittest.TestCase):
             events,
             [("authority", "control"), ("authority", "playback"), ("playback", "playback")],
         )
+        runtime.close()
+
+    def test_zero_frame_pump_checks_handoff_timeout_and_fails_runtime(self) -> None:
+        """drain 0件でもpending handoff timeoutを検出してFailedへ遷移する。"""
+
+        runtime, _client, dispatch, _authority, transport, _controller = self._runtime()
+        self._replace(transport, "subscribe", lambda: True)
+        self._replace(dispatch, "start", lambda: True)
+        self._replace(dispatch, "drain", lambda _handler, _max_items=None: 0)
+        runtime.start()
+        runtime.coordinator.handle_host_event(
+            PlaybackHostEvent(
+                PlaybackHostEventKind.PAUSED_SEEK,
+                PlaybackHostSnapshot(
+                    "paused",
+                    2,
+                    PlaybackHostRange(0, 24),
+                    1.0,
+                    "forward",
+                    "once",
+                    "frames",
+                    "pending-001",
+                ),
+            )
+        )
+        runtime.coordinator._pending_deadline = time.monotonic() - 1  # type: ignore[attr-defined]
+        with self.assertRaisesRegex(PlaybackSyncRuntimeError, "timed out"):
+            runtime.pump()
+        self.assertTrue(runtime.status.failed)
         runtime.close()
 
     def test_handler_error_marks_failed_and_adapter_keeps_failed_frame(self) -> None:
@@ -398,6 +454,7 @@ class PlaybackSyncRuntimeTest(unittest.TestCase):
 
         runtime, _client, dispatch, authority, transport, controller = self._runtime()
         calls: list[str] = []
+        self._replace(runtime.coordinator, "close", lambda: calls.append("coordinator") or True)
         self._replace(authority, "close", lambda: calls.append("authority") or True)
         self._replace(transport, "close", lambda: calls.append("transport") or True)
         self._replace(dispatch, "close_session", lambda: calls.append("dispatch") or True)
@@ -405,7 +462,7 @@ class PlaybackSyncRuntimeTest(unittest.TestCase):
 
         self.assertTrue(runtime.close())
         self.assertFalse(runtime.close())
-        self.assertEqual(calls, ["authority", "transport", "dispatch", "controller"])
+        self.assertEqual(calls, ["coordinator", "authority", "transport", "dispatch", "controller"])
         self.assertTrue(runtime.status.closed)
         self.assertFalse(runtime.status.failed)
 
@@ -434,6 +491,7 @@ class PlaybackSyncRuntimeTest(unittest.TestCase):
 
         runtime, _client, dispatch, authority, transport, controller = self._runtime()
         calls: list[str] = []
+        self._replace(runtime.coordinator, "close", lambda: calls.append("coordinator") or True)
         self._replace(authority, "close", lambda: calls.append("authority") or True)
         self._replace(transport, "close", lambda: calls.append("transport") or True)
         self._replace(dispatch, "close_session", lambda: calls.append("dispatch") or False)
@@ -447,22 +505,23 @@ class PlaybackSyncRuntimeTest(unittest.TestCase):
         self._replace(controller, "close", fail_controller)
         with self.assertRaises(PlaybackSyncRuntimeError):
             runtime.close()
-        self.assertEqual(calls, ["authority", "transport", "dispatch", "controller"])
+        self.assertEqual(calls, ["coordinator", "authority", "transport", "dispatch", "controller"])
         self.assertTrue(runtime.status.closed)
         self.assertTrue(runtime.status.failed)
 
     def test_close_before_start_closes_all_components(self) -> None:
-        """未startでも四componentを安全に終了する。"""
+        """未startでも五componentを安全に終了する。"""
 
         runtime, _client, dispatch, authority, transport, controller = self._runtime()
         calls: list[str] = []
+        self._replace(runtime.coordinator, "close", lambda: calls.append("coordinator") or True)
         self._replace(authority, "close", lambda: calls.append("authority") or True)
         self._replace(transport, "close", lambda: calls.append("transport") or True)
         self._replace(dispatch, "close_session", lambda: calls.append("dispatch") or True)
         self._replace(controller, "close", lambda: calls.append("controller") or True)
 
         self.assertTrue(runtime.close())
-        self.assertEqual(calls, ["authority", "transport", "dispatch", "controller"])
+        self.assertEqual(calls, ["coordinator", "authority", "transport", "dispatch", "controller"])
         self.assertFalse(runtime.status.started)
 
     def test_components_cannot_be_reused_by_another_runtime(self) -> None:
@@ -473,7 +532,136 @@ class PlaybackSyncRuntimeTest(unittest.TestCase):
             if closed:
                 runtime.close()
             with self.assertRaisesRegex(PlaybackSyncRuntimeError, "already owned"):
-                PlaybackSyncRuntime(dispatch, authority, transport, controller)
+                PlaybackSyncRuntime(dispatch, authority, transport, controller, runtime.coordinator)
+
+    def test_mismatched_coordinator_public_identity_is_rejected(self) -> None:
+        """異なる公開componentを持つCoordinatorをRuntimeへ組み込めない。"""
+
+        runtime, client, dispatch, authority, transport, controller = self._runtime()
+        other_tracker = AuthorityHandoffTracker({"timeline": "peer-remote"}, session_id="session-001")
+        other_authority = AuthorityHandoffTransport(client, "other-room", other_tracker)
+        other_controller = _controller()
+        coordinator = PlaybackHandoffCoordinator(
+            "peer-local",
+            "timeline",
+            other_tracker,
+            other_authority,
+            other_controller,
+            PlaybackHostSnapshot(
+                "paused",
+                0,
+                PlaybackHostRange(0, 24),
+                1.0,
+                "forward",
+                "once",
+                "frames",
+                "baseline-other",
+            ),
+            lambda _snapshot: None,
+            1.0,
+        )
+        self.addCleanup(runtime.close)
+        self.addCleanup(coordinator.close)
+        self.addCleanup(other_authority.close)
+        self.addCleanup(other_controller.close)
+        with self.assertRaisesRegex(PlaybackSyncRuntimeError, "coordinator authority_transport"):
+            PlaybackSyncRuntime(dispatch, authority, transport, controller, coordinator)
+
+    def test_coordinator_peer_and_channel_identity_mismatches_are_rejected(self) -> None:
+        """Coordinatorのpeer/channel不一致をRuntime開始前に拒否する。"""
+
+        runtime, _client, dispatch, authority, transport, controller = self._runtime()
+        self.addCleanup(runtime.close)
+        baseline = PlaybackHostSnapshot(
+            "paused",
+            0,
+            PlaybackHostRange(0, 24),
+            1.0,
+            "forward",
+            "once",
+            "frames",
+            "baseline-mismatch",
+        )
+        for peer_id, channel_id, message in (
+            ("peer-other", "timeline", "peer_id"),
+            ("peer-local", "other-channel", "channel_id"),
+        ):
+            coordinator = PlaybackHandoffCoordinator(
+                peer_id,
+                channel_id,
+                authority.tracker,
+                authority,
+                controller,
+                baseline,
+                lambda _snapshot: None,
+                1.0,
+            )
+            self.addCleanup(coordinator.close)
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(PlaybackSyncRuntimeError, message):
+                    PlaybackSyncRuntime(dispatch, authority, transport, controller, coordinator)
+
+    def test_coordinator_peer_must_match_client_peer(self) -> None:
+        """Client peerとController/Coordinator peerの不一致を構成時に拒否する。"""
+
+        client = _Client()
+        dispatch = AdapterDispatch(client)
+        tracker = AuthorityHandoffTracker({"timeline": "peer-remote"}, session_id="session-001")
+        authority = AuthorityHandoffTransport(client, "room", tracker)
+        transport = PlaybackTopicTransport(client, "room", "topic")
+        controller = _controller("peer-other")
+        coordinator = PlaybackHandoffCoordinator(
+            "peer-other",
+            "timeline",
+            tracker,
+            authority,
+            controller,
+            PlaybackHostSnapshot(
+                "paused",
+                0,
+                PlaybackHostRange(0, 24),
+                1.0,
+                "forward",
+                "once",
+                "frames",
+                "baseline-client-peer",
+            ),
+            lambda _snapshot: None,
+            1.0,
+        )
+        self.addCleanup(dispatch.close_session)
+        self.addCleanup(authority.close)
+        self.addCleanup(transport.close)
+        self.addCleanup(controller.close)
+        self.addCleanup(coordinator.close)
+        with self.assertRaisesRegex(PlaybackSyncRuntimeError, "does not match Client"):
+            PlaybackSyncRuntime(dispatch, authority, transport, controller, coordinator)
+
+    def test_transport_room_mismatch_is_rejected_before_runtime_claim(self) -> None:
+        """AuthorityとPlaybackのRoom不一致をRuntime構成時に拒否する。"""
+
+        runtime, client, dispatch, authority, _transport, controller = self._runtime()
+        other_transport = PlaybackTopicTransport(client, "other-room", "topic")
+        self.addCleanup(runtime.close)
+        self.addCleanup(other_transport.close)
+        with self.assertRaisesRegex(PlaybackSyncRuntimeError, "share the same Room"):
+            PlaybackSyncRuntime(dispatch, authority, other_transport, controller, runtime.coordinator)
+
+    def test_playback_topic_must_differ_from_authority_control_topic(self) -> None:
+        """Playback topicとAuthority control topicの衝突をRuntime構成時に拒否する。"""
+
+        runtime, client, dispatch, authority, _transport, controller = self._runtime()
+        control_topic_transport = PlaybackTopicTransport(client, "room", authority.topic)
+        self.addCleanup(runtime.close)
+        self.addCleanup(control_topic_transport.close)
+        with self.assertRaisesRegex(PlaybackSyncRuntimeError, "must differ"):
+            PlaybackSyncRuntime(
+                dispatch,
+                authority,
+                control_topic_transport,
+                controller,
+                runtime.coordinator,
+            )
 
     def test_dispatch_and_transport_must_share_client_identity(self) -> None:
         """subscribe/publishとreceiveを別Clientへ分離させない。"""
@@ -489,9 +677,29 @@ class PlaybackSyncRuntimeTest(unittest.TestCase):
         self.addCleanup(authority.close)
         self.addCleanup(transport.close)
         self.addCleanup(controller.close)
+        coordinator = PlaybackHandoffCoordinator(
+            "peer-local",
+            "timeline",
+            authority_tracker,
+            authority,
+            controller,
+            PlaybackHostSnapshot(
+                "paused",
+                0,
+                PlaybackHostRange(0, 24),
+                1.0,
+                "forward",
+                "once",
+                "frames",
+                "baseline-001",
+            ),
+            lambda _snapshot: None,
+            1.0,
+        )
+        self.addCleanup(coordinator.close)
 
         with self.assertRaisesRegex(PlaybackSyncRuntimeError, "same Client instance"):
-            PlaybackSyncRuntime(dispatch, authority, transport, controller)
+            PlaybackSyncRuntime(dispatch, authority, transport, controller, coordinator)
 
     def test_owner_thread_and_reentry_boundaries(self) -> None:
         """owner以外と同期再入を明示的に拒否する。"""

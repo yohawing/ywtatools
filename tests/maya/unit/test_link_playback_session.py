@@ -38,8 +38,28 @@ class _Timer:
 class _Anim:
     """MAnimControlの未開始composition用fake。"""
 
+    kPlaybackOnce = 1
+
     def isPlaying(self):
         return False
+
+    def currentTime(self):
+        return 1.0
+
+    def minTime(self):
+        return 1.0
+
+    def maxTime(self):
+        return 24.0
+
+    def playbackSpeed(self):
+        return 1.0
+
+    def playbackBy(self):
+        return 1.0
+
+    def playbackMode(self):
+        return self.kPlaybackOnce
 
 
 class _Api:

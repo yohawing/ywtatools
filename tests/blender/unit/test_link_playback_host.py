@@ -143,6 +143,28 @@ class BlenderPlaybackHostTests(unittest.TestCase):
             with self.assertRaises(BlenderPlaybackHostUnavailableError):
                 BlenderPlaybackHost(lambda _event: None, bpy_module=None)
 
+    def test_snapshot_returns_typed_current_state_without_registration(self):
+        snapshot = self.host.snapshot()
+        self.assertIs(type(snapshot), PlaybackHostSnapshot)
+        self.assertEqual(1, snapshot.position)
+        self.assertEqual(PlaybackHostRange(1, 25), snapshot.playback_range)
+
+    def test_snapshot_rejects_non_owner_thread(self):
+        errors = []
+
+        def read_snapshot():
+            try:
+                self.host.snapshot()
+            except Exception as error:  # noqa: BLE001 - thread boundary assertion
+                errors.append(error)
+
+        thread = threading.Thread(target=read_snapshot)
+        thread.start()
+        thread.join()
+        self.assertEqual(1, len(errors))
+        self.assertIsInstance(errors[0], BlenderPlaybackHostError)
+        self.assertIn("Main Thread", str(errors[0]))
+
     def test_apply_port_requires_matching_query_port(self):
         with self.assertRaisesRegex(BlenderPlaybackHostError, "speed_apply requires speed_query"):
             BlenderPlaybackHost(

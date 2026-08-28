@@ -49,6 +49,19 @@ class _Bpy:
 
     def __init__(self) -> None:
         self.app = types.SimpleNamespace(timers=_Timers())
+        scene = types.SimpleNamespace(
+            frame_current=1,
+            frame_start=1,
+            frame_end=24,
+            frame_step=1,
+            frame_subframe=0.0,
+            use_preview_range=False,
+            frame_preview_start=1,
+            frame_preview_end=24,
+            render=types.SimpleNamespace(fps=24, fps_base=1.0),
+        )
+        screen = types.SimpleNamespace(is_animation_playing=False)
+        self.context = types.SimpleNamespace(scene=scene, screen=screen)
 
 
 class _Client:

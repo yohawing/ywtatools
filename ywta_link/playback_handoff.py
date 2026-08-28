@@ -122,6 +122,36 @@ class PlaybackHandoffCoordinator:
                 error=self._error,
             )
 
+    @property
+    def tracker(self) -> AuthorityHandoffTracker:
+        """Authority状態を保持する借用Trackerを返す。"""
+
+        return self._tracker
+
+    @property
+    def authority_transport(self) -> AuthorityHandoffTransport:
+        """Authority handoffに使用する借用Transportを返す。"""
+
+        return self._authority_transport
+
+    @property
+    def controller(self) -> PlaybackController:
+        """Playback publish/applyに使用する借用Controllerを返す。"""
+
+        return self._controller
+
+    @property
+    def peer_id(self) -> str:
+        """handoffを要求するlocal peer IDを返す。"""
+
+        return self._peer_id
+
+    @property
+    def channel_id(self) -> str:
+        """handoff対象のPlayback channel IDを返す。"""
+
+        return self._channel_id
+
     def handle_host_event(self, event: PlaybackHostEvent) -> bool:
         """Host eventをAuthority状態に応じてpublishまたはhandoff要求へ変換する。"""
 
@@ -262,12 +292,17 @@ class PlaybackHandoffCoordinator:
             self._restore_and_discard()
             return
         event = self._retained_event
-        self._pending_deadline = None
         if event is None:
+            self._pending_deadline = None
             return
+        # Accepted後もHostはpending中に到着した旧Authorityの状態を表示している
+        # 可能性があるため、publish直前に保留中の最新snapshotを再適用する。
+        # Host適用が失敗した場合は下の呼び出し元でFailedへ遷移し、publishしない。
+        self._rollback_apply(event.snapshot)
         result = self._controller.handle_host_event(event)
         if result is not True:
             raise PlaybackHandoffError("accepted handoff event was not published")
+        self._pending_deadline = None
         self._baseline = event.snapshot
         self._retained_event = None
 
@@ -331,12 +366,7 @@ def _identifier(value: object, field_name: str) -> str:
 def _positive_finite(value: object) -> bool:
     """boolを除く正の有限数を検証する。"""
 
-    return (
-        not isinstance(value, bool)
-        and isinstance(value, (int, float))
-        and math.isfinite(float(value))
-        and float(value) > 0
-    )
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(float(value)) and float(value) > 0
 
 
 def _error_message(error: BaseException) -> str:

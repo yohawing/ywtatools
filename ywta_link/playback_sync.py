@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from .adapter import AdapterDispatch
 from .authority_transport import AuthorityHandoffTransport
 from .frame import Frame
+from .playback_handoff import PlaybackHandoffCoordinator
 from .playback_controller import PlaybackController
 from .playback_transport import PlaybackTopicTransport
 
@@ -40,7 +41,7 @@ class PlaybackSyncRuntimeStatus:
 
 
 class PlaybackSyncRuntime:
-    """四つの既存componentをDCC Main Thread上で一つのSessionに束ねる。"""
+    """五つの既存componentをDCC Main Thread上で一つのSessionに束ねる。"""
 
     def __init__(
         self,
@@ -48,6 +49,7 @@ class PlaybackSyncRuntime:
         authority_transport: AuthorityHandoffTransport,
         transport: PlaybackTopicTransport,
         controller: PlaybackController,
+        coordinator: PlaybackHandoffCoordinator,
     ) -> None:
         """所有権を移されたcomponentを検証し、owner threadを記録する。"""
 
@@ -59,13 +61,17 @@ class PlaybackSyncRuntime:
             raise PlaybackSyncRuntimeError("transport must be exactly a PlaybackTopicTransport")
         if type(controller) is not PlaybackController:
             raise PlaybackSyncRuntimeError("controller must be exactly a PlaybackController")
+        if type(coordinator) is not PlaybackHandoffCoordinator:
+            raise PlaybackSyncRuntimeError("coordinator must be exactly a PlaybackHandoffCoordinator")
         if dispatch.client is not authority_transport.client or dispatch.client is not transport.client:
             raise PlaybackSyncRuntimeError("dispatch and transports must share the same Client instance")
-        _claim_components(dispatch, authority_transport, transport, controller)
+        _validate_coordinator_identity(coordinator, authority_transport, transport, controller)
+        _claim_components(dispatch, authority_transport, transport, controller, coordinator)
         self._dispatch = dispatch
         self._authority_transport = authority_transport
         self._transport = transport
         self._controller = controller
+        self._coordinator = coordinator
         self._owner_thread_id = threading.get_ident()
         self._status_lock = threading.Lock()
         self._started = False
@@ -87,6 +93,12 @@ class PlaybackSyncRuntime:
         """Runtimeが所有するAuthority transportを返す。"""
 
         return self._authority_transport
+
+    @property
+    def coordinator(self) -> PlaybackHandoffCoordinator:
+        """RuntimeへborrowされたPlayback handoff Coordinatorを返す。"""
+
+        return self._coordinator
 
     def start(self) -> bool:
         """control、Playbackの順に購読し、成功した場合だけ受信dispatchを起動する。"""
@@ -139,6 +151,7 @@ class PlaybackSyncRuntime:
                 self._raise_receiver_error()
                 drained = self._dispatch.drain(self._handle_frame, max_items)
                 self._raise_receiver_error()
+                self._poll_coordinator()
                 return drained
             except Exception as error:
                 if not self.status.failed:
@@ -157,15 +170,27 @@ class PlaybackSyncRuntime:
                 if self._closed:
                     return False
 
+            coordinator_errors: list[BaseException] = []
+            try:
+                self._close_coordinator()
+            except BaseException as error:
+                coordinator_errors.append(error)
+
             transport_errors: list[BaseException] = []
             for transport in (self._authority_transport, self._transport):
                 try:
                     transport.close()
                 except BaseException as error:
                     transport_errors.append(error)
+            if coordinator_errors:
+                raise self._runtime_error(
+                    "PlaybackSyncRuntime coordinator close failed", coordinator_errors[0]
+                ) from coordinator_errors[0]
             if transport_errors:
                 # いずれかのunsubscribe失敗時はdispatchを止めず、次回closeで再試行する。
-                raise self._runtime_error("PlaybackSyncRuntime unsubscribe failed", transport_errors[0]) from transport_errors[0]
+                raise self._runtime_error("PlaybackSyncRuntime unsubscribe failed", transport_errors[0]) from transport_errors[
+                    0
+                ]
 
             errors: list[BaseException] = []
             try:
@@ -191,9 +216,9 @@ class PlaybackSyncRuntime:
     def _handle_frame(self, frame: Frame) -> None:
         """Adapterから受け取ったFrameをAuthority、Playbackの順に渡す。"""
 
-        handled = self._authority_transport.handle_frame(frame)
+        handled = self._coordinator.handle_authority_frame(frame)
         if not isinstance(handled, bool):
-            raise PlaybackSyncRuntimeError("AuthorityHandoffTransport.handle_frame() must return bool")
+            raise PlaybackSyncRuntimeError("PlaybackHandoffCoordinator.handle_authority_frame() must return bool")
         if not handled:
             self._transport.handle_frame(frame, self._controller)
 
@@ -212,6 +237,10 @@ class PlaybackSyncRuntime:
         """start失敗後に両Topicと全componentを閉じ、receiverを残さない。"""
 
         errors: list[BaseException] = []
+        try:
+            self._close_coordinator()
+        except BaseException as error:
+            errors.append(error)
         for transport in (self._authority_transport, self._transport):
             try:
                 transport.close()
@@ -230,6 +259,39 @@ class PlaybackSyncRuntime:
         except BaseException as error:
             errors.append(error)
         return errors
+
+    def _poll_coordinator(self) -> None:
+        """各pumpのdrain後にhandoff timeoutとterminal failureを確認する。"""
+
+        status = self._coordinator.status
+        if status.failed:
+            detail = status.error
+            message = "PlaybackHandoffCoordinator has failed"
+            if detail is not None:
+                message = f"{message}: {detail.exception_type}: {detail.message}"
+            error = PlaybackSyncRuntimeError(message)
+            self._mark_failed(error)
+            raise error
+        timed_out = self._coordinator.poll_timeout()
+        status = self._coordinator.status
+        if timed_out or status.failed:
+            if timed_out:
+                error = PlaybackSyncRuntimeError("Authority handoff timed out")
+            else:
+                detail = status.error
+                message = "PlaybackHandoffCoordinator has failed"
+                if detail is not None:
+                    message = f"{message}: {detail.exception_type}: {detail.message}"
+                error = PlaybackSyncRuntimeError(message)
+            self._mark_failed(error)
+            raise error
+
+    def _close_coordinator(self) -> None:
+        """Coordinatorを所有componentより先に閉じ、既閉鎖Falseだけを許可する。"""
+
+        result = self._coordinator.close()
+        if result is False and not self._coordinator.status.closed:
+            raise PlaybackSyncRuntimeError("PlaybackHandoffCoordinator.close() did not close")
 
     def _raise_receiver_error(self) -> None:
         """background receiver失敗を正常idleとして扱わずFailedへ昇格する。"""
@@ -292,6 +354,36 @@ def _claim_components(*components: object) -> None:
         if any(component in _CLAIMED_COMPONENTS for component in components):
             raise PlaybackSyncRuntimeError("Playback sync component is already owned by another Runtime")
         _CLAIMED_COMPONENTS.update(components)
+
+
+def _validate_coordinator_identity(
+    coordinator: PlaybackHandoffCoordinator,
+    authority_transport: AuthorityHandoffTransport,
+    transport: PlaybackTopicTransport,
+    controller: PlaybackController,
+) -> None:
+    """Coordinatorが同じSession componentをborrowしていることを確認する。"""
+
+    for name, expected in (
+        ("authority_transport", authority_transport),
+        ("controller", controller),
+    ):
+        if getattr(coordinator, name, None) is not expected:
+            raise PlaybackSyncRuntimeError(f"coordinator {name} does not match Runtime component")
+    if coordinator.tracker is not authority_transport.tracker:
+        raise PlaybackSyncRuntimeError("coordinator tracker does not match authority transport")
+    if coordinator.peer_id != controller.peer_id:
+        raise PlaybackSyncRuntimeError("coordinator peer_id does not match controller")
+    if coordinator.peer_id != authority_transport.client.peer_id:
+        raise PlaybackSyncRuntimeError("coordinator peer_id does not match Client")
+    if coordinator.channel_id != controller.channel_id:
+        raise PlaybackSyncRuntimeError("coordinator channel_id does not match controller")
+    if authority_transport.room != transport.room:
+        raise PlaybackSyncRuntimeError("authority and playback transports must share the same Room")
+    if coordinator.authority_transport.room != authority_transport.room:
+        raise PlaybackSyncRuntimeError("coordinator Authority transport room does not match Runtime")
+    if transport.topic == authority_transport.topic:
+        raise PlaybackSyncRuntimeError("playback topic must differ from Authority control topic")
 
 
 def _error_message(error: BaseException) -> str:

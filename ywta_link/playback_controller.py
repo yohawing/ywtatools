@@ -95,6 +95,18 @@ class PlaybackController:
         with self._status_lock:
             return PlaybackControllerStatus(self._closed, self._failed, self._error)
 
+    @property
+    def peer_id(self) -> str:
+        """Controllerが扱うlocal peer IDを返す。"""
+
+        return self._peer_id
+
+    @property
+    def channel_id(self) -> str:
+        """Controllerが扱うPlayback channel IDを返す。"""
+
+        return self._channel_id
+
     def handle_host_event(self, event: PlaybackHostEvent, origin_peer_id: str | None = None) -> bool:
         """Host eventをAuthority確認後にwireへpublishする。
 

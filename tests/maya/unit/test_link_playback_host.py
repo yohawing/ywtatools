@@ -178,6 +178,28 @@ class MayaPlaybackHostTests(unittest.TestCase):
             with self.assertRaises(MayaPlaybackHostUnavailableError):
                 MayaPlaybackHost(lambda _event: None, api=None)
 
+    def test_snapshot_returns_typed_current_state_without_registration(self):
+        snapshot = self.host.snapshot()
+        self.assertIs(type(snapshot), PlaybackHostSnapshot)
+        self.assertEqual(10.0, snapshot.position)
+        self.assertEqual(PlaybackHostRange(1.0, 25.0), snapshot.playback_range)
+
+    def test_snapshot_rejects_non_owner_thread(self):
+        errors = []
+
+        def read_snapshot():
+            try:
+                self.host.snapshot()
+            except Exception as error:  # noqa: BLE001 - thread boundary assertion
+                errors.append(error)
+
+        thread = threading.Thread(target=read_snapshot)
+        thread.start()
+        thread.join()
+        self.assertEqual(1, len(errors))
+        self.assertIsInstance(errors[0], MayaPlaybackHostError)
+        self.assertIn("Main Thread", str(errors[0]))
+
     def test_register_and_unregister_are_idempotent(self):
         self.assertTrue(self.host.register())
         self.assertFalse(self.host.register())

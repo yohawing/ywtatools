@@ -6,6 +6,11 @@ import unittest
 from types import SimpleNamespace
 
 from ywta_link import (
+    AUTHORITY_REJECTED_SCHEMA,
+    AuthorityHandoffRejected,
+    Envelope,
+    Frame,
+    Playback,
     PlaybackHostEvent,
     PlaybackHostEventKind,
     PlaybackHostRange,
@@ -13,6 +18,7 @@ from ywta_link import (
     PlaybackSessionConfig,
     PlaybackSessionError,
     RationalRate,
+    Time,
     compose_playback_session,
 )
 
@@ -56,9 +62,73 @@ class _Host:
     def __init__(self, on_change: object) -> None:
         self.on_change = on_change
         self.applied: list[PlaybackHostSnapshot] = []
+        self.snapshot_calls = 0
+        self.fail_apply = False
+        self._initial_snapshot = PlaybackHostSnapshot(
+            "paused",
+            0,
+            PlaybackHostRange(0, 24),
+            1.0,
+            "forward",
+            "once",
+            "frames",
+            "initial-001",
+        )
 
     def apply(self, snapshot: PlaybackHostSnapshot) -> None:
+        if self.fail_apply:
+            raise RuntimeError("host apply")
         self.applied.append(snapshot)
+
+    def snapshot(self) -> PlaybackHostSnapshot:
+        self.snapshot_calls += 1
+        return self._initial_snapshot
+
+
+def _playback_frame(sender: str = "peer-remote") -> Frame:
+    """テスト用のremote Playback Frameを作る。"""
+
+    playback = Playback(
+        state="paused",
+        position=Time(12, None, None, RationalRate(24, 1)),
+        playback_range=Time(None, 0, 24, RationalRate(24, 1)),
+        speed=1.0,
+        direction="forward",
+        loop_mode="once",
+        change_id="remote-playback-001",
+    )
+    return Frame(
+        Envelope(
+            protocol_version=1,
+            message_id="playback-message-001",
+            type="publish",
+            sender=sender,
+            room="room-001",
+            target=None,
+            topic="playback",
+            correlation_id=None,
+            schema="ywta.common.playback.v1",
+            body=playback.to_dict(),
+        )
+    )
+
+
+def _local_event(change_id: str) -> PlaybackHostEvent:
+    """テスト用のlocal seek eventを作る。"""
+
+    return PlaybackHostEvent(
+        PlaybackHostEventKind.PAUSED_SEEK,
+        PlaybackHostSnapshot(
+            "paused",
+            18,
+            PlaybackHostRange(0, 24),
+            1.0,
+            "forward",
+            "once",
+            "frames",
+            change_id,
+        ),
+    )
 
 
 class _Lifecycle:
@@ -109,7 +179,7 @@ def _config(**values: object) -> PlaybackSessionConfig:
 
 
 class PlaybackSessionTest(unittest.TestCase):
-    def _compose(self) -> tuple[object, _Client, _Host, _Lifecycle]:
+    def _compose(self, **config_values: object) -> tuple[object, _Client, _Host, _Lifecycle]:
         client = _Client()
         captured: dict[str, object] = {}
 
@@ -123,7 +193,7 @@ class PlaybackSessionTest(unittest.TestCase):
             captured["lifecycle"] = lifecycle
             return lifecycle
 
-        session = compose_playback_session(_config(), make_host, make_lifecycle, lambda config: client)
+        session = compose_playback_session(_config(**config_values), make_host, make_lifecycle, lambda config: client)
         return session, client, captured["host"], captured["lifecycle"]  # type: ignore[return-value]
 
     def test_config_requires_explicit_valid_values(self) -> None:
@@ -164,6 +234,98 @@ class PlaybackSessionTest(unittest.TestCase):
         self.assertEqual(controller._authority_provider("playback-main"), "maya:peer-001")
         self.assertTrue(session.start())
 
+    def test_composition_captures_host_baseline_once_before_start(self) -> None:
+        session, _client, host, lifecycle = self._compose()
+        self.assertEqual(1, host.snapshot_calls)
+        self.assertEqual(0, lifecycle.started)
+        session.close()
+
+    def test_remote_apply_updates_baseline_only_after_success(self) -> None:
+        session, _client, host, lifecycle = self._compose(initial_authority="peer-remote", ticks_per_host_unit=1)
+        runtime = lifecycle.runtime
+        runtime.authority_transport.subscribe()
+        runtime._transport.subscribe()
+
+        runtime._handle_frame(_playback_frame())
+        self.assertEqual(1, len(host.applied))
+        authoritative = host.applied[-1]
+
+        coordinator = runtime.coordinator
+        coordinator.handle_host_event(_local_event("local-rejected"))
+        pending = session.authority_tracker.pending_for("playback-main")
+        self.assertIsNotNone(pending)
+        rejected = AuthorityHandoffRejected(
+            session_id="session-001",
+            channel_id="playback-main",
+            current_authority="peer-remote",
+            next_authority="maya:peer-001",
+            expected_authority_revision=pending.request.expected_authority_revision,  # type: ignore[union-attr]
+            change_id=pending.request.change_id,  # type: ignore[union-attr]
+            reason="busy",
+        )
+        runtime._handle_frame(
+            Frame(
+                Envelope(
+                    protocol_version=1,
+                    message_id="rejected-001",
+                    type="response",
+                    sender="peer-remote",
+                    room="room-001",
+                    target="maya:peer-001",
+                    topic=None,
+                    correlation_id=pending.request_message_id,  # type: ignore[union-attr]
+                    schema=AUTHORITY_REJECTED_SCHEMA,
+                    body=rejected.to_dict(),
+                )
+            )
+        )
+        self.assertEqual(authoritative.change_id, host.applied[-1].change_id)
+
+        failed_snapshot = PlaybackHostSnapshot(
+            "paused",
+            20,
+            PlaybackHostRange(0, 24),
+            1.0,
+            "forward",
+            "once",
+            "frames",
+            "failed-apply-001",
+        )
+        host.fail_apply = True
+        with self.assertRaises(RuntimeError):
+            runtime._controller._host_apply(failed_snapshot)  # type: ignore[attr-defined]
+        host.fail_apply = False
+        coordinator.handle_host_event(_local_event("local-rejected-again"))
+        pending = session.authority_tracker.pending_for("playback-main")
+        self.assertIsNotNone(pending)
+        rejected = AuthorityHandoffRejected(
+            session_id="session-001",
+            channel_id="playback-main",
+            current_authority="peer-remote",
+            next_authority="maya:peer-001",
+            expected_authority_revision=pending.request.expected_authority_revision,  # type: ignore[union-attr]
+            change_id=pending.request.change_id,  # type: ignore[union-attr]
+            reason="busy",
+        )
+        runtime._handle_frame(
+            Frame(
+                Envelope(
+                    protocol_version=1,
+                    message_id="rejected-002",
+                    type="response",
+                    sender="peer-remote",
+                    room="room-001",
+                    target="maya:peer-001",
+                    topic=None,
+                    correlation_id=pending.request_message_id,  # type: ignore[union-attr]
+                    schema=AUTHORITY_REJECTED_SCHEMA,
+                    body=rejected.to_dict(),
+                )
+            )
+        )
+        self.assertEqual(authoritative.change_id, host.applied[-1].change_id)
+        session.close()
+
     def test_host_callback_before_bind_fails_and_closes_client(self) -> None:
         client = _Client()
         event = PlaybackHostEvent(
@@ -176,7 +338,9 @@ class PlaybackSessionTest(unittest.TestCase):
             return _Host(on_change)
 
         with self.assertRaisesRegex(PlaybackSessionError, "before PlaybackController binding"):
-            compose_playback_session(_config(), make_host, lambda host, runtime: _Lifecycle(host, runtime), lambda config: client)
+            compose_playback_session(
+                _config(), make_host, lambda host, runtime: _Lifecycle(host, runtime), lambda config: client
+            )
         self.assertGreaterEqual(client.closed, 1)
 
     def test_close_before_start_closes_runtime_client(self) -> None:

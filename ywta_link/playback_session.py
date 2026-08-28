@@ -11,8 +11,9 @@ from .adapter import AdapterDispatch
 from .authority import AuthorityHandoffTracker
 from .authority_transport import AuthorityHandoffTransport
 from .client import LinkClient
+from .playback_handoff import PlaybackHandoffCoordinator
 from .playback_controller import PlaybackController
-from .playback_host import PlaybackHostEvent
+from .playback_host import PlaybackHostEvent, PlaybackHostSnapshot
 from .playback_mapping import PlaybackTimeMapper
 from .playback_sync import PlaybackSyncRuntime
 from .playback_transport import PlaybackTopicTransport
@@ -37,6 +38,7 @@ class PlaybackSessionConfig:
     time_unit: str
     queue_capacity: int = 256
     stop_timeout: float = 1.0
+    handoff_timeout: float = 1.0
 
     def __post_init__(self) -> None:
         """暗黙のRoom、Authority、timebaseを許可しない。"""
@@ -54,6 +56,13 @@ class PlaybackSessionConfig:
             or self.stop_timeout < 0
         ):
             raise PlaybackSessionError("stop_timeout must be a non-negative finite number")
+        if (
+            isinstance(self.handoff_timeout, bool)
+            or not isinstance(self.handoff_timeout, (int, float))
+            or not math.isfinite(float(self.handoff_timeout))
+            or self.handoff_timeout <= 0
+        ):
+            raise PlaybackSessionError("handoff_timeout must be a positive finite number")
         try:
             PlaybackTimeMapper(
                 ticks_per_host_unit=self.ticks_per_host_unit,
@@ -181,6 +190,7 @@ def compose_playback_session(
     authority_transport: AuthorityHandoffTransport | None = None
     transport: PlaybackTopicTransport | None = None
     controller: PlaybackController | None = None
+    coordinator: PlaybackHandoffCoordinator | None = None
     runtime: PlaybackSyncRuntime | None = None
     try:
         client = factory(config)
@@ -200,23 +210,45 @@ def compose_playback_session(
         authority_transport = AuthorityHandoffTransport(client, config.room, tracker)
         relay = _HostRelay()
         host = host_factory(relay)
-        _require_methods(host, ("apply",), "host")
+        _require_methods(host, ("apply", "snapshot"), "host")
+        initial_snapshot = host.snapshot()
+        if not isinstance(initial_snapshot, PlaybackHostSnapshot):
+            raise PlaybackSessionError("host.snapshot() must return a PlaybackHostSnapshot")
         transport = PlaybackTopicTransport(client, config.room, config.topic)
+
+        def apply_authoritative_snapshot(snapshot: PlaybackHostSnapshot) -> None:
+            """remote snapshotをHostへ適用し、成功後だけrollback基準を更新する。"""
+
+            host.apply(snapshot)
+            if coordinator is None:
+                raise PlaybackSessionError("PlaybackHandoffCoordinator is not bound")
+            coordinator.observe_authoritative_snapshot(snapshot)
+
         controller = PlaybackController(
             config.peer_id,
             config.channel_id,
             mapper,
             lambda channel_id: tracker.state_for(channel_id).authority,
             transport.publish,
-            host.apply,
+            apply_authoritative_snapshot,
         )
-        relay.bind(controller.handle_host_event)
+        coordinator = PlaybackHandoffCoordinator(
+            config.peer_id,
+            config.channel_id,
+            tracker,
+            authority_transport,
+            controller,
+            initial_snapshot,
+            host.apply,
+            config.handoff_timeout,
+        )
+        relay.bind(coordinator.handle_host_event)
         dispatch = AdapterDispatch(client, queue_capacity=config.queue_capacity, stop_timeout=config.stop_timeout)
-        runtime = PlaybackSyncRuntime(dispatch, authority_transport, transport, controller)
+        runtime = PlaybackSyncRuntime(dispatch, authority_transport, transport, controller, coordinator)
         lifecycle = lifecycle_factory(host, runtime)
         return PlaybackSession(lifecycle, tracker, runtime, client)
     except BaseException as error:
-        rollback_errors = _rollback_construction(runtime, authority_transport, transport, controller, client)
+        rollback_errors = _rollback_construction(runtime, coordinator, authority_transport, transport, controller, client)
         if rollback_errors:
             detail = "; ".join(_error_text(rollback_error) for rollback_error in rollback_errors)
             raise PlaybackSessionError(f"PlaybackSession construction rollback failed: {detail}") from error
@@ -279,6 +311,7 @@ def _require_methods(value: object, names: tuple[str, ...], name: str) -> None:
 
 def _rollback_construction(
     runtime: PlaybackSyncRuntime | None,
+    coordinator: PlaybackHandoffCoordinator | None,
     authority_transport: AuthorityHandoffTransport | None,
     transport: PlaybackTopicTransport | None,
     controller: PlaybackController | None,
@@ -293,6 +326,11 @@ def _rollback_construction(
         except BaseException as error:
             errors.append(error)
     else:
+        if coordinator is not None:
+            try:
+                coordinator.close()
+            except BaseException as error:
+                errors.append(error)
         if authority_transport is not None:
             try:
                 authority_transport.close()

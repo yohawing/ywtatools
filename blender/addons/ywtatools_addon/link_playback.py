@@ -280,6 +280,12 @@ class BlenderPlaybackHost:
 
     apply_snapshot = apply
 
+    def snapshot(self) -> PlaybackHostSnapshot:
+        """現在のBlender playback状態をMain Thread上で取得する。"""
+
+        self._assert_owner_thread("snapshot")
+        return self._read_snapshot()
+
     @staticmethod
     def blender_range_to_wire(
         start: float | int,
