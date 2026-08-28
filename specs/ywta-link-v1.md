@@ -74,6 +74,10 @@ Brokerが保持するのは接続中Peer、Room、Subscription、未完了Reques
 短い診断用Event列だけである。Material、Texture、Camera、Motion、Scene、Layer Treeなどの意味状態は
 永続保持しない。
 
+本文を解釈しない原則の限定例外として、Broker自身を宛先とするephemeral session slotのjoin Requestだけは
+Brokerがversioned schemaを検証し、Room内で共有するSession descriptorを生成する。この例外はSession bootstrapの
+atomic claim/joinに限り、DCCの意味データや同期payloadをBrokerの正本にするものではない。
+
 Materialの意味情報はversioned Material Spec、TextureやMeshは各用途の標準形式または
 versioned binary schemaを正本とする。Broker再起動後はClientが接続、Room、Capability、
 必要な最新状態を再広告する。
@@ -585,6 +589,8 @@ Peerは少なくとも次を広告する。
 
 `peer_id` はBroker Processの生存期間内で一意でなければならない。Application名だけを宛先として
 使用してはならない。
+`ywta-link:broker`はBroker生成Envelope専用の予約IDであり、ClientのHello sender / Peer IDとして使用した場合は、
+Monitor予約IDの認証規則とは別に接続登録前に拒否する。
 
 ### 6.2 Room
 
@@ -1081,6 +1087,37 @@ Sync Sessionは同期対象、Schema、Authority、Target、Binding、終了時�
 
 同じRoomで、Camera同期とMorph Weight同期を別Sessionとして開始、停止できる。Sessionを閉じてもRoom接続や
 他Sessionを切断してはならない。
+
+Room内で同じ作業用Sessionへ自動参加する場合、Clientはtype=`request`、target=`ywta-link:broker`、
+schema=`ywta.session.slot.join.v1`を送る。Requestは参加済みRoomを必須とし、topic、correlation_id、raw binary bodyを
+持たない。sender（Peer ID）、room、Request message_idはそれぞれ空白だけではない256 byte以下のUTF-8文字列とする。
+JSON bodyは次の2 Fieldだけを持つ。
+
+```json
+{
+  "slot_id": "playback-sync",
+  "metadata": {"purpose": "timeline playback"}
+}
+```
+
+`slot_id`は空白だけではない256 byte以下のUTF-8文字列、`metadata`はserialized JSONで32 KiB以下のopaqueな
+JSON objectとする。Broker Process内のactive slotは全Room合計256個までとし、上限到達後も既存slotへのjoinは
+許可するが、新規slotのclaimはfail closedで拒否する。
+Brokerは`(room, slot_id)`をatomicにclaimし、最初の参加者を`initial_authority`とするfreshな`session_id`を生成する。
+同じslotへの後続参加者には最初の提案を正本とする同一descriptorを返し、後続Requestのmetadataで上書きしない。
+Responseはsender=`ywta-link:broker`、target=Requester、元Room、correlation_id=元Request message_id、
+schema=`ywta.session.slot.descriptor.v1`とし、bodyに`slot_id`、`session_id`、`initial_authority`、`metadata`、
+per-response boolの`created`、`state_peer`の正確に6 Fieldを持つ。atomic claimで作成したRequesterだけが
+`created=true`となり、`state_peer`はRequester自身とする。既存slotへのjoinは`created=false`とし、Requester追加前の
+既存Participantから辞書順最小のconnected Peerを`state_peer`として返す。`initial_authority`はslot作成時のseedを示す
+歴史値であり、現在も接続中のAuthorityを保証しない。`created=false`のConsumerは`state_peer`をlive authorityと
+authority revisionの照会先とし、Tracker構築前にParticipant間でreconciliationする。同期できるまでは自動joinした
+SessionをActiveにしてはならない。
+このRequestは通常の未完了Request表へ積まない。
+
+Peerは同じRoomの複数slotへ参加できる。RoomからのleaveまたはdisconnectでそのPeerを各該当slotから除外し、
+参加者が0になったslotは即座に破棄する。0参加者からの再作成では過去と異なるfreshな`session_id`を生成する。
+slotとdescriptorは永続化せず、Broker再起動でも破棄する。Clientは再接続後にclaim/joinとBinding検証をやり直す。
 
 ### 11.2 Contract
 

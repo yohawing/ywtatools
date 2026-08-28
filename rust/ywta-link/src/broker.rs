@@ -5,9 +5,10 @@ use std::error::Error;
 use std::fmt;
 use std::io;
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::envelope::{Envelope, MessageType, MONITOR_SNAPSHOT_SCHEMA};
 use crate::frame::{Frame, FrameError, FrameLimits};
@@ -20,6 +21,13 @@ const RUNTIME_TOKEN_FIELD: &str = "ywta_runtime_token";
 const RUNTIME_BROKER_SENDER: &str = "ywta-link:broker";
 const MONITOR_PEER_PREFIX: &str = "ywta-link:monitor:";
 const MONITOR_INCLUDE_PRESENCE_FIELD: &str = "ywta_include_presence";
+const SESSION_SLOT_JOIN_SCHEMA: &str = "ywta.session.slot.join.v1";
+const SESSION_SLOT_DESCRIPTOR_SCHEMA: &str = "ywta.session.slot.descriptor.v1";
+const MAX_SESSION_SLOT_TEXT_BYTES: usize = 256;
+const MAX_SESSION_SLOT_METADATA_BYTES: usize = 32 * 1024;
+const MAX_SESSION_SLOTS: usize = 256;
+
+static BROKER_INSTANCE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// Broker内で接続を区別する短命ID。
 pub type ConnectionId = u64;
@@ -68,6 +76,7 @@ pub enum BrokerError {
     DuplicateHello,
     SenderSpoofing,
     DuplicatePeerId(String),
+    ReservedPeerId(String),
     NotInRoom(String),
     TargetNotConnected(String),
     DuplicatePendingRequest(String),
@@ -77,6 +86,9 @@ pub enum BrokerError {
     ResponseRoomMismatch(String),
     MonitorNotAllowed,
     InvalidMonitorRequest,
+    InvalidSessionSlotRequest(&'static str),
+    SessionSlotCapacityExceeded,
+    SessionSlotCounterExhausted(&'static str),
     MonitorSerialization(serde_json::Error),
     InvalidPresence(PresenceError),
     Io(io::Error),
@@ -95,6 +107,7 @@ impl fmt::Display for BrokerError {
             Self::DuplicatePeerId(peer_id) => {
                 write!(formatter, "peer is already active: {peer_id}")
             }
+            Self::ReservedPeerId(peer_id) => write!(formatter, "peer id is reserved: {peer_id}"),
             Self::NotInRoom(room) => write!(formatter, "peer has not joined room: {room}"),
             Self::TargetNotConnected(peer_id) => {
                 write!(formatter, "target is not connected: {peer_id}")
@@ -133,6 +146,15 @@ impl fmt::Display for BrokerError {
                 formatter.write_str("monitor snapshot is restricted to monitor peers")
             }
             Self::InvalidMonitorRequest => formatter.write_str("invalid monitor snapshot request"),
+            Self::InvalidSessionSlotRequest(reason) => {
+                write!(formatter, "invalid session slot request: {reason}")
+            }
+            Self::SessionSlotCapacityExceeded => {
+                formatter.write_str("active session slot limit exceeded")
+            }
+            Self::SessionSlotCounterExhausted(counter) => {
+                write!(formatter, "session slot counter exhausted: {counter}")
+            }
             Self::MonitorSerialization(error) => {
                 write!(formatter, "cannot encode monitor snapshot: {error}")
             }
@@ -167,7 +189,7 @@ impl From<PresenceError> for BrokerError {
 }
 
 /// 接続状態を持たないrouting core。ネットワークなしで検証できる。
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct BrokerCore {
     connection_peers: HashMap<ConnectionId, String>,
     peer_connections: HashMap<String, ConnectionId>,
@@ -176,6 +198,10 @@ pub struct BrokerCore {
     rooms: HashMap<String, HashSet<String>>,
     subscriptions: HashMap<(String, String), HashSet<String>>,
     pending_requests: HashMap<String, PendingRequest>,
+    session_slots: HashMap<(String, String), SessionSlot>,
+    instance_nonce: String,
+    next_session_id: u64,
+    next_message_id: u64,
 }
 
 #[derive(Debug)]
@@ -183,6 +209,44 @@ struct PendingRequest {
     requester: String,
     target: String,
     room: String,
+}
+
+#[derive(Clone, Debug)]
+struct SessionSlotDescriptor {
+    slot_id: String,
+    session_id: String,
+    initial_authority: String,
+    metadata: Value,
+}
+
+#[derive(Debug)]
+struct SessionSlot {
+    descriptor: SessionSlotDescriptor,
+    participants: HashSet<String>,
+}
+
+impl Default for BrokerCore {
+    fn default() -> Self {
+        let process_id = std::process::id();
+        let started_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let sequence = BROKER_INSTANCE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        Self {
+            connection_peers: HashMap::new(),
+            peer_connections: HashMap::new(),
+            peer_presence: HashMap::new(),
+            monitor_connections: HashSet::new(),
+            rooms: HashMap::new(),
+            subscriptions: HashMap::new(),
+            pending_requests: HashMap::new(),
+            session_slots: HashMap::new(),
+            instance_nonce: format!("{process_id:x}-{started_at:x}-{sequence:x}"),
+            next_session_id: 0,
+            next_message_id: 0,
+        }
+    }
 }
 
 impl BrokerCore {
@@ -302,6 +366,7 @@ impl BrokerCore {
         });
         self.pending_requests
             .retain(|_, pending| pending.requester != peer_id && pending.target != peer_id);
+        self.remove_peer_from_all_slots(&peer_id);
     }
 
     /// Peer IDに対応する接続IDを返す。
@@ -407,8 +472,11 @@ impl BrokerCore {
         {
             return Err(BrokerError::MonitorNotAllowed);
         }
-        let presence = parse_peer_presence(&frame)?;
         let peer_id = frame.envelope.sender.clone();
+        if peer_id == RUNTIME_BROKER_SENDER {
+            return Err(BrokerError::ReservedPeerId(peer_id));
+        }
+        let presence = parse_peer_presence(&frame)?;
         let monitor_reserved = is_monitor_peer(&peer_id);
         let monitor_peer = is_valid_monitor_peer(&peer_id);
         if monitor_reserved
@@ -452,6 +520,9 @@ impl BrokerCore {
         let room = required_room(&frame)?;
         self.require_room_member(sender, &room)?;
         let target = required_target(&frame)?;
+        if target == RUNTIME_BROKER_SENDER {
+            return self.join_session_slot(sender, room, frame);
+        }
         if !self.peer_connections.contains_key(&target) {
             return Err(BrokerError::TargetNotConnected(target));
         }
@@ -544,6 +615,7 @@ impl BrokerCore {
         self.pending_requests.retain(|_, pending| {
             pending.room != room || (pending.requester != peer_id && pending.target != peer_id)
         });
+        self.remove_peer_from_room_slots(peer_id, room);
     }
 
     fn remove_subscription(&mut self, peer_id: &str, room: &str, topic: &str) {
@@ -555,6 +627,215 @@ impl BrokerCore {
             }
         }
     }
+
+    fn join_session_slot(
+        &mut self,
+        sender: &str,
+        room: String,
+        frame: Frame,
+    ) -> Result<Vec<Delivery>, BrokerError> {
+        let (slot_id, metadata) = parse_session_slot_request(&frame)?;
+        let key = (room.clone(), slot_id.clone());
+        let creates_slot = !self.session_slots.contains_key(&key);
+        if creates_slot && self.session_slots.len() >= MAX_SESSION_SLOTS {
+            return Err(BrokerError::SessionSlotCapacityExceeded);
+        }
+        let next_session_id = creates_slot
+            .then(|| {
+                self.next_session_id
+                    .checked_add(1)
+                    .ok_or(BrokerError::SessionSlotCounterExhausted("session_id"))
+            })
+            .transpose()?;
+        let next_message_id = self
+            .next_message_id
+            .checked_add(1)
+            .ok_or(BrokerError::SessionSlotCounterExhausted("message_id"))?;
+        let session_id =
+            next_session_id.map(|counter| format!("session-{}-{counter:x}", self.instance_nonce));
+        let message_id = format!(
+            "broker-session-slot-{}-{next_message_id:x}",
+            self.instance_nonce
+        );
+
+        if let Some(session_id) = session_id {
+            self.session_slots.insert(
+                key.clone(),
+                SessionSlot {
+                    descriptor: SessionSlotDescriptor {
+                        slot_id,
+                        session_id,
+                        initial_authority: sender.to_owned(),
+                        metadata,
+                    },
+                    participants: HashSet::new(),
+                },
+            );
+            self.next_session_id = next_session_id.expect("new slot reserves a session counter");
+        }
+        self.next_message_id = next_message_id;
+        let state_peer = if creates_slot {
+            sender.to_owned()
+        } else {
+            self.session_slots[&key]
+                .participants
+                .iter()
+                .min()
+                .expect("existing slot has at least one participant")
+                .clone()
+        };
+        let descriptor = {
+            let slot = self
+                .session_slots
+                .get_mut(&key)
+                .expect("session slot was inserted above");
+            slot.participants.insert(sender.to_owned());
+            slot.descriptor.clone()
+        };
+        let body = json_session_slot_descriptor(&descriptor, creates_slot, &state_peer);
+        let response = Frame::new(
+            Envelope {
+                protocol_version: 1,
+                message_id,
+                message_type: MessageType::Response,
+                sender: RUNTIME_BROKER_SENDER.to_owned(),
+                room: Some(room),
+                target: Some(sender.to_owned()),
+                topic: None,
+                correlation_id: Some(frame.envelope.message_id),
+                schema: Some(SESSION_SLOT_DESCRIPTOR_SCHEMA.to_owned()),
+                body: Some(body),
+                extra: Default::default(),
+            },
+            Vec::new(),
+        )?;
+        Ok(vec![Delivery {
+            peer_id: sender.to_owned(),
+            frame: response,
+        }])
+    }
+
+    fn remove_peer_from_room_slots(&mut self, peer_id: &str, room: &str) {
+        self.session_slots.retain(|(slot_room, _), slot| {
+            if slot_room == room {
+                slot.participants.remove(peer_id);
+            }
+            !slot.participants.is_empty()
+        });
+    }
+
+    fn remove_peer_from_all_slots(&mut self, peer_id: &str) {
+        self.session_slots.retain(|_, slot| {
+            slot.participants.remove(peer_id);
+            !slot.participants.is_empty()
+        });
+    }
+}
+
+fn parse_session_slot_request(frame: &Frame) -> Result<(String, Value), BrokerError> {
+    validate_session_slot_text(
+        &frame.envelope.sender,
+        "sender must be non-whitespace UTF-8 up to 256 bytes",
+    )?;
+    validate_session_slot_text(
+        frame
+            .envelope
+            .room
+            .as_deref()
+            .expect("request envelope validation requires room"),
+        "room must be non-whitespace UTF-8 up to 256 bytes",
+    )?;
+    validate_session_slot_text(
+        &frame.envelope.message_id,
+        "message_id must be non-whitespace UTF-8 up to 256 bytes",
+    )?;
+    if frame.envelope.schema.as_deref() != Some(SESSION_SLOT_JOIN_SCHEMA) {
+        return Err(BrokerError::InvalidSessionSlotRequest(
+            "schema must be ywta.session.slot.join.v1",
+        ));
+    }
+    if frame.envelope.topic.is_some() || frame.envelope.correlation_id.is_some() {
+        return Err(BrokerError::InvalidSessionSlotRequest(
+            "topic and correlation_id must be absent",
+        ));
+    }
+    if !frame.body.is_empty() {
+        return Err(BrokerError::InvalidSessionSlotRequest(
+            "raw binary body must be empty",
+        ));
+    }
+    let body = frame
+        .envelope
+        .body
+        .as_ref()
+        .and_then(Value::as_object)
+        .ok_or(BrokerError::InvalidSessionSlotRequest(
+            "body must be an object",
+        ))?;
+    if body.len() != 2 || !body.contains_key("slot_id") || !body.contains_key("metadata") {
+        return Err(BrokerError::InvalidSessionSlotRequest(
+            "body must contain exactly slot_id and metadata",
+        ));
+    }
+    let slot_id = body.get("slot_id").and_then(Value::as_str).ok_or(
+        BrokerError::InvalidSessionSlotRequest("slot_id must be a string"),
+    )?;
+    validate_session_slot_text(
+        slot_id,
+        "slot_id must be non-whitespace UTF-8 up to 256 bytes",
+    )?;
+    let metadata = body
+        .get("metadata")
+        .filter(|value| value.is_object())
+        .cloned()
+        .ok_or(BrokerError::InvalidSessionSlotRequest(
+            "metadata must be an object",
+        ))?;
+    if serde_json::to_vec(&metadata)
+        .expect("serde_json::Value must serialize")
+        .len()
+        > MAX_SESSION_SLOT_METADATA_BYTES
+    {
+        return Err(BrokerError::InvalidSessionSlotRequest(
+            "metadata must not exceed 32 KiB when serialized",
+        ));
+    }
+    Ok((slot_id.to_owned(), metadata))
+}
+
+fn validate_session_slot_text(value: &str, reason: &'static str) -> Result<(), BrokerError> {
+    if value.trim().is_empty() || value.len() > MAX_SESSION_SLOT_TEXT_BYTES {
+        Err(BrokerError::InvalidSessionSlotRequest(reason))
+    } else {
+        Ok(())
+    }
+}
+
+fn json_session_slot_descriptor(
+    descriptor: &SessionSlotDescriptor,
+    created: bool,
+    state_peer: &str,
+) -> Value {
+    let mut body = Map::new();
+    body.insert(
+        "slot_id".to_owned(),
+        Value::String(descriptor.slot_id.clone()),
+    );
+    body.insert(
+        "session_id".to_owned(),
+        Value::String(descriptor.session_id.clone()),
+    );
+    body.insert(
+        "initial_authority".to_owned(),
+        Value::String(descriptor.initial_authority.clone()),
+    );
+    body.insert("metadata".to_owned(), descriptor.metadata.clone());
+    body.insert("created".to_owned(), Value::Bool(created));
+    body.insert(
+        "state_peer".to_owned(),
+        Value::String(state_peer.to_owned()),
+    );
+    Value::Object(body)
 }
 
 fn required_room(frame: &Frame) -> Result<String, BrokerError> {
@@ -1131,6 +1412,45 @@ mod tests {
         )
     }
 
+    fn session_slot_request(
+        sender: &str,
+        message_id: &str,
+        room: &str,
+        slot_id: &str,
+        metadata: Value,
+    ) -> Frame {
+        Frame::new(
+            Envelope {
+                protocol_version: 1,
+                message_id: message_id.to_owned(),
+                message_type: MessageType::Request,
+                sender: sender.to_owned(),
+                room: Some(room.to_owned()),
+                target: Some(RUNTIME_BROKER_SENDER.to_owned()),
+                topic: None,
+                correlation_id: None,
+                schema: Some(SESSION_SLOT_JOIN_SCHEMA.to_owned()),
+                body: Some(json!({
+                    "slot_id": slot_id,
+                    "metadata": metadata,
+                })),
+                extra: Default::default(),
+            },
+            Vec::new(),
+        )
+        .expect("session slot request must be valid")
+    }
+
+    fn slot_descriptor(deliveries: &[Delivery]) -> &Map<String, Value> {
+        deliveries[0]
+            .frame
+            .envelope
+            .body
+            .as_ref()
+            .and_then(Value::as_object)
+            .expect("slot descriptor must be an object")
+    }
+
     fn response(
         sender: &str,
         message_id: &str,
@@ -1250,6 +1570,17 @@ mod tests {
             validate_bind_address(bind_addr),
             Err(BrokerError::InvalidBindAddress(_))
         ));
+    }
+
+    #[test]
+    fn rejects_reserved_broker_peer_id() {
+        let mut core = BrokerCore::default();
+
+        assert!(matches!(
+            core.receive(1, hello(RUNTIME_BROKER_SENDER)),
+            Err(BrokerError::ReservedPeerId(peer_id)) if peer_id == RUNTIME_BROKER_SENDER
+        ));
+        assert_eq!(core.peer_count(), 0);
     }
 
     #[test]
@@ -1597,6 +1928,478 @@ mod tests {
 
         assert_eq!(deliveries.len(), 1);
         assert_eq!(deliveries[0].peer_id, "maya:two");
+        assert_eq!(core.pending_request_count(), 1);
+    }
+
+    #[test]
+    fn session_slot_first_join_and_followup_share_descriptor() {
+        let mut core = BrokerCore::default();
+        for (connection_id, peer_id) in [(1, "blender:one"), (2, "maya:two")] {
+            connect(&mut core, connection_id, peer_id);
+            core.receive(connection_id, join(peer_id, "room-a"))
+                .expect("join must succeed");
+        }
+
+        let first = core
+            .receive(
+                1,
+                session_slot_request(
+                    "blender:one",
+                    "slot-request-1",
+                    "room-a",
+                    "playback",
+                    json!({"fps": 24}),
+                ),
+            )
+            .expect("first slot join must succeed");
+        let second = core
+            .receive(
+                2,
+                session_slot_request(
+                    "maya:two",
+                    "slot-request-2",
+                    "room-a",
+                    "playback",
+                    json!({"fps": 30}),
+                ),
+            )
+            .expect("followup slot join must succeed");
+
+        let first_descriptor = slot_descriptor(&first);
+        let second_descriptor = slot_descriptor(&second);
+        assert_eq!(first_descriptor["created"], true);
+        assert_eq!(second_descriptor["created"], false);
+        assert_eq!(first_descriptor["state_peer"], "blender:one");
+        assert_eq!(second_descriptor["state_peer"], "blender:one");
+        assert_eq!(first_descriptor.len(), 6);
+        assert_eq!(second_descriptor.len(), 6);
+        let mut first_canonical = first_descriptor.clone();
+        let mut second_canonical = second_descriptor.clone();
+        first_canonical.remove("created");
+        second_canonical.remove("created");
+        first_canonical.remove("state_peer");
+        second_canonical.remove("state_peer");
+        assert_eq!(first_canonical, second_canonical);
+        assert_eq!(first_descriptor["slot_id"], "playback");
+        assert!(first_descriptor["session_id"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty()));
+        assert_eq!(first_descriptor["initial_authority"], "blender:one");
+        assert_eq!(first_descriptor["metadata"], json!({"fps": 24}));
+        assert_eq!(first[0].frame.envelope.message_type, MessageType::Response);
+        assert_eq!(first[0].frame.envelope.sender, RUNTIME_BROKER_SENDER);
+        assert_eq!(
+            first[0].frame.envelope.target.as_deref(),
+            Some("blender:one")
+        );
+        assert_eq!(first[0].frame.envelope.room.as_deref(), Some("room-a"));
+        assert!(first[0].frame.envelope.topic.is_none());
+        assert!(first[0].frame.body.is_empty());
+        assert_eq!(
+            first[0].frame.envelope.correlation_id.as_deref(),
+            Some("slot-request-1")
+        );
+        assert_eq!(
+            first[0].frame.envelope.schema.as_deref(),
+            Some(SESSION_SLOT_DESCRIPTOR_SCHEMA)
+        );
+        assert_eq!(core.pending_request_count(), 0);
+    }
+
+    #[test]
+    fn session_slots_have_distinct_and_fresh_session_ids() {
+        let mut core = BrokerCore::default();
+        connect(&mut core, 1, "blender:one");
+        core.receive(1, join("blender:one", "room-a"))
+            .expect("join must succeed");
+
+        let first = core
+            .receive(
+                1,
+                session_slot_request("blender:one", "slot-a-1", "room-a", "slot-a", json!({})),
+            )
+            .expect("first slot must succeed");
+        let other = core
+            .receive(
+                1,
+                session_slot_request("blender:one", "slot-b-1", "room-a", "slot-b", json!({})),
+            )
+            .expect("other slot must succeed");
+        let first_session = slot_descriptor(&first)["session_id"].clone();
+        let other_session = slot_descriptor(&other)["session_id"].clone();
+        assert_ne!(first_session, other_session);
+
+        core.receive(
+            1,
+            frame(
+                "blender:one",
+                MessageType::Leave,
+                Some("room-a"),
+                None,
+                None,
+                &[],
+            ),
+        )
+        .expect("leave must succeed");
+        core.receive(1, join("blender:one", "room-a"))
+            .expect("rejoin must succeed");
+        let recreated = core
+            .receive(
+                1,
+                session_slot_request("blender:one", "slot-a-2", "room-a", "slot-a", json!({})),
+            )
+            .expect("recreated slot must succeed");
+        assert_ne!(first_session, slot_descriptor(&recreated)["session_id"]);
+    }
+
+    #[test]
+    fn session_slot_survives_until_last_participant_disconnects() {
+        let mut core = BrokerCore::default();
+        for (connection_id, peer_id) in [(1, "blender:one"), (2, "maya:two")] {
+            connect(&mut core, connection_id, peer_id);
+            core.receive(connection_id, join(peer_id, "room-a"))
+                .expect("join must succeed");
+            core.receive(
+                connection_id,
+                session_slot_request(
+                    peer_id,
+                    &format!("slot-{connection_id}"),
+                    "room-a",
+                    "shared",
+                    json!({}),
+                ),
+            )
+            .expect("slot join must succeed");
+        }
+        let original_session = core.session_slots[&("room-a".to_owned(), "shared".to_owned())]
+            .descriptor
+            .session_id
+            .clone();
+        core.disconnect(1);
+        assert!(core
+            .session_slots
+            .contains_key(&("room-a".to_owned(), "shared".to_owned())));
+        connect(&mut core, 3, "unity:three");
+        core.receive(3, join("unity:three", "room-a"))
+            .expect("join must succeed");
+        let after_authority_disconnect = core
+            .receive(
+                3,
+                session_slot_request(
+                    "unity:three",
+                    "slot-after-authority-disconnect",
+                    "room-a",
+                    "shared",
+                    json!({}),
+                ),
+            )
+            .expect("existing slot join must succeed");
+        assert_eq!(
+            slot_descriptor(&after_authority_disconnect)["created"],
+            false
+        );
+        assert_eq!(
+            slot_descriptor(&after_authority_disconnect)["initial_authority"],
+            "blender:one"
+        );
+        assert_eq!(
+            slot_descriptor(&after_authority_disconnect)["state_peer"],
+            "maya:two"
+        );
+        assert_eq!(
+            slot_descriptor(&after_authority_disconnect)["session_id"],
+            original_session
+        );
+        core.disconnect(2);
+        assert!(core
+            .session_slots
+            .contains_key(&("room-a".to_owned(), "shared".to_owned())));
+        core.disconnect(3);
+        assert!(!core
+            .session_slots
+            .contains_key(&("room-a".to_owned(), "shared".to_owned())));
+
+        connect(&mut core, 4, "unity:new");
+        core.receive(4, join("unity:new", "room-a"))
+            .expect("join must succeed");
+        let recreated = core
+            .receive(
+                4,
+                session_slot_request("unity:new", "slot-4", "room-a", "shared", json!({})),
+            )
+            .expect("recreated slot must succeed");
+        assert_ne!(original_session, slot_descriptor(&recreated)["session_id"]);
+        assert_eq!(
+            slot_descriptor(&recreated)["initial_authority"],
+            "unity:new"
+        );
+    }
+
+    #[test]
+    fn session_slot_requires_room_membership() {
+        let mut core = BrokerCore::default();
+        connect(&mut core, 1, "blender:one");
+
+        assert!(matches!(
+            core.receive(
+                1,
+                session_slot_request(
+                    "blender:one",
+                    "slot-without-room",
+                    "room-a",
+                    "playback",
+                    json!({}),
+                )
+            ),
+            Err(BrokerError::NotInRoom(room)) if room == "room-a"
+        ));
+    }
+
+    #[test]
+    fn session_slot_rejects_invalid_schema_fields_and_raw_body() {
+        let mut core = BrokerCore::default();
+        connect(&mut core, 1, "blender:one");
+        core.receive(1, join("blender:one", "room-a"))
+            .expect("join must succeed");
+        let valid = session_slot_request(
+            "blender:one",
+            "slot-invalid",
+            "room-a",
+            "playback",
+            json!({}),
+        );
+        let mut invalid = Vec::new();
+        let mut wrong_schema = valid.clone();
+        wrong_schema.envelope.schema = Some("ywta.session.slot.join.v2".to_owned());
+        invalid.push(wrong_schema);
+        let mut missing_body = valid.clone();
+        missing_body.envelope.body = None;
+        invalid.push(missing_body);
+        let mut missing_metadata = valid.clone();
+        missing_metadata.envelope.body = Some(json!({"slot_id": "playback"}));
+        invalid.push(missing_metadata);
+        let mut extra_field = valid.clone();
+        extra_field.envelope.body = Some(json!({
+            "slot_id": "playback",
+            "metadata": {},
+            "unexpected": true,
+        }));
+        invalid.push(extra_field);
+        let mut invalid_slot = valid.clone();
+        invalid_slot.envelope.body = Some(json!({"slot_id": "   ", "metadata": {}}));
+        invalid.push(invalid_slot);
+        let mut oversized_slot = valid.clone();
+        oversized_slot.envelope.body = Some(json!({
+            "slot_id": "x".repeat(MAX_SESSION_SLOT_TEXT_BYTES + 1),
+            "metadata": {},
+        }));
+        invalid.push(oversized_slot);
+        let mut invalid_metadata = valid.clone();
+        invalid_metadata.envelope.body = Some(json!({"slot_id": "playback", "metadata": []}));
+        invalid.push(invalid_metadata);
+        let mut raw_body = valid.clone();
+        raw_body.body = vec![1];
+        invalid.push(raw_body);
+        let mut topic = valid.clone();
+        topic.envelope.topic = Some("not-allowed".to_owned());
+        invalid.push(topic);
+        let mut correlation = valid;
+        correlation.envelope.correlation_id = Some("not-allowed".to_owned());
+        invalid.push(correlation);
+
+        for frame in invalid {
+            assert!(matches!(
+                core.receive(1, frame),
+                Err(BrokerError::InvalidSessionSlotRequest(_))
+            ));
+        }
+        assert!(core.session_slots.is_empty());
+        assert_eq!(core.pending_request_count(), 0);
+
+        fn assert_invalid_text(sender: &str, room: &str, message_id: &str) {
+            let mut core = BrokerCore::default();
+            connect(&mut core, 1, sender);
+            core.receive(1, join(sender, room))
+                .expect("test room join must succeed");
+            assert!(matches!(
+                core.receive(
+                    1,
+                    session_slot_request(sender, message_id, room, "slot", json!({}))
+                ),
+                Err(BrokerError::InvalidSessionSlotRequest(_))
+            ));
+            assert!(core.session_slots.is_empty());
+        }
+
+        let oversized = "x".repeat(MAX_SESSION_SLOT_TEXT_BYTES + 1);
+        for (sender, room, message_id) in [
+            ("   ", "room", "request"),
+            (&oversized, "room", "request"),
+            ("peer", "   ", "request"),
+            ("peer", &oversized, "request"),
+            ("peer", "room", "   "),
+            ("peer", "room", &oversized),
+        ] {
+            assert_invalid_text(sender, room, message_id);
+        }
+    }
+
+    #[test]
+    fn session_slot_metadata_enforces_serialized_size_boundary() {
+        let mut core = BrokerCore::default();
+        let sender = "s".repeat(MAX_SESSION_SLOT_TEXT_BYTES);
+        let room = "r".repeat(MAX_SESSION_SLOT_TEXT_BYTES);
+        let message_id = "m".repeat(MAX_SESSION_SLOT_TEXT_BYTES);
+        let slot_id = "l".repeat(MAX_SESSION_SLOT_TEXT_BYTES);
+        connect(&mut core, 1, &sender);
+        core.receive(1, join(&sender, &room))
+            .expect("join must succeed");
+        let empty = json!({"payload": ""});
+        let overhead = serde_json::to_vec(&empty)
+            .expect("test metadata must serialize")
+            .len();
+        let boundary = json!({
+            "payload": "x".repeat(MAX_SESSION_SLOT_METADATA_BYTES - overhead),
+        });
+        assert_eq!(
+            serde_json::to_vec(&boundary)
+                .expect("test metadata must serialize")
+                .len(),
+            MAX_SESSION_SLOT_METADATA_BYTES
+        );
+
+        let boundary_delivery = core
+            .receive(
+                1,
+                session_slot_request(&sender, &message_id, &room, &slot_id, boundary),
+            )
+            .expect("metadata and text at the boundary must succeed");
+        boundary_delivery[0]
+            .frame
+            .encode(FrameLimits::default())
+            .expect("maximum slot descriptor must fit the default frame limits");
+        let oversized = json!({
+            "payload": "x".repeat(MAX_SESSION_SLOT_METADATA_BYTES - overhead + 1),
+        });
+        assert!(matches!(
+            core.receive(
+                1,
+                session_slot_request(&sender, "metadata-oversized", &room, "oversized", oversized,)
+            ),
+            Err(BrokerError::InvalidSessionSlotRequest(_))
+        ));
+    }
+
+    #[test]
+    fn session_slot_capacity_allows_existing_join_but_rejects_new_slot() {
+        let mut core = BrokerCore::default();
+        for (connection_id, peer_id) in [(1, "blender:one"), (2, "maya:two")] {
+            connect(&mut core, connection_id, peer_id);
+            core.receive(connection_id, join(peer_id, "room-a"))
+                .expect("join must succeed");
+        }
+        for index in 0..MAX_SESSION_SLOTS {
+            core.receive(
+                1,
+                session_slot_request(
+                    "blender:one",
+                    &format!("capacity-{index}"),
+                    "room-a",
+                    &format!("slot-{index}"),
+                    json!({}),
+                ),
+            )
+            .expect("slot up to the capacity must succeed");
+        }
+
+        core.receive(
+            2,
+            session_slot_request(
+                "maya:two",
+                "capacity-existing",
+                "room-a",
+                "slot-0",
+                json!({"ignored": true}),
+            ),
+        )
+        .expect("existing slot join at capacity must succeed");
+        assert!(matches!(
+            core.receive(
+                1,
+                session_slot_request(
+                    "blender:one",
+                    "capacity-overflow",
+                    "room-a",
+                    "slot-overflow",
+                    json!({}),
+                )
+            ),
+            Err(BrokerError::SessionSlotCapacityExceeded)
+        ));
+        assert_eq!(core.session_slots.len(), MAX_SESSION_SLOTS);
+    }
+
+    #[test]
+    fn session_slot_counter_overflow_does_not_mutate_slot_membership() {
+        let mut new_slot_core = BrokerCore::default();
+        connect(&mut new_slot_core, 1, "blender:one");
+        new_slot_core
+            .receive(1, join("blender:one", "room-a"))
+            .expect("join must succeed");
+        new_slot_core.next_session_id = u64::MAX;
+        assert!(matches!(
+            new_slot_core.receive(
+                1,
+                session_slot_request(
+                    "blender:one",
+                    "session-counter-overflow",
+                    "room-a",
+                    "new-slot",
+                    json!({}),
+                )
+            ),
+            Err(BrokerError::SessionSlotCounterExhausted("session_id"))
+        ));
+        assert!(new_slot_core.session_slots.is_empty());
+        assert_eq!(new_slot_core.next_message_id, 0);
+
+        let mut existing_slot_core = BrokerCore::default();
+        for (connection_id, peer_id) in [(1, "blender:one"), (2, "maya:two")] {
+            connect(&mut existing_slot_core, connection_id, peer_id);
+            existing_slot_core
+                .receive(connection_id, join(peer_id, "room-a"))
+                .expect("join must succeed");
+        }
+        existing_slot_core
+            .receive(
+                1,
+                session_slot_request(
+                    "blender:one",
+                    "create-before-overflow",
+                    "room-a",
+                    "existing-slot",
+                    json!({}),
+                ),
+            )
+            .expect("initial slot join must succeed");
+        existing_slot_core.next_message_id = u64::MAX;
+        assert!(matches!(
+            existing_slot_core.receive(
+                2,
+                session_slot_request(
+                    "maya:two",
+                    "message-counter-overflow",
+                    "room-a",
+                    "existing-slot",
+                    json!({}),
+                )
+            ),
+            Err(BrokerError::SessionSlotCounterExhausted("message_id"))
+        ));
+        let slot =
+            &existing_slot_core.session_slots[&("room-a".to_owned(), "existing-slot".to_owned())];
+        assert_eq!(slot.participants.len(), 1);
+        assert!(slot.participants.contains("blender:one"));
     }
 
     #[test]
