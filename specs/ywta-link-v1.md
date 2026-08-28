@@ -1178,6 +1178,17 @@ Layer Treeそのものを双方向同期せず、次を連携する。
 
 - Network callbackからDCC APIを直接呼び出してはならない。
 - Client SDKは受信Messageをqueueへ積み、各DCCのMain Thread dispatch機構で実行する。
+- 共通Adapterは`Client.receive(timeout=None)`を専用のbackground receiver threadからだけ呼び出し、Frameを有界queueへ順序どおり積む。
+  Clientのblocking readは`stop`時の`Client.close`で解除する。Adapter側でread timeoutをpollingし、送信と同じsocketの
+  timeout設定を変更してはならない。`TimeoutError`を正常なpollとして無視せずreceiver errorとして観測可能にする。
+- Host API callbackはreceiver threadから呼び出してはならない。Host Main Threadが明示的に`drain(handler, max_items)`を実行し、
+  queueから取り出したFrameを適用する。Adapter生成元のHost thread以外からの`drain`は拒否する。
+- queueは固定上限を持たなければならない。満杯になった場合はFrameを暗黙にdropせず、overflowを記録してreceiverを停止するfail-closedとする。
+- `start`はone-shotであり、clean stop後の再startを行わない。`stop`はidempotentで有限timeoutだけ待機する。
+  receiverのdisconnect/errorとoverflowは例外本体やtracebackを保持せず、型名と上限付きmessageなどの軽量statusから観測できなければならない。
+- Host handlerの例外はreceiver threadへ伝播させず、対象Frameを有界なfailed slotへ隔離する。その`drain`の後続Frameは処理せず、
+  Main Threadだけが`take_failed()`で明示回収する。Adapterはfailed Frameを自動retryしてはならず、rollbackやidentity再検証はHost側が判断する。
+- Sync SessionをCloseしたAdapterは停止後にpending queueとfailed slotを破棄できる。Sessionをまたいでpending Frameを再利用してはならない。
 - Scene、Document、Projectを変更するCommandは、Adapter側で対象identityと現在状態を再検証する。
 - Message受信だけを理由に、未保存Sceneの破棄、Document置換、Application終了を行ってはならない。
 - Command失敗を成功として応答してはならない。

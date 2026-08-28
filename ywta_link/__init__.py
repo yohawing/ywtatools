@@ -15,6 +15,14 @@ from .authority import (
     AuthorityValidationError,
     PendingHandoff,
 )
+from .adapter import (
+    AdapterDispatch,
+    AdapterDispatchError,
+    DispatchErrorInfo,
+    DispatchOverflowError,
+    DispatchStatus,
+    HandlerErrorInfo,
+)
 from .contract import NegotiationResult, SyncChannel, SyncContract
 from .camera import CAMERA_FIELDS, CAMERA_SCHEMA, FILM_FIT_VALUES, GATE_FIT_VALUES, Camera, CameraValidationError
 from .client import LinkClient, LinkClientError
@@ -63,6 +71,9 @@ from .transform import (
 )
 
 __all__ = (
+    "AdapterDispatch",
+    "AdapterDispatchError",
+    "DispatchErrorInfo",
     "AUTHORITY_ACCEPTED_FIELDS",
     "AUTHORITY_ACCEPTED_SCHEMA",
     "AUTHORITY_REJECTED_FIELDS",
@@ -93,6 +104,9 @@ __all__ = (
     "FrameLimits",
     "LinkClient",
     "LinkClientError",
+    "DispatchOverflowError",
+    "DispatchStatus",
+    "HandlerErrorInfo",
     "PEER_HELLO_SCHEMA",
     "PRESENCE_MAX_CAPABILITIES",
     "PRESENCE_MAX_CAPABILITY_LENGTH",
