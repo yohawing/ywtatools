@@ -54,6 +54,13 @@ from .playback import (
     PlaybackEchoGuard,
     PlaybackValidationError,
 )
+from .playback_host import (
+    PlaybackHostEvent,
+    PlaybackHostEventKind,
+    PlaybackHostRange,
+    PlaybackHostSnapshot,
+    PlaybackHostValidationError,
+)
 from .session import ChannelRevisionTracker, SessionState, SyncSession
 from .runtime import RuntimeError, RuntimeManifest, read_runtime_manifest, resolve_broker_executable
 from .time import RATE_FIELDS, TIME_FIELDS, TIME_SCHEMA, RationalRate, Time, TimeValidationError
@@ -123,6 +130,11 @@ __all__ = (
     "Playback",
     "PlaybackEchoGuard",
     "PlaybackValidationError",
+    "PlaybackHostEvent",
+    "PlaybackHostEventKind",
+    "PlaybackHostRange",
+    "PlaybackHostSnapshot",
+    "PlaybackHostValidationError",
     "RATE_FIELDS",
     "RationalRate",
     "TIME_FIELDS",

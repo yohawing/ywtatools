@@ -258,6 +258,39 @@ legacy形式とPresence付き形式の両方を受理する。Presence schemaを
 再接続、`close()`後の再接続、Broker runtime replacementでも、同じClientに設定した広告をhelloへ一度だけ
 再掲する。Capabilityの意味解釈やnegotiation、routing拒否は各Adapterの次スライスで定義する。
 
+#### 4.3.2 Common Playback Host contract
+
+各DCC Adapterは、Host APIの再生callbackをDCC非依存な`PlaybackHostSnapshot`と
+`PlaybackHostEvent`へ投影する。`PlaybackHostRange`はHost時刻値による半開区間、snapshotは
+`playing`/`paused`、position、range、正のspeed、forward/reverse、once/loop/ping-pong、time unit、
+logical change IDを持つimmutable型である。変更種別は再生開始・停止、paused seek、range/speed/mode変更に
+限定し、再生中の毎Frame値をHost eventとして配信しない。`approximated_fields`はHost表現を近似したFieldを
+明示するためのbounded metadataであり、後続Controllerが`ywta.common.playback.v1`へ変換してwireへ送る。
+Host callbackはnetwork送信を行わず、Controller callbackとの境界に留まる。適用中の同期callback抑止や
+遅延callbackのecho判定は各HostとControllerの責務として明示する。
+
+#### 4.3.3 Maya Playback Adapter
+
+Maya Adapterは`MConditionMessage`の`playingBack`と、`MEventMessage`の`timeChanged`、
+`playbackRangeChanged`、`playbackSpeedChanged`、`playbackModeChanged`を購読する。再生中の
+`timeChanged`は毎Frame publishせず、再生開始・停止、paused中のseek、range/speed/mode変更だけを
+immutableなHost snapshotとしてController callbackへ渡す。Bridge callbackから直接network送信してはならない。
+
+Remote Playback snapshotの適用はMaya Main Threadに限定し、`MAnimControl`へrange、time、speed、mode、
+play/stopを適用する。Mayaの`maxTime`はinclusive、wireの`end_exclusive`は半開終端なので、変換は
+`maya_max + frame_step = wire_end_exclusive`、逆変換は`wire_end_exclusive - frame_step = maya_max`とする。
+再生方向は`MAnimControl.playbackBy()`の符号を正本にせず、既定では`maya.cmds.play(query=True, forward=True)`を
+使う。queryがboolを返した場合だけ内部の直前方向を更新し、`None`またはquery例外では直前方向を維持する。
+Adapterはdirection queryを依存注入できるため、Maya外のunit testでも逆再生を検証できる。
+適用中に発生したMaya callbackはlocal changeとして再通知しない。Callback例外はMaya event loopへ漏らさず、
+Bridgeの軽量error statusへ隔離する。
+
+Mayaの`playbackSpeed`が0（every-frame再生）またはwireで表現できない値の場合、Adapterは`speed=1.0`
+へ近似してもよいが、immutable snapshotの`approximated_fields`へ`speed`を必ず記録する。正の有限値では
+このFieldは空とし、Controllerは近似結果を`approximated`として報告できるようにする。Bridgeがapply中に
+抑止できるのは同期的に発生したcallbackだけであり、遅延して到着するMaya callbackのecho判定はControllerが
+Envelopeの`origin_peer_id`と`change_id`をEchoGuardへ関連付けて行う。Bridge単体で遅延echoまで抑止したとみなしてはならない。
+
 Material変換、Camera適用、Morph Weight更新、Texture出力、Node生成などのDCC操作はClient SDKではなく
 各DCC Adapterが所有する。
 
