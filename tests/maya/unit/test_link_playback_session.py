@@ -68,6 +68,7 @@ class _Client:
     """専用Clientの最小fake。"""
 
     def __init__(self):
+        self.peer_id = "maya:peer-001"
         self.events = []
 
     def join(self, room):
@@ -81,6 +82,12 @@ class _Client:
 
     def publish(self, *args, **kwargs):
         return "message-id"
+
+    def request(self, *args, **kwargs):
+        return kwargs.get("message_id", "request-id")
+
+    def response(self, *args, **kwargs):
+        return "response-id"
 
     def subscribe(self, *args):
         return "subscription-id"

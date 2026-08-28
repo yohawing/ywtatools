@@ -9,6 +9,7 @@ from typing import Callable
 
 from .adapter import AdapterDispatch
 from .authority import AuthorityHandoffTracker
+from .authority_transport import AuthorityHandoffTransport
 from .client import LinkClient
 from .playback_controller import PlaybackController
 from .playback_host import PlaybackHostEvent
@@ -42,6 +43,8 @@ class PlaybackSessionConfig:
 
         for name in ("peer_id", "session_id", "room", "topic", "channel_id", "initial_authority", "time_unit"):
             _identifier(getattr(self, name), name)
+        if self.topic == f"sync/{self.session_id}/control":
+            raise PlaybackSessionError("topic must differ from the Session control topic")
         if isinstance(self.queue_capacity, bool) or not isinstance(self.queue_capacity, int) or self.queue_capacity <= 0:
             raise PlaybackSessionError("queue_capacity must be a positive integer")
         if (
@@ -84,6 +87,12 @@ class PlaybackSession:
         self._start_attempted = False
         self._cleanup_completed = False
         self._closed = False
+
+    @property
+    def authority_transport(self) -> AuthorityHandoffTransport:
+        """SessionのAuthority transportを観測する。"""
+
+        return self._runtime.authority_transport
 
     def start(self) -> bool:
         """Lifecycleを一度だけ開始する。"""
@@ -169,12 +178,18 @@ def compose_playback_session(
         raise PlaybackSessionError("client_factory must be callable")
 
     client: object | None = None
+    authority_transport: AuthorityHandoffTransport | None = None
     transport: PlaybackTopicTransport | None = None
     controller: PlaybackController | None = None
     runtime: PlaybackSyncRuntime | None = None
     try:
         client = factory(config)
-        _require_methods(client, ("join", "close", "receive", "publish", "subscribe", "unsubscribe"), "client")
+        _validate_client_identity(client, config.peer_id)
+        _require_methods(
+            client,
+            ("join", "close", "receive", "publish", "subscribe", "unsubscribe", "request", "response"),
+            "client",
+        )
         client.join(config.room)
         mapper = PlaybackTimeMapper(
             ticks_per_host_unit=config.ticks_per_host_unit,
@@ -182,6 +197,7 @@ def compose_playback_session(
             time_unit=config.time_unit,
         )
         tracker = AuthorityHandoffTracker({config.channel_id: config.initial_authority}, config.session_id)
+        authority_transport = AuthorityHandoffTransport(client, config.room, tracker)
         relay = _HostRelay()
         host = host_factory(relay)
         _require_methods(host, ("apply",), "host")
@@ -196,11 +212,11 @@ def compose_playback_session(
         )
         relay.bind(controller.handle_host_event)
         dispatch = AdapterDispatch(client, queue_capacity=config.queue_capacity, stop_timeout=config.stop_timeout)
-        runtime = PlaybackSyncRuntime(dispatch, transport, controller)
+        runtime = PlaybackSyncRuntime(dispatch, authority_transport, transport, controller)
         lifecycle = lifecycle_factory(host, runtime)
         return PlaybackSession(lifecycle, tracker, runtime, client)
     except BaseException as error:
-        rollback_errors = _rollback_construction(runtime, transport, controller, client)
+        rollback_errors = _rollback_construction(runtime, authority_transport, transport, controller, client)
         if rollback_errors:
             detail = "; ".join(_error_text(rollback_error) for rollback_error in rollback_errors)
             raise PlaybackSessionError(f"PlaybackSession construction rollback failed: {detail}") from error
@@ -245,6 +261,15 @@ def _identifier(value: object, name: str) -> None:
         raise PlaybackSessionError(f"{name} must be valid UTF-8") from error
 
 
+def _validate_client_identity(client: object, expected_peer_id: str) -> None:
+    """Client生成直後にPeer identityをConfigと照合する。"""
+
+    client_peer_id = getattr(client, "peer_id", None)
+    _identifier(client_peer_id, "client.peer_id")
+    if client_peer_id != expected_peer_id:
+        raise PlaybackSessionError("client.peer_id must match config.peer_id")
+
+
 def _require_methods(value: object, names: tuple[str, ...], name: str) -> None:
     """依存objectが必要最小限の操作を持つことを検証する。"""
 
@@ -254,6 +279,7 @@ def _require_methods(value: object, names: tuple[str, ...], name: str) -> None:
 
 def _rollback_construction(
     runtime: PlaybackSyncRuntime | None,
+    authority_transport: AuthorityHandoffTransport | None,
     transport: PlaybackTopicTransport | None,
     controller: PlaybackController | None,
     client: object | None,
@@ -267,6 +293,11 @@ def _rollback_construction(
         except BaseException as error:
             errors.append(error)
     else:
+        if authority_transport is not None:
+            try:
+                authority_transport.close()
+            except BaseException as error:
+                errors.append(error)
         if transport is not None:
             try:
                 transport.close()

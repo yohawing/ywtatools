@@ -341,34 +341,35 @@ callback例外を漏らさず、型名と上限付きmessageだけを軽量statu
 #### 4.3.5 Playback Sync Runtime
 
 `PlaybackSyncRuntime`はDCC Main Threadで生成済みの`AdapterDispatch`、
-`PlaybackTopicTransport`、`PlaybackController`の所有権を一つの短命Sessionへ束ねる。
+`AuthorityHandoffTransport`、`PlaybackTopicTransport`、`PlaybackController`の所有権を一つの短命Sessionへ束ねる。
 RuntimeはClient、Broker、DCC Host objectを生成せず、これらのcomponentを直接closeする責務だけを持つ。
 移譲したcomponentは同時利用とRuntime close後の別Session再利用を拒否する。
-dispatchのreceiveとtransportのsubscribe/publishは同じClient instanceを共有しなければならない。
-`start`は一度だけ実行でき、transportのsubscribeを先に行い、成功後にdispatchを起動する。
-subscribeまたはdispatch startが`True`でない場合はtransport、dispatch、Controllerをrollback closeし、
+dispatchのreceiveと両transportのsubscribe/publishは同じClient instanceを共有しなければならない。
+`start`は一度だけ実行でき、Authority control topic、Playback topic、dispatchの順に起動する。
+いずれかのsubscribeまたはdispatch startが`True`でない場合は両transport、dispatch、Controllerをrollback closeし、
 receiverを残さずRuntimeをClosed/Failedとして再起動を拒否する。
 ただしunsubscribe rollback自体が失敗した場合はClientを閉じずFailed/openに残し、`close`での再試行を要求する。
 
-`pump(max_items)`は生成元Main Threadだけで実行し、dispatchのdrain handlerからbound transportの
-frame処理へ渡す。関連しないFrameもdrain済み件数に含め、handlerまたはdispatchの例外はRuntimeの型付き
+`pump(max_items)`は生成元Main Threadだけで実行し、dispatchのdrain handlerからAuthority transportへ先にFrameを渡し、
+未処理FrameだけをPlayback transportの処理へ渡す。関連しないFrameもdrain済み件数に含め、handlerまたはdispatchの例外はRuntimeの型付き
 Failed状態へ記録して再送出する。Adapterが保持するfailed slotはRuntimeが自動retryまたは破棄してはならない。
 `pump`はdrainの前後でreceiver errorを確認し、disconnectやqueue overflowを正常な0件idleとして扱わない。
 Runtimeのstart、pump、closeは同期再入を拒否する。
 
-`close`は冪等であり、unsubscribe失敗時はdispatchとControllerを停止せず、Runtimeをopenのままclose retryへ
-残す。unsubscribe成功後はdispatchのsession closeとController closeを両方試行し、dispatch停止timeoutまたは
+`close`は冪等であり、いずれかのunsubscribe失敗時はdispatchとControllerを停止せず、Runtimeをopenのままclose retryへ
+残す。両transportのunsubscribe成功後はdispatchのsession closeとController closeを両方試行し、dispatch停止timeoutまたは
 component例外があれば終了後にRuntimeをFailedとして原因を返す。共有Client自体のcloseはAdapterDispatchの
 所有責務であり、RuntimeやPlaybackTopicTransportは直接closeしない。
 
 #### 4.3.6 Playback Session composition
 
 `PlaybackSessionConfig`はPeer、Session、Room、Topic、Channel、初期Authority、Host時刻単位とtimebaseを
-すべて明示する。`compose_playback_session`は専用Clientを生成してRoomへjoinし、`AuthorityHandoffTracker`、
+すべて明示する。`compose_playback_session`は専用Clientを生成し、ClientのPeer IDがConfigと一致することを
+join前に検証してからRoomへjoinし、`AuthorityHandoffTracker`、`AuthorityHandoffTransport`、
 `PlaybackTimeMapper`、`PlaybackTopicTransport`、`AdapterDispatch`、`PlaybackController`、
 `PlaybackSyncRuntime`を一つの未開始Sessionへ構成する。HostはControllerを生成する前にcallback relayを受け、
 relayはController handlerへ一度だけbindする。DCC固有のHostとLifecycleはfactory注入とし、Session自身はDCCを
-importしない。
+importしない。Playbackの`topic`は`sync/<session_id>/control`と異ならなければならない。
 
 Sessionの`start`はLifecycleへ委譲する。開始済みSessionの`close`はLifecycle closeの成功後に専用Clientを閉じる。
 一度もstartを試行していない場合だけRuntimeを直接closeしてからClientを閉じる。start試行済みのSessionは、
@@ -1289,6 +1290,11 @@ Authority stateはAccepted target responseでは変更せず、Accepted control 
 失敗時はactive/openを保持して再試行可能にする。pendingまたはAuthority stateを変更した後のRequest、Response、
 Publish I/O失敗はTransportをterminal failedへ固定し、failed後はcloseだけをunsubscribe再試行とlease解放のために
 許可する。送信前検証またはTracker検証の失敗は、partial mutationがない限りfailedへ遷移させない。
+
+Playback Sync runtimeはAuthority transportとPlayback transportを同じClient、Tracker、dispatchへ束ねて所有する。
+開始時はcontrol topic、Playback topic、dispatchの順に起動し、pumpでは各FrameをAuthority transportへ先に渡してから、
+未処理FrameだけをPlayback transportへ渡す。終了時は両transportのunsubscribeを確認してからdispatchとControllerを
+終了し、いずれかのunsubscribe失敗時はdispatchを保持してcloseを再試行できる状態に残す。
 
 ### 11.9 MessageとCLI
 

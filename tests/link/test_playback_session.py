@@ -19,6 +19,7 @@ from ywta_link import (
 
 class _Client:
     def __init__(self) -> None:
+        self.peer_id = "maya:peer-001"
         self.joined: list[str] = []
         self.closed = 0
         self.fail_close = False
@@ -37,6 +38,12 @@ class _Client:
 
     def publish(self, *args: object, **kwargs: object) -> str:
         return "publish"
+
+    def request(self, *args: object, **kwargs: object) -> str:
+        return kwargs.get("message_id", "request")  # type: ignore[return-value]
+
+    def response(self, *args: object, **kwargs: object) -> str:
+        return "response"
 
     def subscribe(self, *args: object) -> str:
         return "subscribe"
@@ -126,12 +133,33 @@ class PlaybackSessionTest(unittest.TestCase):
             _config(ticks_per_host_unit=0)
         with self.assertRaises(TypeError):
             PlaybackSessionConfig("peer", "session", "room", "topic", "channel", "owner", 1, RationalRate(24, 1))
+        with self.assertRaisesRegex(PlaybackSessionError, "control topic"):
+            _config(topic="sync/session-001/control")
+
+    def test_client_identity_mismatch_rolls_back_before_join(self) -> None:
+        """Client Peer ID不一致をjoin前に拒否し、専用Clientをrollbackする。"""
+
+        client = _Client()
+        client.peer_id = "blender:peer-001"
+
+        with self.assertRaisesRegex(PlaybackSessionError, "client.peer_id must match config.peer_id"):
+            compose_playback_session(
+                _config(),
+                _Host,
+                lambda host, runtime: _Lifecycle(host, runtime),
+                lambda config: client,
+            )
+
+        self.assertEqual(client.joined, [])
+        self.assertEqual(client.closed, 1)
 
     def test_composition_binds_host_after_controller_and_uses_current_authority(self) -> None:
         session, client, host, lifecycle = self._compose()
         self.assertEqual(client.joined, ["room-001"])
         self.assertIs(lifecycle.host, host)
         self.assertTrue(callable(host.on_change))
+        self.assertIs(session.authority_transport, lifecycle.runtime.authority_transport)
+        self.assertIs(session.authority_transport.client, client)
         controller = lifecycle.runtime._controller
         self.assertEqual(controller._authority_provider("playback-main"), "maya:peer-001")
         self.assertTrue(session.start())

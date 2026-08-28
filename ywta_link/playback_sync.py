@@ -7,6 +7,7 @@ import weakref
 from dataclasses import dataclass
 
 from .adapter import AdapterDispatch
+from .authority_transport import AuthorityHandoffTransport
 from .frame import Frame
 from .playback_controller import PlaybackController
 from .playback_transport import PlaybackTopicTransport
@@ -39,11 +40,12 @@ class PlaybackSyncRuntimeStatus:
 
 
 class PlaybackSyncRuntime:
-    """三つの既存componentをDCC Main Thread上で一つのSessionに束ねる。"""
+    """四つの既存componentをDCC Main Thread上で一つのSessionに束ねる。"""
 
     def __init__(
         self,
         dispatch: AdapterDispatch,
+        authority_transport: AuthorityHandoffTransport,
         transport: PlaybackTopicTransport,
         controller: PlaybackController,
     ) -> None:
@@ -51,14 +53,17 @@ class PlaybackSyncRuntime:
 
         if type(dispatch) is not AdapterDispatch:
             raise PlaybackSyncRuntimeError("dispatch must be exactly an AdapterDispatch")
+        if type(authority_transport) is not AuthorityHandoffTransport:
+            raise PlaybackSyncRuntimeError("authority_transport must be exactly an AuthorityHandoffTransport")
         if type(transport) is not PlaybackTopicTransport:
             raise PlaybackSyncRuntimeError("transport must be exactly a PlaybackTopicTransport")
         if type(controller) is not PlaybackController:
             raise PlaybackSyncRuntimeError("controller must be exactly a PlaybackController")
-        if dispatch.client is not transport.client:
-            raise PlaybackSyncRuntimeError("dispatch and transport must share the same Client instance")
-        _claim_components(dispatch, transport, controller)
+        if dispatch.client is not authority_transport.client or dispatch.client is not transport.client:
+            raise PlaybackSyncRuntimeError("dispatch and transports must share the same Client instance")
+        _claim_components(dispatch, authority_transport, transport, controller)
         self._dispatch = dispatch
+        self._authority_transport = authority_transport
         self._transport = transport
         self._controller = controller
         self._owner_thread_id = threading.get_ident()
@@ -77,8 +82,14 @@ class PlaybackSyncRuntime:
         with self._status_lock:
             return PlaybackSyncRuntimeStatus(self._started, self._closed, self._failed, self._error)
 
+    @property
+    def authority_transport(self) -> AuthorityHandoffTransport:
+        """Runtimeが所有するAuthority transportを返す。"""
+
+        return self._authority_transport
+
     def start(self) -> bool:
-        """購読を先に開始し、成功した場合だけ受信dispatchを起動する。"""
+        """control、Playbackの順に購読し、成功した場合だけ受信dispatchを起動する。"""
 
         self._require_owner()
         self._enter("start")
@@ -93,6 +104,8 @@ class PlaybackSyncRuntime:
                 self._start_attempted = True
 
             try:
+                if self._authority_transport.subscribe() is not True:
+                    raise PlaybackSyncRuntimeError("AuthorityHandoffTransport.subscribe() must return True")
                 if self._transport.subscribe() is not True:
                     raise PlaybackSyncRuntimeError("PlaybackTopicTransport.subscribe() must return True")
                 if self._dispatch.start() is not True:
@@ -135,7 +148,7 @@ class PlaybackSyncRuntime:
             self._leave()
 
     def close(self) -> bool:
-        """購読、dispatch、Controllerを順番に閉じる。"""
+        """両Topic購読、dispatch、Controllerを順番に閉じる。"""
 
         self._require_owner()
         self._enter("close")
@@ -144,11 +157,15 @@ class PlaybackSyncRuntime:
                 if self._closed:
                     return False
 
-            try:
-                self._transport.close()
-            except Exception as error:
-                # unsubscribe失敗時は受信を止めず、次回closeで再試行する。
-                raise self._runtime_error("PlaybackSyncRuntime unsubscribe failed", error) from error
+            transport_errors: list[BaseException] = []
+            for transport in (self._authority_transport, self._transport):
+                try:
+                    transport.close()
+                except BaseException as error:
+                    transport_errors.append(error)
+            if transport_errors:
+                # いずれかのunsubscribe失敗時はdispatchを止めず、次回closeで再試行する。
+                raise self._runtime_error("PlaybackSyncRuntime unsubscribe failed", transport_errors[0]) from transport_errors[0]
 
             errors: list[BaseException] = []
             try:
@@ -172,9 +189,13 @@ class PlaybackSyncRuntime:
             self._leave()
 
     def _handle_frame(self, frame: Frame) -> None:
-        """Adapterから受け取ったFrameをbound transportへ渡す。"""
+        """Adapterから受け取ったFrameをAuthority、Playbackの順に渡す。"""
 
-        self._transport.handle_frame(frame, self._controller)
+        handled = self._authority_transport.handle_frame(frame)
+        if not isinstance(handled, bool):
+            raise PlaybackSyncRuntimeError("AuthorityHandoffTransport.handle_frame() must return bool")
+        if not handled:
+            self._transport.handle_frame(frame, self._controller)
 
     def _require_running(self) -> None:
         """pump可能なruntime状態を検証する。"""
@@ -188,13 +209,15 @@ class PlaybackSyncRuntime:
                 raise PlaybackSyncRuntimeError("PlaybackSyncRuntime has not started")
 
     def _rollback_start(self) -> list[BaseException]:
-        """start失敗後に全componentを閉じ、receiverを残さない。"""
+        """start失敗後に両Topicと全componentを閉じ、receiverを残さない。"""
 
         errors: list[BaseException] = []
-        try:
-            self._transport.close()
-        except BaseException as error:
-            errors.append(error)
+        for transport in (self._authority_transport, self._transport):
+            try:
+                transport.close()
+            except BaseException as error:
+                errors.append(error)
+        if errors:
             # unsubscribeを再試行できるよう、Clientを所有するdispatchはまだ閉じない。
             return errors
         try:

@@ -55,6 +55,7 @@ class _Client:
     """構成と未開始終了に必要な最小fake Client。"""
 
     def __init__(self) -> None:
+        self.peer_id = "blender:peer-001"
         self.closed = 0
 
     def join(self, _room: str) -> str:
@@ -68,6 +69,12 @@ class _Client:
 
     def publish(self, *_args: object, **_kwargs: object) -> str:
         return "message"
+
+    def request(self, *_args: object, **kwargs: object) -> str:
+        return kwargs.get("message_id", "request")  # type: ignore[return-value]
+
+    def response(self, *_args: object, **_kwargs: object) -> str:
+        return "response"
 
     def subscribe(self, *_args: object, **_kwargs: object) -> str:
         return "subscribed"
