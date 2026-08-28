@@ -69,6 +69,7 @@ class BlenderPlaybackHost:
         speed_apply: Callable[[Any, float], None] | None = None,
         loop_mode_query: Callable[[Any], Any] | None = None,
         loop_mode_apply: Callable[[Any, str], None] | None = None,
+        timebase_validator: Callable[[Any], Any] | None = None,
         timer_interval: float = 0.1,
     ) -> None:
         """Blender API依存を解決し、所有Main Threadを記録する。"""
@@ -85,6 +86,7 @@ class BlenderPlaybackHost:
             ("speed_apply", speed_apply),
             ("loop_mode_query", loop_mode_query),
             ("loop_mode_apply", loop_mode_apply),
+            ("timebase_validator", timebase_validator),
         ):
             if value is not None and not callable(value):
                 raise BlenderPlaybackHostError(f"{name} must be callable")
@@ -106,6 +108,7 @@ class BlenderPlaybackHost:
         self._speed_apply = speed_apply
         self._loop_mode_query = loop_mode_query
         self._loop_mode_apply = loop_mode_apply
+        self._timebase_validator = timebase_validator
         self._timer_interval = float(timer_interval)
         self._on_change = on_change
 
@@ -170,6 +173,7 @@ class BlenderPlaybackHost:
             self._timer_registered = True
 
             scene = self._scene()
+            self._validate_timebase(scene)
             self._playing = self._read_playing()
             self._last_frame = self._read_frame(scene)
             self._last_dynamic = self._dynamic_signature(scene)
@@ -218,6 +222,7 @@ class BlenderPlaybackHost:
         if not self._registered:
             return
         scene = self._scene()
+        self._validate_timebase(scene)
         self._maybe_start(scene)
         current_dynamic = self._dynamic_signature(scene)
         previous_dynamic = self._last_dynamic
@@ -245,6 +250,7 @@ class BlenderPlaybackHost:
         self._assert_owner_thread("apply")
         snapshot = _coerce_snapshot(snapshot)
         scene = self._scene()
+        self._validate_timebase(scene)
         frame_step = self._read_frame_step(scene)
         start, end_inclusive = self.wire_range_to_blender(snapshot.playback_range, frame_step=frame_step)
         current_playing = self._read_playing()
@@ -344,6 +350,7 @@ class BlenderPlaybackHost:
 
         self._assert_owner_thread("animation_playback_pre")
         scene = self._scene(scene)
+        self._validate_timebase(scene)
         if self._applying or self._playing is True:
             return
         self._pending_start = True
@@ -357,6 +364,7 @@ class BlenderPlaybackHost:
 
         self._assert_owner_thread("animation_playback_post")
         scene = self._scene(scene)
+        self._validate_timebase(scene)
         current = self._read_frame(scene)
         was_playing = self._playing is True
         self._pending_start = False
@@ -371,6 +379,7 @@ class BlenderPlaybackHost:
 
         self._assert_owner_thread("frame_change_post")
         scene = self._scene(scene)
+        self._validate_timebase(scene)
         if self._render_state() is not False:
             # Render中またはjob状態不明のframe callbackはseekへ昇格しない。
             self._last_frame = self._read_frame(scene)
@@ -423,6 +432,8 @@ class BlenderPlaybackHost:
         if self._applying:
             return
         try:
+            scene = self._scene(scene)
+            self._validate_timebase(scene)
             event = PlaybackHostEvent(kind=kind, snapshot=self._read_snapshot(scene))
             self._on_change(event)
         except BaseException as exc:
@@ -440,6 +451,7 @@ class BlenderPlaybackHost:
         """Blender sceneからDCC非依存のsnapshotを作る。"""
 
         scene = self._scene(scene)
+        self._validate_timebase(scene)
         current = self._read_frame(scene)
         start, end = self._effective_range(scene)
         frame_step = self._read_frame_step(scene)
@@ -763,6 +775,20 @@ class BlenderPlaybackHost:
         if value is None:
             raise BlenderPlaybackHostUnavailableError("Blender scene is unavailable")
         return value
+
+    def _validate_timebase(self, scene: Any) -> None:
+        """注入されたtimebase validatorで対象sceneを直前検証する。"""
+
+        if self._timebase_validator is None:
+            return
+        try:
+            result = self._timebase_validator(scene)
+        except BlenderPlaybackHostError:
+            raise
+        except BaseException as exc:
+            raise BlenderPlaybackHostError("Blender scene timebase validation failed") from exc
+        if result is False:
+            raise BlenderPlaybackHostError("Blender scene timebase validator rejected the scene")
 
     def _screen(self) -> Any:
         """注入providerからscreenを取得する。"""

@@ -26,6 +26,7 @@ BlenderPlaybackHostError = _MODULE.BlenderPlaybackHostError
 BlenderPlaybackHostUnavailableError = _MODULE.BlenderPlaybackHostUnavailableError
 
 from ywta_link.playback_host import PlaybackHostEventKind, PlaybackHostRange, PlaybackHostSnapshot
+from ywta_link import RationalRate
 
 
 class _Handlers:
@@ -148,6 +149,93 @@ class BlenderPlaybackHostTests(unittest.TestCase):
         self.assertIs(type(snapshot), PlaybackHostSnapshot)
         self.assertEqual(1, snapshot.position)
         self.assertEqual(PlaybackHostRange(1, 25), snapshot.playback_range)
+
+    def test_timebase_validator_rejects_drift_before_snapshot_and_apply(self):
+        host = BlenderPlaybackHost(
+            self.events.append,
+            bpy_module=self.bpy,
+            playback_control=self._control,
+            timebase_validator=lambda scene: RationalRate(scene.render.fps, 1) == RationalRate(24, 1),
+        )
+        self.assertEqual(1, host.snapshot().position)
+
+        self.scene.render.fps = 30
+        with self.assertRaises(BlenderPlaybackHostError):
+            host.snapshot()
+        with self.assertRaises(BlenderPlaybackHostError):
+            host.apply(_snapshot())
+
+    def test_timebase_validator_failure_is_isolated_in_callback(self):
+        host = BlenderPlaybackHost(
+            self.events.append,
+            bpy_module=self.bpy,
+            timebase_validator=lambda _scene: False,
+        )
+        host._timer_registered = True
+        host._registered = True
+
+        result = host._timer_callback()
+
+        self.assertEqual(result, host._timer_interval)
+        self.assertIsNotNone(host.last_error)
+        self.assertEqual(host.last_error.exception_type, "BlenderPlaybackHostError")
+
+    def test_invalid_rate_callbacks_leave_state_unchanged_and_recover(self):
+        expected_rate = RationalRate(24, 1)
+
+        def validate_timebase(scene):
+            return RationalRate(scene.render.fps, 1) == expected_rate
+
+        host = BlenderPlaybackHost(
+            self.events.append,
+            bpy_module=self.bpy,
+            playback_control=self._control,
+            timebase_validator=validate_timebase,
+        )
+        host.register()
+        initial_state = (
+            host._pending_start,
+            host._playing,
+            host._last_frame,
+            host._suppress_seek_position,
+            host._last_direction,
+            host._last_dynamic,
+        )
+
+        self.scene.render.fps = 30
+        host._animation_playback_pre_callback(self.scene)
+        host._animation_playback_post_callback(self.scene)
+        host._frame_change_post_callback(self.scene)
+        self.assertEqual(
+            initial_state,
+            (
+                host._pending_start,
+                host._playing,
+                host._last_frame,
+                host._suppress_seek_position,
+                host._last_direction,
+                host._last_dynamic,
+            ),
+        )
+        self.assertEqual([], self.events)
+
+        self.scene.render.fps = 24
+        self.screen.is_animation_playing = True
+        host._animation_playback_pre_callback(self.scene)
+        self.scene.frame_current = 2
+        host._frame_change_post_callback(self.scene)
+        self.screen.is_animation_playing = False
+        host._animation_playback_post_callback(self.scene)
+        self.scene.frame_current = 5
+        host._frame_change_post_callback(self.scene)
+        self.assertEqual(
+            [
+                PlaybackHostEventKind.PLAY_STARTED,
+                PlaybackHostEventKind.PLAY_STOPPED,
+                PlaybackHostEventKind.PAUSED_SEEK,
+            ],
+            [event.kind for event in self.events],
+        )
 
     def test_snapshot_rejects_non_owner_thread(self):
         errors = []
