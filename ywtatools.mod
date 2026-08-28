@@ -4,6 +4,7 @@ icons: icons
 presets: presets
 scripts: .
 PYTHONPATH +:= .
+PYTHONPATH +:= ..
 YWTA_ROOT_PATH := .
 
 + MAYAVERSION:2024 ywtatools 1.0 .\maya
@@ -12,4 +13,5 @@ icons: icons
 presets: presets
 scripts: .
 PYTHONPATH +:= .
+PYTHONPATH +:= ..
 YWTA_ROOT_PATH := .
