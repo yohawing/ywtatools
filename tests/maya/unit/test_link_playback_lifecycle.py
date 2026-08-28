@@ -1,0 +1,335 @@
+"""Maya Playback同期SessionのMain Thread lifecycleを検証する。"""
+
+import threading
+import unittest
+
+from ywta.link.lifecycle import (
+    MayaPlaybackLifecycle,
+    MayaPlaybackLifecycleError,
+)
+
+
+class _Signal:
+    """QTimer.timeoutの最小signal fake。"""
+
+    def __init__(self):
+        self.callback = None
+
+    def connect(self, callback):
+        self.callback = callback
+
+    def emit(self):
+        if self.callback is not None:
+            self.callback()
+
+
+class _Timer:
+    """QTimerの注入境界を記録するfake。"""
+
+    def __init__(self, events):
+        self.events = events
+        self.timeout = _Signal()
+        self.interval = None
+        self.running = False
+        self.fail_stop = False
+
+    def setInterval(self, interval):
+        self.interval = interval
+
+    def start(self):
+        self.events.append("timer.start")
+        self.running = True
+
+    def stop(self):
+        self.events.append("timer.stop")
+        if self.fail_stop:
+            raise RuntimeError("timer stop failed")
+        self.running = False
+
+
+class _Runtime:
+    """PlaybackSyncRuntimeの最小fake。"""
+
+    def __init__(self, events):
+        self.events = events
+        self.fail_start = False
+        self.fail_pump = False
+        self.fail_close = False
+        self.pump_limits = []
+
+    def start(self):
+        self.events.append("runtime.start")
+        if self.fail_start:
+            raise RuntimeError("runtime start failed")
+        return True
+
+    def pump(self, max_items=None):
+        self.events.append("runtime.pump")
+        self.pump_limits.append(max_items)
+        if self.fail_pump:
+            raise RuntimeError("pump failed")
+        return 0
+
+    def close(self):
+        self.events.append("runtime.close")
+        if self.fail_close:
+            raise RuntimeError("runtime close failed")
+        return True
+
+
+class _Host:
+    """MayaPlaybackHostの最小fake。"""
+
+    def __init__(self, events):
+        self.events = events
+        self.registered = False
+        self.fail_register = False
+        self.fail_unregister = False
+
+    def register(self):
+        self.events.append("host.register")
+        if self.fail_register:
+            raise RuntimeError("host register failed")
+        self.registered = True
+        return True
+
+    def unregister(self):
+        self.events.append("host.unregister")
+        if self.fail_unregister:
+            raise RuntimeError("host unregister failed")
+        self.registered = False
+        return True
+
+
+class _SceneMessage:
+    """MSceneMessage.addCallbackの最小fake。"""
+
+    kMayaExiting = "mayaExiting"
+
+    def __init__(self, events):
+        self.events = events
+        self.callback = None
+        self.fail_add = False
+
+    def addCallback(self, event, callback):
+        self.events.append(("scene.add", event))
+        if self.fail_add:
+            raise RuntimeError("callback add failed")
+        self.callback = callback
+        return "exit-id"
+
+
+class _Message:
+    """MMessage.removeCallbackの最小fake。"""
+
+    def __init__(self, events):
+        self.events = events
+        self.fail_remove = True
+
+    def removeCallback(self, callback_id):
+        self.events.append(("message.remove", callback_id))
+        if self.fail_remove:
+            raise RuntimeError("callback remove failed")
+
+
+class MayaPlaybackLifecycleTests(unittest.TestCase):
+    """MayaとQtをimportしない依存注入テスト。"""
+
+    def setUp(self):
+        self.events = []
+        self.runtime = _Runtime(self.events)
+        self.host = _Host(self.events)
+        self.timer = _Timer(self.events)
+        self.scene = _SceneMessage(self.events)
+        self.message = _Message(self.events)
+        self.lifecycle = MayaPlaybackLifecycle(
+            self.runtime,
+            self.host,
+            timer=self.timer,
+            scene_message=self.scene,
+            message=self.message,
+            timer_interval_ms=37,
+        )
+
+    def test_start_and_close_are_ordered_and_idempotent(self):
+        self.assertTrue(self.lifecycle.start())
+        self.assertFalse(self.lifecycle.start())
+        self.assertEqual(
+            [
+                "runtime.start",
+                "host.register",
+                "timer.start",
+                ("scene.add", "mayaExiting"),
+            ],
+            self.events,
+        )
+        self.assertEqual(37, self.timer.interval)
+        self.assertEqual("exit-id", self.lifecycle.exit_callback_id)
+
+        self.message.fail_remove = False
+        self.assertTrue(self.lifecycle.close())
+        self.assertFalse(self.lifecycle.close())
+        self.assertEqual(
+            [
+                "runtime.start",
+                "host.register",
+                "timer.start",
+                ("scene.add", "mayaExiting"),
+                "timer.stop",
+                "host.unregister",
+                "runtime.close",
+                ("message.remove", "exit-id"),
+            ],
+            self.events,
+        )
+        self.assertTrue(self.lifecycle.status.closed)
+
+    def test_start_failure_rolls_back_in_reverse_order(self):
+        self.scene.fail_add = True
+        with self.assertRaises(MayaPlaybackLifecycleError):
+            self.lifecycle.start()
+        self.assertEqual(
+            [
+                "runtime.start",
+                "host.register",
+                "timer.start",
+                ("scene.add", "mayaExiting"),
+                "timer.stop",
+                "host.unregister",
+                "runtime.close",
+            ],
+            self.events,
+        )
+        self.assertTrue(self.lifecycle.status.closed)
+        self.assertTrue(self.lifecycle.status.failed)
+        self.assertEqual((), self.lifecycle.callback_ids)
+
+    def test_runtime_start_failure_does_not_close_unstarted_runtime(self):
+        self.runtime.fail_start = True
+        with self.assertRaises(MayaPlaybackLifecycleError):
+            self.lifecycle.start()
+        self.assertEqual(["runtime.start"], self.events)
+        self.assertTrue(self.lifecycle.status.closed)
+
+    def test_close_retains_failed_callback_removal_for_retry(self):
+        self.lifecycle.start()
+        with self.assertRaises(MayaPlaybackLifecycleError):
+            self.lifecycle.close()
+        self.assertEqual(("exit-id",), self.lifecycle.callback_ids)
+        self.assertFalse(self.lifecycle.status.closed)
+
+        self.message.fail_remove = False
+        self.assertTrue(self.lifecycle.close())
+        self.assertEqual(
+            [
+                "runtime.start",
+                "host.register",
+                "timer.start",
+                ("scene.add", "mayaExiting"),
+                "timer.stop",
+                "host.unregister",
+                "runtime.close",
+                ("message.remove", "exit-id"),
+                ("message.remove", "exit-id"),
+            ],
+            self.events,
+        )
+
+    def test_timer_error_is_isolated_and_stops_timer(self):
+        self.lifecycle.start()
+        self.runtime.fail_pump = True
+        self.timer.timeout.emit()
+        self.timer.timeout.emit()
+        self.assertFalse(self.lifecycle.status.timer_running)
+        self.assertEqual([64], self.runtime.pump_limits)
+        self.assertEqual("timer", self.lifecycle.last_error.callback)
+        self.assertEqual("RuntimeError", self.lifecycle.last_error.exception_type)
+        self.assertEqual(1, self.lifecycle.last_error.count)
+        self.assertTrue(self.lifecycle.status.failed)
+
+    def test_pre_registered_host_is_not_taken_over(self):
+        self.host.registered = True
+        with self.assertRaises(MayaPlaybackLifecycleError):
+            self.lifecycle.start()
+        self.assertEqual([], self.events)
+        self.assertTrue(self.host.registered)
+
+    def test_timer_stop_failure_keeps_callbacks_and_runtime_for_retry(self):
+        self.lifecycle.start()
+        self.timer.fail_stop = True
+        with self.assertRaises(MayaPlaybackLifecycleError):
+            self.lifecycle.close()
+        self.assertTrue(self.lifecycle.status.timer_running)
+        self.assertTrue(self.host.registered)
+        self.assertEqual(("exit-id",), self.lifecycle.callback_ids)
+        self.assertNotIn("runtime.close", self.events)
+
+        self.timer.fail_stop = False
+        self.message.fail_remove = False
+        self.assertTrue(self.lifecycle.close())
+
+    def test_host_unregister_failure_keeps_exit_callback_and_runtime_for_retry(self):
+        self.lifecycle.start()
+        self.message.fail_remove = False
+        self.host.fail_unregister = True
+        with self.assertRaises(MayaPlaybackLifecycleError):
+            self.lifecycle.close()
+        self.assertTrue(self.host.registered)
+        self.assertEqual(("exit-id",), self.lifecycle.callback_ids)
+        self.assertNotIn("runtime.close", self.events)
+
+        self.host.fail_unregister = False
+        self.assertTrue(self.lifecycle.close())
+
+    def test_runtime_close_failure_keeps_exit_callback_for_retry(self):
+        self.lifecycle.start()
+        self.message.fail_remove = False
+        self.runtime.fail_close = True
+        with self.assertRaises(MayaPlaybackLifecycleError):
+            self.lifecycle.close()
+        self.assertEqual(("exit-id",), self.lifecycle.callback_ids)
+        self.assertNotIn(("message.remove", "exit-id"), self.events)
+
+        self.runtime.fail_close = False
+        self.assertTrue(self.lifecycle.close())
+        self.assertEqual(
+            [
+                "runtime.start",
+                "host.register",
+                "timer.start",
+                ("scene.add", "mayaExiting"),
+                "timer.stop",
+                "host.unregister",
+                "runtime.close",
+                "runtime.close",
+                ("message.remove", "exit-id"),
+            ],
+            self.events,
+        )
+
+    def test_maya_exiting_callback_closes_session(self):
+        self.lifecycle.start()
+        self.message.fail_remove = False
+        self.scene.callback()
+        self.assertTrue(self.lifecycle.status.closed)
+
+    def test_owner_thread_is_required(self):
+        errors = []
+
+        def close_from_worker():
+            try:
+                self.lifecycle.close()
+            except BaseException as error:
+                errors.append(error)
+
+        self.lifecycle.start()
+        thread = threading.Thread(target=close_from_worker)
+        thread.start()
+        thread.join()
+        self.assertEqual(1, len(errors))
+        self.assertIsInstance(errors[0], MayaPlaybackLifecycleError)
+        self.assertIn("Main Thread", str(errors[0]))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,5 +1,11 @@
 """YWTA Link向けMaya Adapter。"""
 
+from .lifecycle import (
+    MayaPlaybackLifecycle,
+    MayaPlaybackLifecycleError,
+    MayaPlaybackLifecycleStatus,
+    MayaPlaybackLifecycleUnavailableError,
+)
 from .playback_host import (
     MAYA_PLAYBACK_EVENTS,
     CallbackErrorStatus,
@@ -21,6 +27,10 @@ __all__ = (
     "MayaPlaybackHost",
     "MayaPlaybackHostError",
     "MayaPlaybackHostUnavailableError",
+    "MayaPlaybackLifecycle",
+    "MayaPlaybackLifecycleError",
+    "MayaPlaybackLifecycleStatus",
+    "MayaPlaybackLifecycleUnavailableError",
     "PlaybackHostEvent",
     "PlaybackHostEventKind",
     "PlaybackHostRange",
