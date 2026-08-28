@@ -62,6 +62,13 @@ from .playback_host import (
     PlaybackHostSnapshot,
     PlaybackHostValidationError,
 )
+from .playback_handoff import (
+    PlaybackHandoffCoordinator,
+    PlaybackHandoffError,
+    PlaybackHandoffErrorInfo,
+    PlaybackHandoffStatus,
+    PlaybackHandoffThreadError,
+)
 from .playback_mapping import DEFAULT_REQUIRED_EXACT_FIELDS, PlaybackTimeMapper, PlaybackTimeMappingError
 from .playback_controller import (
     AuthorityProvider,
@@ -158,6 +165,11 @@ __all__ = (
     "PlaybackHostRange",
     "PlaybackHostSnapshot",
     "PlaybackHostValidationError",
+    "PlaybackHandoffCoordinator",
+    "PlaybackHandoffError",
+    "PlaybackHandoffErrorInfo",
+    "PlaybackHandoffStatus",
+    "PlaybackHandoffThreadError",
     "DEFAULT_REQUIRED_EXACT_FIELDS",
     "PlaybackTimeMapper",
     "PlaybackTimeMappingError",
