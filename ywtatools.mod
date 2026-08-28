@@ -1,4 +1,4 @@
-+ MAYAVERSION:2022 ywtatools 1.0 .\maya
++ MAYAVERSION:2022 ywtatools 0.1.0 .\maya
 plug-ins: plug-ins/2022
 icons: icons
 presets: presets
@@ -7,7 +7,7 @@ PYTHONPATH +:= .
 PYTHONPATH +:= ..
 YWTA_ROOT_PATH := .
 
-+ MAYAVERSION:2024 ywtatools 1.0 .\maya
++ MAYAVERSION:2024 ywtatools 0.1.0 .\maya
 plug-ins: plug-ins/2024
 icons: icons
 presets: presets

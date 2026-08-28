@@ -13,7 +13,11 @@ from .playback_host import (
     MayaPlaybackHostError,
     MayaPlaybackHostUnavailableError,
 )
-from .session import compose_maya_playback_session
+from .session import (
+    bootstrap_maya_playback_session,
+    compose_maya_playback_session,
+    default_maya_playback_config,
+)
 from ywta_link.playback_host import (
     PlaybackHostEvent,
     PlaybackHostEventKind,
@@ -32,7 +36,9 @@ __all__ = (
     "MayaPlaybackLifecycleError",
     "MayaPlaybackLifecycleStatus",
     "MayaPlaybackLifecycleUnavailableError",
+    "bootstrap_maya_playback_session",
     "compose_maya_playback_session",
+    "default_maya_playback_config",
     "PlaybackHostEvent",
     "PlaybackHostEventKind",
     "PlaybackHostRange",

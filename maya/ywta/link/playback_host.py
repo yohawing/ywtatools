@@ -71,6 +71,8 @@ class MayaPlaybackHost:
         api: Any = None,
         anim_control: Any = None,
         time_unit: Any = None,
+        time_unit_label: str | None = None,
+        time_unit_label_provider: Callable[[], Any] | None = None,
         frame_step: float = 1.0,
         direction_query: Callable[[], Any] | None = None,
     ) -> None:
@@ -78,6 +80,8 @@ class MayaPlaybackHost:
 
         if not callable(on_change):
             raise MayaPlaybackHostError("on_change must be callable")
+        if time_unit_label_provider is not None and not callable(time_unit_label_provider):
+            raise MayaPlaybackHostError("time_unit_label_provider must be callable")
         if direction_query is not None and not callable(direction_query):
             raise MayaPlaybackHostError("direction_query must be callable")
         if isinstance(frame_step, bool) or not isinstance(frame_step, (int, float)):
@@ -96,7 +100,18 @@ class MayaPlaybackHost:
         self._on_change = on_change
         self._owner_thread_id = threading.get_ident()
         self._frame_step = frame_step
+        if isinstance(time_unit, str):
+            raise MayaPlaybackHostError("time_unit must be an MTime UI unit enum")
         self._time_unit = self._resolve_time_unit(time_unit)
+        if self._time_unit is None or isinstance(self._time_unit, str):
+            raise MayaPlaybackHostUnavailableError("MTime.uiUnit must provide an MTime UI unit enum")
+        self._time_unit_label = self._resolve_time_unit_label(time_unit_label)
+        if time_unit_label_provider is not None:
+            self._time_unit_label_provider = time_unit_label_provider
+        elif time_unit_label is not None and api is None:
+            self._time_unit_label_provider = _default_time_unit_label_query
+        else:
+            self._time_unit_label_provider = None
         if direction_query is not None:
             self._direction_query = direction_query
         elif api is None:
@@ -130,10 +145,23 @@ class MayaPlaybackHost:
 
         return self._last_error
 
+    @property
+    def time_unit(self) -> Any:
+        """MTime constructorへ渡すUI unit enumを返す。"""
+
+        return self._time_unit
+
+    @property
+    def time_unit_label(self) -> str:
+        """snapshotへ出力するMaya time unit labelを返す。"""
+
+        return self._time_unit_label
+
     def register(self) -> bool:
         """Maya callbacksを一度だけ登録する。"""
 
         self._assert_owner_thread("register")
+        self._validate_time_unit_label()
         if self._registered:
             return False
         condition_message = getattr(self._api, "MConditionMessage", None)
@@ -194,6 +222,7 @@ class MayaPlaybackHost:
         """
 
         self._assert_owner_thread("apply")
+        self._validate_time_unit_label()
         snapshot = _coerce_snapshot(snapshot)
         self._applying = True
         try:
@@ -327,6 +356,7 @@ class MayaPlaybackHost:
     def _read_snapshot(self) -> PlaybackHostSnapshot:
         """MAnimControlからMaya非依存のsnapshotを作る。"""
 
+        self._validate_time_unit_label()
         current = _time_value(_member_value(self._anim, "currentTime"))
         minimum = _time_value(_member_value(self._anim, "minTime"))
         maximum = _time_value(_member_value(self._anim, "maxTime"))
@@ -349,7 +379,7 @@ class MayaPlaybackHost:
             speed=playback_speed,
             direction=direction,
             loop_mode=self._loop_mode_name(_member_value(self._anim, "playbackMode", None)),
-            time_unit=self._unit_label(self._time_unit),
+            time_unit=self._time_unit_label,
             change_id=uuid.uuid4().hex,
             approximated_fields=approximated_fields,
         )
@@ -477,6 +507,28 @@ class MayaPlaybackHost:
             return ui_unit()
         return None
 
+    def _resolve_time_unit_label(self, explicit: str | None) -> str:
+        """MTime enumをsnapshot用のlabelへ変換し、明示labelを検証する。"""
+
+        label = self._unit_label(self._time_unit) if explicit is None else explicit
+        if not isinstance(label, str) or not label.strip():
+            raise MayaPlaybackHostError("time_unit_label must be a non-empty string")
+        return label
+
+    def _validate_time_unit_label(self) -> None:
+        """現在のMaya labelがcapture済みlabelから変化していないことを検証する。"""
+
+        if self._time_unit_label_provider is None:
+            return
+        try:
+            current = self._time_unit_label_provider()
+        except BaseException as error:
+            raise MayaPlaybackHostError("Maya time unit label query failed") from error
+        if not isinstance(current, str) or not current.strip():
+            raise MayaPlaybackHostError("current Maya time unit label is invalid")
+        if current != self._time_unit_label:
+            raise MayaPlaybackHostError("Maya time unit changed after Playback Host capture")
+
     @staticmethod
     def _unit_label(value: Any) -> str:
         """Maya unit enumをimmutableな短い文字列へ変換する。"""
@@ -558,6 +610,20 @@ def _default_direction_query() -> bool | None:
     if _MAYA_CMDS is None:
         return None
     return _MAYA_CMDS.play(query=True, forward=True)
+
+
+def _default_time_unit_label_query() -> str:
+    """Maya commandから現在time unit labelを取得する。"""
+
+    if _MAYA_CMDS is None:
+        raise MayaPlaybackHostUnavailableError("Maya cmds is unavailable")
+    current_unit = getattr(_MAYA_CMDS, "currentUnit", None)
+    if not callable(current_unit):
+        raise MayaPlaybackHostUnavailableError("maya.cmds.currentUnit is unavailable")
+    value = current_unit(q=True, time=True)
+    if not isinstance(value, str) or not value.strip():
+        raise MayaPlaybackHostError("current Maya time unit label is invalid")
+    return value
 
 
 def _none_direction_query() -> None:

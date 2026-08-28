@@ -20,6 +20,14 @@ from ywta.link.playback_host import (
 class _FakeTime:
     """MTimeの最小依存を再現する。"""
 
+    kFilm = 1
+    kNtsc = 2
+    kSeconds = 3
+
+    @classmethod
+    def uiUnit(cls):
+        return cls.kFilm
+
     def __init__(self, value, unit=None):
         self.value = value
         self.unit = unit
@@ -170,13 +178,19 @@ class MayaPlaybackHostTests(unittest.TestCase):
             self.events.append,
             api=_FakeApi,
             anim_control=self.anim,
-            time_unit="film",
+            time_unit=_FakeTime.kFilm,
+            time_unit_label="film",
+            time_unit_label_provider=lambda: "film",
         )
 
     def test_import_dependency_is_reported_at_constructor(self):
         with mock.patch.object(playback_host, "_OPEN_MAYA", None):
             with self.assertRaises(MayaPlaybackHostUnavailableError):
                 MayaPlaybackHost(lambda _event: None, api=None)
+
+    def test_string_time_unit_is_rejected_at_constructor(self):
+        with self.assertRaisesRegex(MayaPlaybackHostError, "enum"):
+            MayaPlaybackHost(self.events.append, api=_FakeApi, anim_control=self.anim, time_unit="film")
 
     def test_snapshot_returns_typed_current_state_without_registration(self):
         snapshot = self.host.snapshot()
@@ -216,6 +230,23 @@ class MayaPlaybackHostTests(unittest.TestCase):
             ],
             _FakeMessage.removed,
         )
+
+    def test_register_validates_time_unit_before_mutating_callback_state(self):
+        host = MayaPlaybackHost(
+            self.events.append,
+            api=_FakeApi,
+            anim_control=self.anim,
+            time_unit=_FakeTime.kFilm,
+            time_unit_label="film",
+            time_unit_label_provider=lambda: "ntsc",
+        )
+
+        with self.assertRaisesRegex(MayaPlaybackHostError, "time unit"):
+            host.register()
+
+        self.assertFalse(host.registered)
+        self.assertEqual((), host.callback_ids)
+        self.assertEqual([], self.anim.calls)
 
     def test_unregister_failure_retains_ids_for_retry(self):
         self.host.register()
@@ -269,7 +300,7 @@ class MayaPlaybackHostTests(unittest.TestCase):
         class FailingApi(_FakeApi):
             MEventMessage = FailingEvents
 
-        host = MayaPlaybackHost(self.events.append, api=FailingApi, anim_control=self.anim, time_unit="film")
+        host = MayaPlaybackHost(self.events.append, api=FailingApi, anim_control=self.anim, time_unit=_FakeTime.kFilm)
         with self.assertRaises(MayaPlaybackHostError):
             host.register()
         self.assertFalse(host.registered)
@@ -297,7 +328,7 @@ class MayaPlaybackHostTests(unittest.TestCase):
             MEventMessage = FailingEvents
             MMessage = FailingCleanupMessage
 
-        host = MayaPlaybackHost(self.events.append, api=FailingApi, anim_control=self.anim, time_unit="film")
+        host = MayaPlaybackHost(self.events.append, api=FailingApi, anim_control=self.anim, time_unit=_FakeTime.kFilm)
         with self.assertRaises(MayaPlaybackHostError) as context:
             host.register()
         self.assertIn("cleanup failed", str(context.exception))
@@ -310,7 +341,7 @@ class MayaPlaybackHostTests(unittest.TestCase):
                 raise RuntimeError("state read failed")
 
         anim = FailingAnim()
-        host = MayaPlaybackHost(self.events.append, api=_FakeApi, anim_control=anim, time_unit="film")
+        host = MayaPlaybackHost(self.events.append, api=_FakeApi, anim_control=anim, time_unit=_FakeTime.kFilm)
         with self.assertRaises(MayaPlaybackHostError) as context:
             host.register()
         self.assertIsInstance(context.exception.__cause__, RuntimeError)
@@ -322,7 +353,7 @@ class MayaPlaybackHostTests(unittest.TestCase):
             self.events.append,
             api=_FakeApi,
             anim_control=self.anim,
-            time_unit="film",
+            time_unit=_FakeTime.kFilm,
             direction_query=lambda: False,
         )
         host.register()
@@ -340,7 +371,7 @@ class MayaPlaybackHostTests(unittest.TestCase):
             self.events.append,
             api=_FakeApi,
             anim_control=self.anim,
-            time_unit="film",
+            time_unit=_FakeTime.kFilm,
             direction_query=query,
         )
         host.register()
@@ -352,7 +383,7 @@ class MayaPlaybackHostTests(unittest.TestCase):
             self.events.append,
             api=_FakeApi,
             anim_control=self.anim,
-            time_unit="film",
+            time_unit=_FakeTime.kFilm,
             direction_query=lambda: (_ for _ in ()).throw(RuntimeError("query failed")),
         )
         failing_host.register()
@@ -431,6 +462,71 @@ class MayaPlaybackHostTests(unittest.TestCase):
             self.anim.calls,
         )
 
+    def test_apply_uses_mtime_ui_unit_enum(self):
+        class RecordingAnim(_FakeAnim):
+            def __init__(self):
+                super().__init__()
+                self.mtime_units = []
+
+            def setMinMaxTime(self, start, end):
+                self.mtime_units.extend((start.unit, end.unit))
+                super().setMinMaxTime(start, end)
+
+            def setCurrentTime(self, current):
+                self.mtime_units.append(current.unit)
+                super().setCurrentTime(current)
+
+        anim = RecordingAnim()
+        host = MayaPlaybackHost(
+            self.events.append,
+            api=_FakeApi,
+            anim_control=anim,
+            time_unit=_FakeTime.kFilm,
+            time_unit_label="film",
+            time_unit_label_provider=lambda: "film",
+        )
+        host.apply(_snapshot())
+
+        self.assertEqual([_FakeTime.kFilm, _FakeTime.kFilm, _FakeTime.kFilm], anim.mtime_units)
+
+    def test_time_unit_drift_fails_closed_for_snapshot_and_apply(self):
+        current_label = ["film"]
+        host = MayaPlaybackHost(
+            self.events.append,
+            api=_FakeApi,
+            anim_control=self.anim,
+            time_unit=_FakeTime.kFilm,
+            time_unit_label="film",
+            time_unit_label_provider=lambda: current_label[0],
+        )
+        self.assertIsInstance(host.snapshot(), PlaybackHostSnapshot)
+        current_label[0] = "ntsc"
+
+        with self.assertRaisesRegex(MayaPlaybackHostError, "time unit"):
+            host.snapshot()
+        with self.assertRaisesRegex(MayaPlaybackHostError, "time unit"):
+            host.apply(_snapshot())
+        self.assertEqual([], self.anim.calls)
+
+    def test_time_unit_drift_is_isolated_in_callback_status(self):
+        current_label = ["film"]
+        host = MayaPlaybackHost(
+            self.events.append,
+            api=_FakeApi,
+            anim_control=self.anim,
+            time_unit=_FakeTime.kFilm,
+            time_unit_label="film",
+            time_unit_label_provider=lambda: current_label[0],
+        )
+        host.register()
+        current_label[0] = "ntsc"
+        _FakeEventMessage.callbacks["timeChanged"]("timeChanged")
+
+        self.assertEqual([], self.events)
+        self.assertIsNotNone(host.last_error)
+        self.assertEqual("MayaPlaybackHostError", host.last_error.exception_type)
+        self.assertEqual("timeChanged", host.last_error.callback)
+
     def test_apply_rejects_non_owner_thread(self):
         errors = []
 
@@ -451,7 +547,7 @@ class MayaPlaybackHostTests(unittest.TestCase):
         def fail(_event):
             raise ValueError("controller failed")
 
-        host = MayaPlaybackHost(fail, api=_FakeApi, anim_control=self.anim, time_unit="film")
+        host = MayaPlaybackHost(fail, api=_FakeApi, anim_control=self.anim, time_unit=_FakeTime.kFilm)
         host.register()
         _FakeEventMessage.callbacks["timeChanged"]("timeChanged")
         self.assertIsNotNone(host.last_error)
