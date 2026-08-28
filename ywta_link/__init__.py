@@ -73,6 +73,12 @@ from .playback_controller import (
     PlaybackPublisher,
 )
 from .playback_transport import PlaybackTopicTransport, PlaybackTransportError, PlaybackTransportThreadError
+from .playback_sync import (
+    PlaybackSyncRuntime,
+    PlaybackSyncRuntimeError,
+    PlaybackSyncRuntimeErrorInfo,
+    PlaybackSyncRuntimeStatus,
+)
 from .session import ChannelRevisionTracker, SessionState, SyncSession
 from .runtime import RuntimeError, RuntimeManifest, read_runtime_manifest, resolve_broker_executable
 from .time import RATE_FIELDS, TIME_FIELDS, TIME_SCHEMA, RationalRate, Time, TimeValidationError
@@ -161,6 +167,10 @@ __all__ = (
     "PlaybackTopicTransport",
     "PlaybackTransportError",
     "PlaybackTransportThreadError",
+    "PlaybackSyncRuntime",
+    "PlaybackSyncRuntimeError",
+    "PlaybackSyncRuntimeErrorInfo",
+    "PlaybackSyncRuntimeStatus",
     "RATE_FIELDS",
     "RationalRate",
     "TIME_FIELDS",

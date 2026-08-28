@@ -199,6 +199,12 @@ class AdapterDispatch:
                 overflowed=self._overflowed,
             )
 
+    @property
+    def client(self) -> object:
+        """受信に使用する借用Clientをidentity確認用に返す。"""
+
+        return self._client
+
     def take_failed(self) -> Frame | None:
         """Main Thread上でfailed slotのFrameを一件だけ明示回収する。"""
 

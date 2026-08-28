@@ -49,6 +49,12 @@ class PlaybackTopicTransport:
         return self._room
 
     @property
+    def client(self) -> object:
+        """publish/subscribeに使用する借用Clientをidentity確認用に返す。"""
+
+        return self._client
+
+    @property
     def topic(self) -> str:
         """購読対象のTopic IDを返す。"""
 

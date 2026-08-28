@@ -338,6 +338,29 @@ fail closedにする。適用中に発生した同期callbackは通知せず、�
 重複を作らず、解除失敗時は実際に残ったcallbackを保持して再試行できなければならない。Blender event loopへ
 callback例外を漏らさず、型名と上限付きmessageだけを軽量statusとして保持する。
 
+#### 4.3.5 Playback Sync Runtime
+
+`PlaybackSyncRuntime`はDCC Main Threadで生成済みの`AdapterDispatch`、
+`PlaybackTopicTransport`、`PlaybackController`の所有権を一つの短命Sessionへ束ねる。
+RuntimeはClient、Broker、DCC Host objectを生成せず、これらのcomponentを直接closeする責務だけを持つ。
+移譲したcomponentは同時利用とRuntime close後の別Session再利用を拒否する。
+dispatchのreceiveとtransportのsubscribe/publishは同じClient instanceを共有しなければならない。
+`start`は一度だけ実行でき、transportのsubscribeを先に行い、成功後にdispatchを起動する。
+subscribeまたはdispatch startが`True`でない場合はtransport、dispatch、Controllerをrollback closeし、
+receiverを残さずRuntimeをClosed/Failedとして再起動を拒否する。
+ただしunsubscribe rollback自体が失敗した場合はClientを閉じずFailed/openに残し、`close`での再試行を要求する。
+
+`pump(max_items)`は生成元Main Threadだけで実行し、dispatchのdrain handlerからbound transportの
+frame処理へ渡す。関連しないFrameもdrain済み件数に含め、handlerまたはdispatchの例外はRuntimeの型付き
+Failed状態へ記録して再送出する。Adapterが保持するfailed slotはRuntimeが自動retryまたは破棄してはならない。
+`pump`はdrainの前後でreceiver errorを確認し、disconnectやqueue overflowを正常な0件idleとして扱わない。
+Runtimeのstart、pump、closeは同期再入を拒否する。
+
+`close`は冪等であり、unsubscribe失敗時はdispatchとControllerを停止せず、Runtimeをopenのままclose retryへ
+残す。unsubscribe成功後はdispatchのsession closeとController closeを両方試行し、dispatch停止timeoutまたは
+component例外があれば終了後にRuntimeをFailedとして原因を返す。共有Client自体のcloseはAdapterDispatchの
+所有責務であり、RuntimeやPlaybackTopicTransportは直接closeしない。
+
 Material変換、Camera適用、Morph Weight更新、Texture出力、Node生成などのDCC操作はClient SDKではなく
 各DCC Adapterが所有する。
 
