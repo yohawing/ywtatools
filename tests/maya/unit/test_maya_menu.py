@@ -195,8 +195,19 @@ class MayaMenuTests(TestCase):
                 "Load Animation Clip to Selected (Replace)",
                 "Save Temporary Animation Clip",
                 "Load Temporary Animation Clip (Configured)",
+                "Playback Sync",
             }.issubset(labels)
         )
+
+    def test_animation_menu_exposes_one_playback_sync_checkbox(self):
+        calls = self._capture_menu_items(menu_animation.create_animation_menu)
+
+        dividers = [call for call in calls if call.get("dividerLabel") == "YWTA Link"]
+        checkboxes = [call for call in calls if call.get("label") == "Playback Sync"]
+        self.assertEqual(1, len(dividers))
+        self.assertEqual(1, len(checkboxes))
+        self.assertIs(checkboxes[0].get("checkBox"), False)
+        self.assertEqual("play_regular.png", checkboxes[0].get("image"))
 
     def test_scene_audit_is_reachable(self):
         labels = self._build(menu_utility.create_utility_menu)

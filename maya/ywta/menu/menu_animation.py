@@ -6,6 +6,8 @@
 
 import maya.cmds as cmds
 
+import ywta.link.playback_ui as playback_ui
+
 
 def create_animation_menu(parent_menu):
     """アニメーションメニューを作成する
@@ -126,5 +128,7 @@ def create_animation_menu(parent_menu):
         command="import ywta.anim.clip_io as clip_io; clip_io.load_temp_with_settings()",
         annotation="保存済みMode/Selected-only/anchor設定で一時Clipを適用します",
     )
+
+    playback_ui.create_menu_item(animation_menu)
 
     return animation_menu
