@@ -9,12 +9,17 @@ from ywta_link import (
     AUTHORITY_ACCEPTED_SCHEMA,
     AUTHORITY_REJECTED_SCHEMA,
     AUTHORITY_REQUEST_SCHEMA,
+    AUTHORITY_SNAPSHOT_REQUEST_SCHEMA,
+    AUTHORITY_SNAPSHOT_SCHEMA,
     AuthorityHandoffAccepted,
     AuthorityHandoffRequest,
     AuthorityHandoffTracker,
     AuthorityHandoffTransport,
+    AuthoritySnapshot,
+    AuthoritySnapshotRequest,
     AuthorityTransportError,
     AuthorityTransportThreadError,
+    AuthorityValidationError,
     Envelope,
     Frame,
     PlaybackTopicTransport,
@@ -122,15 +127,9 @@ class AuthorityHandoffTransportTest(unittest.TestCase):
 
         self.authority_client = _FakeClient("blender:peer-001")
         self.requester_client = _FakeClient("maya:peer-001")
-        self.authority_tracker = AuthorityHandoffTracker(
-            {"timeline": "blender:peer-001"}, session_id="session-001"
-        )
-        self.requester_tracker = AuthorityHandoffTracker(
-            {"timeline": "blender:peer-001"}, session_id="session-001"
-        )
-        self.authority = AuthorityHandoffTransport(
-            self.authority_client, "room-001", self.authority_tracker
-        )
+        self.authority_tracker = AuthorityHandoffTracker({"timeline": "blender:peer-001"}, session_id="session-001")
+        self.requester_tracker = AuthorityHandoffTracker({"timeline": "blender:peer-001"}, session_id="session-001")
+        self.authority = AuthorityHandoffTransport(self.authority_client, "room-001", self.authority_tracker)
         self.requester = AuthorityHandoffTransport(self.requester_client, "room-001", self.requester_tracker)
         self.authority.subscribe()
         self.requester.subscribe()
@@ -200,6 +199,253 @@ class AuthorityHandoffTransportTest(unittest.TestCase):
         self.assertTrue(handled)
         self.assertEqual(self.authority_tracker.pending_for("timeline").request, request)  # type: ignore[union-attr]
         self.assertEqual([name for name, _ in self.authority_client.calls], ["subscribe"])
+
+    def test_snapshot_request_returns_exact_current_state(self) -> None:
+        """Snapshot Requestへ現在Authorityとrevisionをtarget responseで返す。"""
+
+        request = AuthoritySnapshotRequest(session_id="session-001", channel_id="timeline")
+        handled = self.authority.handle_frame(
+            _frame(
+                message_id="snapshot-request-001",
+                message_type="request",
+                sender="maya:peer-001",
+                target="blender:peer-001",
+                schema=AUTHORITY_SNAPSHOT_REQUEST_SCHEMA,
+                body=request.to_dict(),
+            )
+        )
+
+        self.assertTrue(handled)
+        response = self.authority_client.calls[-1]
+        self.assertEqual(response[0], "response")
+        self.assertEqual(
+            response[1],
+            (
+                "room-001",
+                "maya:peer-001",
+                "snapshot-request-001",
+                {
+                    "schema": AUTHORITY_SNAPSHOT_SCHEMA,
+                    "body": {
+                        "session_id": "session-001",
+                        "channel_id": "timeline",
+                        "authority": "blender:peer-001",
+                        "authority_revision": 0,
+                    },
+                },
+            ),
+        )
+
+    def test_snapshot_request_returns_latest_handoff_revision(self) -> None:
+        """Handoff後の照会は更新済みAuthority stateを返す。"""
+
+        handoff = _request()
+        self.authority.handle_frame(
+            _frame(
+                message_id="handoff-request-001",
+                message_type="request",
+                sender=handoff.next_authority,
+                target=handoff.current_authority,
+                schema=AUTHORITY_REQUEST_SCHEMA,
+                body=handoff.to_dict(),
+            )
+        )
+        self.authority.accept_handoff(handoff)
+
+        self.authority.handle_frame(
+            _frame(
+                message_id="snapshot-request-001",
+                message_type="request",
+                sender="maya:peer-002",
+                target="blender:peer-001",
+                schema=AUTHORITY_SNAPSHOT_REQUEST_SCHEMA,
+                body={"session_id": "session-001", "channel_id": "timeline"},
+            )
+        )
+
+        body = self.authority_client.calls[-1][1][3]["body"]  # type: ignore[index]
+        self.assertEqual(body["authority"], "maya:peer-001")
+        self.assertEqual(body["authority_revision"], 1)
+
+    def test_malformed_snapshot_requests_fail_closed(self) -> None:
+        """Snapshot Requestのroutingとbody不整合を拒否する。"""
+
+        base = {
+            "message_id": "snapshot-request-001",
+            "message_type": "request",
+            "sender": "maya:peer-001",
+            "target": "blender:peer-001",
+            "schema": AUTHORITY_SNAPSHOT_REQUEST_SCHEMA,
+            "body": {"session_id": "session-001", "channel_id": "timeline"},
+        }
+        overrides = (
+            {"target": "other:peer-001"},
+            {"sender": "blender:peer-001"},
+            {"correlation_id": "unexpected"},
+            {"body": {"session_id": "other-session", "channel_id": "timeline"}},
+            {"body": {"session_id": "session-001", "channel_id": "missing"}},
+            {"body": {"session_id": "session-001", "channel_id": "timeline", "extra": True}},
+            {"raw_body": b"binary"},
+            {"topic": "sync/session-001/control"},
+        )
+        for index, override in enumerate(overrides):
+            values = dict(base)
+            values.update(override)
+            values["message_id"] = f"snapshot-request-{index + 1:03d}"
+            with self.subTest(override=override):
+                with self.assertRaises(AuthorityTransportError):
+                    self.authority.handle_frame(_frame(**values))  # type: ignore[arg-type]
+
+    def test_snapshot_response_send_failure_latches_failed(self) -> None:
+        """Snapshot response送信失敗をterminal Failedへ固定する。"""
+
+        self.authority_client.fail_response = True
+        with self.assertRaisesRegex(AuthorityTransportError, "response failed"):
+            self.authority.handle_frame(
+                _frame(
+                    message_id="snapshot-request-001",
+                    message_type="request",
+                    sender="maya:peer-001",
+                    target="blender:peer-001",
+                    schema=AUTHORITY_SNAPSHOT_REQUEST_SCHEMA,
+                    body={"session_id": "session-001", "channel_id": "timeline"},
+                )
+            )
+
+        self.assertTrue(self.authority.failed)
+
+    def test_snapshot_response_non_string_id_latches_failed(self) -> None:
+        """Client responseの不正なmessage IDもterminal Failedにする。"""
+
+        self.authority_client.response = lambda *args, **kwargs: None  # type: ignore[method-assign]
+        with self.assertRaisesRegex(AuthorityTransportError, "non-empty string"):
+            self.authority.handle_frame(
+                _frame(
+                    message_id="snapshot-request-001",
+                    message_type="request",
+                    sender="maya:peer-001",
+                    target="blender:peer-001",
+                    schema=AUTHORITY_SNAPSHOT_REQUEST_SCHEMA,
+                    body={"session_id": "session-001", "channel_id": "timeline"},
+                )
+            )
+
+        self.assertTrue(self.authority.failed)
+
+    def test_incoming_snapshot_response_is_consumed_without_state_mutation(self) -> None:
+        """Runtimeへ届いたsnapshot responseは検証後にTrackerへ適用しない。"""
+
+        before = self.requester_tracker.state_for("timeline")
+        snapshot = AuthoritySnapshot(
+            session_id="session-001",
+            channel_id="timeline",
+            authority="maya:peer-999",
+            authority_revision=42,
+        )
+        handled = self.requester.handle_frame(
+            _frame(
+                message_id="snapshot-response-001",
+                message_type="response",
+                sender="blender:peer-001",
+                target="maya:peer-001",
+                correlation_id="bootstrap-request-001",
+                schema=AUTHORITY_SNAPSHOT_SCHEMA,
+                body=snapshot.to_dict(),
+            )
+        )
+
+        self.assertTrue(handled)
+        self.assertEqual(self.requester_tracker.state_for("timeline"), before)
+
+    def test_malformed_snapshot_responses_fail_closed(self) -> None:
+        """未所有Snapshot Responseでもroutingとbodyを厳密に検証する。"""
+
+        base = {
+            "message_id": "snapshot-response-001",
+            "message_type": "response",
+            "sender": "blender:peer-001",
+            "target": "maya:peer-001",
+            "correlation_id": "bootstrap-request-001",
+            "schema": AUTHORITY_SNAPSHOT_SCHEMA,
+            "body": {
+                "session_id": "session-001",
+                "channel_id": "timeline",
+                "authority": "blender:peer-001",
+                "authority_revision": 0,
+            },
+        }
+        overrides = (
+            {"target": "other:peer-001"},
+            {"sender": "maya:peer-001"},
+            {"body": {"session_id": "session-001", "channel_id": "timeline"}},
+            {
+                "body": {
+                    "session_id": "other-session",
+                    "channel_id": "timeline",
+                    "authority": "blender:peer-001",
+                    "authority_revision": 0,
+                }
+            },
+            {
+                "body": {
+                    "session_id": "session-001",
+                    "channel_id": "missing",
+                    "authority": "blender:peer-001",
+                    "authority_revision": 0,
+                }
+            },
+            {"raw_body": b"binary"},
+            {"topic": "sync/session-001/control"},
+        )
+        for index, override in enumerate(overrides):
+            values = dict(base)
+            values.update(override)
+            values["message_id"] = f"snapshot-response-{index + 1:03d}"
+            with self.subTest(override=override):
+                with self.assertRaises(AuthorityTransportError):
+                    self.requester.handle_frame(_frame(**values))  # type: ignore[arg-type]
+
+    def test_snapshot_frame_for_other_room_is_unrelated(self) -> None:
+        """別RoomのSnapshot FrameはこのTransportの処理対象にしない。"""
+
+        frame = _frame(
+            message_id="snapshot-request-001",
+            message_type="request",
+            sender="maya:peer-001",
+            target="blender:peer-001",
+            schema=AUTHORITY_SNAPSHOT_REQUEST_SCHEMA,
+            body={"session_id": "session-001", "channel_id": "timeline"},
+        )
+        foreign = Frame(
+            Envelope(
+                protocol_version=1,
+                message_id=frame.envelope.message_id,
+                type=frame.envelope.type,
+                sender=frame.envelope.sender,
+                room="room-other",
+                target=frame.envelope.target,
+                schema=frame.envelope.schema,
+                body=frame.envelope.body,
+            ),
+            frame.body,
+        )
+
+        self.assertFalse(self.authority.handle_frame(foreign))
+
+    def test_snapshot_wire_types_reject_unknown_fields_and_invalid_revision(self) -> None:
+        """公開snapshot型はField過不足とrevision型を厳密に拒否する。"""
+
+        with self.assertRaises(AuthorityValidationError):
+            AuthoritySnapshotRequest.from_dict({"session_id": "session-001", "channel_id": "timeline", "extra": True})
+        with self.assertRaises(AuthorityValidationError):
+            AuthoritySnapshot.from_dict(
+                {
+                    "session_id": "session-001",
+                    "channel_id": "timeline",
+                    "authority": "blender:peer-001",
+                    "authority_revision": True,
+                }
+            )
 
     def test_accept_sends_response_before_accepted_fanout_and_updates_authority(self) -> None:
         """acceptはTracker更新後にtarget response、Accepted publishの順で送信する。"""

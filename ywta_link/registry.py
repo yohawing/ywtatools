@@ -81,6 +81,8 @@ SYNC_SCHEMAS = frozenset(
         "ywta.sync.authority.request.v1",
         "ywta.sync.authority.accepted.v1",
         "ywta.sync.authority.rejected.v1",
+        "ywta.sync.authority.snapshot.request.v1",
+        "ywta.sync.authority.snapshot.v1",
         "ywta.sync.preview.v1",
         "ywta.sync.commit.v1",
         "ywta.sync.cancel.v1",
@@ -124,6 +126,8 @@ SCHEMA_FIELDS = MappingProxyType(
                 "reason",
             }
         ),
+        "ywta.sync.authority.snapshot.request.v1": frozenset({"session_id", "channel_id"}),
+        "ywta.sync.authority.snapshot.v1": frozenset({"session_id", "channel_id", "authority", "authority_revision"}),
     }
 )
 SCHEMA_IDS = frozenset(SCHEMA_FIELDS)

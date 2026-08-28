@@ -1112,7 +1112,23 @@ per-response boolの`created`、`state_peer`の正確に6 Fieldを持つ。atomi
 既存Participantから辞書順最小のconnected Peerを`state_peer`として返す。`initial_authority`はslot作成時のseedを示す
 歴史値であり、現在も接続中のAuthorityを保証しない。`created=false`のConsumerは`state_peer`をlive authorityと
 authority revisionの照会先とし、Tracker構築前にParticipant間でreconciliationする。同期できるまでは自動joinした
-SessionをActiveにしてはならない。
+SessionをActiveにしてはならない。照会中に`state_peer`が切断した、Responseが得られない、または返されたSession、
+Channelが一致しない場合はraceとしてjoinをinactiveのまま保つ。Default bootstrapはActive化前のSession専用Clientを
+close/disconnectして自身をslot participantから確実に除外し、新しいClientでBroker接続、Room join、slot joinから有限回
+再試行する。唯一のParticipantだった場合はfresh slotを作成し、他Peerが残る場合はその残存Peerを新しい`state_peer`として
+得る。同じClientから単純にslot joinを再送してはならず、`state_peer`を現在Authorityと仮定してはならない。専用Clientの
+closeはActiveな別Sessionを巻き込まない。
+`created=false`のbootstrapはdescriptor受信後、Snapshot Request送信より先にSession control topicを購読する。
+Session専用Clientは単一readerだけを持ち、そのreaderがSnapshot Responseを待つ間にsocket順で到着したAccepted control
+publishをbufferする。SnapshotのAuthority stateとrevisionをseedにし、buffer済みAcceptedをrevision連続性とpayloadの
+Authority identityを検証しながら順に適用する。Snapshot revision以下のAcceptedは、Snapshot stateと矛盾しないことを
+確認できるstale通知だけを破棄できる。revision gap、同一revisionの競合、Authority identityの不一致はinactiveのまま
+bootstrapをabortする。整合後は同じClientの受信ownershipをRuntime/dispatchへ隙間なく移し、Snapshot Response後に
+socketへ到着したFrameは読み出さず残してRuntimeに処理させる。別readerを同時に起動してはならない。
+
+`state_peer`側はRuntimeの同一queue順でAccepted publish、handoff Request、Snapshot Requestを処理し、その時点のTracker
+stateからSnapshotへ応答する。これによりSnapshot応答と先行Acceptedのorderingを一つの受信順で定義する。このconsumerと
+ownership handoffが未実装の間、Default auto joinをSessionのActiveへ遷移させてはならない。
 このRequestは通常の未完了Request表へ積まない。
 
 Peerは同じRoomの複数slotへ参加できる。RoomからのleaveまたはdisconnectでそのPeerを各該当slotから除外し、
@@ -1178,7 +1194,7 @@ Acceptedのfan-out publishとして行う。現在Authorityが唯一のordering 
 v1はsilent last-write-winsとmulti-writer mergeを提供しない。Authority切断時はChannelを停止し、別Peerを
 自動昇格させない。
 
-Authority handoffの制御payloadは、次の3つのversioned schemaを使う。Payload自身へschema discriminatorは
+Authority handoffとlive state照会の制御payloadは、次の5つのversioned schemaを使う。Payload自身へschema discriminatorは
 含めず、Envelopeの`schema`で識別する。Brokerはこれらのbodyを解釈せず、Envelopeの`target`、
 `correlation_id`、`message_id`に従って転送する。
 
@@ -1200,6 +1216,15 @@ Peerごとの順序決定には使わない。Brokerはbody非解釈のまま、
   `expected_authority_revision`、`change_id`を必須とする。
 - `ywta.sync.authority.accepted.v1`: Requestのidentityに加えて`new_authority_revision`を必須とする。
 - `ywta.sync.authority.rejected.v1`: Requestのidentityに加えて非空の`reason`を必須とする。
+- `ywta.sync.authority.snapshot.request.v1`: `session_id`、`channel_id`だけを必須とする。
+- `ywta.sync.authority.snapshot.v1`: `session_id`、`channel_id`、現在の`authority`、0以上の
+  `authority_revision`だけを必須とする。
+
+Snapshot Requestはtype=`request`、`target=state_peer`で同じRoomへ送り、topic、correlation、raw binary bodyを
+持たない。target Peerは自身のTrackerに存在するChannelの現在stateを読み、type=`response`、`target=requester`、
+`correlation_id=request_message_id`でSnapshotを返す。Snapshotはlive reconciliation用の読み取り結果であり、
+Authority変更eventではない。Active runtimeへ未所有のSnapshot Responseが届いた場合も、厳密なroutingとbody検証後に
+Trackerへ適用せず消費する。Authority変更はAccepted control publishだけで確定する。
 
 `authority_revision`はContentの`revision`とは別のcontrol-plane revisionで、Channelごとに0から始める。
 Requestは現在のAuthorityと期待revisionが一致する場合だけ有効であり、同一Channelにpending Requestがある間の
@@ -1339,6 +1364,12 @@ Authority stateはAccepted target responseでは変更せず、Accepted control 
 Publish I/O失敗はTransportをterminal failedへ固定し、failed後はcloseだけをunsubscribe再試行とlease解放のために
 許可する。送信前検証またはTracker検証の失敗は、partial mutationがない限りfailedへ遷移させない。
 
+同Transportはversioned Snapshot Requestも処理する。Requestは同じRoom、local target、別sender、Session一致、既知Channel、
+空のraw body、topic/correlationなしを必須とし、Trackerの現在Authorityとauthority revisionをtarget Responseで返す。
+Response送信例外または空でない文字列以外のmessage IDはTransportをterminal failedへ固定する。Snapshot Responseは
+bootstrap処理が通常は先に所有するため、Active runtimeのTransportは正しいlocal target、Room、Session、Channel、body、
+correlationを検証してもTracker stateを変更せず、認識済みFrameとして安全に破棄する。
+
 Playback Sync runtimeはAuthority transport、Playback transport、Playback Controller、handoff Coordinatorを同じClient、
 Tracker、dispatchへ束ねて所有する。構成時はHostから初期Baselineを一度だけ取得し、Host callbackをCoordinatorへ接続した後に
 Lifecycleへ渡す。開始時はcontrol topic、Playback topic、dispatchの順に起動し、pumpでは各FrameをCoordinatorへ先に渡し、
@@ -1357,6 +1388,8 @@ Session制御は通常の`publish`、`request`、`response`を使い、Payload s
 - `ywta.sync.authority.request.v1`
 - `ywta.sync.authority.accepted.v1`
 - `ywta.sync.authority.rejected.v1`
+- `ywta.sync.authority.snapshot.request.v1`
+- `ywta.sync.authority.snapshot.v1`
 - `ywta.sync.preview.v1`
 - `ywta.sync.commit.v1`
 - `ywta.sync.cancel.v1`

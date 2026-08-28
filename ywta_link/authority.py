@@ -15,10 +15,14 @@ from .session import ChannelRevisionTracker
 AUTHORITY_REQUEST_SCHEMA = "ywta.sync.authority.request.v1"
 AUTHORITY_ACCEPTED_SCHEMA = "ywta.sync.authority.accepted.v1"
 AUTHORITY_REJECTED_SCHEMA = "ywta.sync.authority.rejected.v1"
+AUTHORITY_SNAPSHOT_REQUEST_SCHEMA = "ywta.sync.authority.snapshot.request.v1"
+AUTHORITY_SNAPSHOT_SCHEMA = "ywta.sync.authority.snapshot.v1"
 
 AUTHORITY_REQUEST_FIELDS = frozenset(DEFAULT_REGISTRY.require_schema(AUTHORITY_REQUEST_SCHEMA))
 AUTHORITY_ACCEPTED_FIELDS = frozenset(DEFAULT_REGISTRY.require_schema(AUTHORITY_ACCEPTED_SCHEMA))
 AUTHORITY_REJECTED_FIELDS = frozenset(DEFAULT_REGISTRY.require_schema(AUTHORITY_REJECTED_SCHEMA))
+AUTHORITY_SNAPSHOT_REQUEST_FIELDS = frozenset(DEFAULT_REGISTRY.require_schema(AUTHORITY_SNAPSHOT_REQUEST_SCHEMA))
+AUTHORITY_SNAPSHOT_FIELDS = frozenset(DEFAULT_REGISTRY.require_schema(AUTHORITY_SNAPSHOT_SCHEMA))
 
 _REQUEST_FIELDS_IN_ORDER = (
     "session_id",
@@ -306,6 +310,76 @@ class AuthorityState:
 
 
 @dataclass(frozen=True)
+class AuthoritySnapshotRequest:
+    """Authority state照会のtarget request payload。"""
+
+    session_id: str
+    channel_id: str
+
+    def __post_init__(self) -> None:
+        """直接constructorでも照会対象の識別子を検証する。"""
+
+        object.__setattr__(self, "session_id", _identifier(self.session_id, "session_id"))
+        object.__setattr__(self, "channel_id", _identifier(self.channel_id, "channel_id"))
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "AuthoritySnapshotRequest":
+        """JSON objectを厳密なsnapshot requestへ変換する。"""
+
+        data = _strict_fields(value, AUTHORITY_SNAPSHOT_REQUEST_FIELDS, "authority snapshot request")
+        return cls(session_id=data["session_id"], channel_id=data["channel_id"])
+
+    def to_dict(self) -> dict[str, str]:
+        """snapshot requestを新しいJSON-compatible dictへ変換する。"""
+
+        return {"session_id": self.session_id, "channel_id": self.channel_id}
+
+
+@dataclass(frozen=True)
+class AuthoritySnapshot:
+    """Session参加時に照合するChannel authorityの読み取り専用snapshot。"""
+
+    session_id: str
+    channel_id: str
+    authority: str
+    authority_revision: int
+
+    def __post_init__(self) -> None:
+        """直接constructorでもsnapshotの不変条件を検証する。"""
+
+        object.__setattr__(self, "session_id", _identifier(self.session_id, "session_id"))
+        object.__setattr__(self, "channel_id", _identifier(self.channel_id, "channel_id"))
+        object.__setattr__(self, "authority", _identifier(self.authority, "authority"))
+        object.__setattr__(
+            self,
+            "authority_revision",
+            _revision(self.authority_revision, "authority_revision"),
+        )
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "AuthoritySnapshot":
+        """JSON objectを厳密なauthority snapshotへ変換する。"""
+
+        data = _strict_fields(value, AUTHORITY_SNAPSHOT_FIELDS, "authority snapshot")
+        return cls(
+            session_id=data["session_id"],
+            channel_id=data["channel_id"],
+            authority=data["authority"],
+            authority_revision=data["authority_revision"],
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """snapshotを新しいJSON-compatible dictへ変換する。"""
+
+        return {
+            "session_id": self.session_id,
+            "channel_id": self.channel_id,
+            "authority": self.authority,
+            "authority_revision": self.authority_revision,
+        }
+
+
+@dataclass(frozen=True)
 class PendingHandoff:
     """Channelへ登録したhandoff requestと元Envelopeのmessage ID。"""
 
@@ -469,7 +543,9 @@ class AuthorityHandoffTracker:
             if actor != state.authority or accepted.current_authority != state.authority:
                 raise AuthorityViolation(f"actor is not authority for channel: {accepted.channel_id!r}")
             if accepted.expected_authority_revision != state.revision:
-                raise StaleRevision(f"authority revision {accepted.expected_authority_revision} is not current revision {state.revision}")
+                raise StaleRevision(
+                    f"authority revision {accepted.expected_authority_revision} is not current revision {state.revision}"
+                )
             if accepted.new_authority_revision != state.revision + 1:
                 raise StaleRevision("accepted authority revision is not the next revision")
             pending = self._pending.get(accepted.channel_id)
@@ -498,7 +574,9 @@ class AuthorityHandoffTracker:
             if actor != state.authority or rejected.current_authority != state.authority:
                 raise AuthorityViolation(f"actor is not authority for channel: {rejected.channel_id!r}")
             if rejected.expected_authority_revision != state.revision:
-                raise StaleRevision(f"authority revision {rejected.expected_authority_revision} is not current revision {state.revision}")
+                raise StaleRevision(
+                    f"authority revision {rejected.expected_authority_revision} is not current revision {state.revision}"
+                )
             pending = self._pending.get(rejected.channel_id)
             if pending is None or not self._pending_matches_payload(pending, rejected):
                 return
@@ -551,8 +629,7 @@ class AuthorityHandoffTracker:
         """Accepted/Rejected payloadがpending requestと同じidentityかを返す。"""
 
         return all(
-            getattr(pending.request, field_name) == getattr(payload, field_name)
-            for field_name in _REQUEST_FIELDS_IN_ORDER
+            getattr(pending.request, field_name) == getattr(payload, field_name) for field_name in _REQUEST_FIELDS_IN_ORDER
         )
 
     @staticmethod
@@ -570,10 +647,16 @@ __all__ = (
     "AUTHORITY_REJECTED_SCHEMA",
     "AUTHORITY_REQUEST_FIELDS",
     "AUTHORITY_REQUEST_SCHEMA",
+    "AUTHORITY_SNAPSHOT_REQUEST_SCHEMA",
+    "AUTHORITY_SNAPSHOT_REQUEST_FIELDS",
+    "AUTHORITY_SNAPSHOT_SCHEMA",
+    "AUTHORITY_SNAPSHOT_FIELDS",
     "AuthorityHandoffAccepted",
     "AuthorityHandoffRejected",
     "AuthorityHandoffRequest",
     "AuthorityHandoffTracker",
+    "AuthoritySnapshot",
+    "AuthoritySnapshotRequest",
     "AuthorityState",
     "AuthorityValidationError",
     "PendingHandoff",

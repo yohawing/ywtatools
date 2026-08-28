@@ -12,10 +12,14 @@ from .authority import (
     AUTHORITY_ACCEPTED_SCHEMA,
     AUTHORITY_REJECTED_SCHEMA,
     AUTHORITY_REQUEST_SCHEMA,
+    AUTHORITY_SNAPSHOT_REQUEST_SCHEMA,
+    AUTHORITY_SNAPSHOT_SCHEMA,
     AuthorityHandoffAccepted,
     AuthorityHandoffRejected,
     AuthorityHandoffRequest,
     AuthorityHandoffTracker,
+    AuthoritySnapshot,
+    AuthoritySnapshotRequest,
     AuthorityValidationError,
 )
 from .frame import Frame
@@ -193,6 +197,8 @@ class AuthorityHandoffTransport:
             AUTHORITY_REQUEST_SCHEMA,
             AUTHORITY_ACCEPTED_SCHEMA,
             AUTHORITY_REJECTED_SCHEMA,
+            AUTHORITY_SNAPSHOT_REQUEST_SCHEMA,
+            AUTHORITY_SNAPSHOT_SCHEMA,
         }:
             return False
         if envelope.topic is not None:
@@ -201,11 +207,15 @@ class AuthorityHandoffTransport:
             raise AuthorityTransportError("Authority frame must not contain a raw binary body")
 
         if envelope.type == "request":
+            if envelope.schema == AUTHORITY_SNAPSHOT_REQUEST_SCHEMA:
+                return self._handle_snapshot_request(frame)
             if envelope.schema != AUTHORITY_REQUEST_SCHEMA:
                 raise AuthorityTransportError("Authority request schema mismatch")
             return self._handle_request(frame)
-        if envelope.schema == AUTHORITY_REQUEST_SCHEMA:
+        if envelope.schema in {AUTHORITY_REQUEST_SCHEMA, AUTHORITY_SNAPSHOT_REQUEST_SCHEMA}:
             raise AuthorityTransportError("Authority response schema mismatch")
+        if envelope.schema == AUTHORITY_SNAPSHOT_SCHEMA:
+            return self._handle_snapshot_response(frame)
         return self._handle_response(frame)
 
     def accept_handoff(self, request: AuthorityHandoffRequest) -> tuple[str, str]:
@@ -317,6 +327,60 @@ class AuthorityHandoffTransport:
             raise
         except Exception as exc:
             raise AuthorityTransportError(f"tracker.request_handoff() failed: {_error_text(exc)}") from exc
+        return True
+
+    def _handle_snapshot_request(self, frame: Frame) -> bool:
+        """現在のChannel authorityを照会元へtarget responseで返す。"""
+
+        envelope = frame.envelope
+        request = self._decode_payload(frame, AuthoritySnapshotRequest, "snapshot request")
+        if envelope.target != self._peer_id:
+            raise AuthorityTransportError("Authority snapshot request target must match client.peer_id")
+        if envelope.sender == self._peer_id:
+            raise AuthorityTransportError("Authority snapshot request sender must differ from client.peer_id")
+        if envelope.correlation_id is not None:
+            raise AuthorityTransportError("Authority snapshot request must not contain correlation_id")
+        if request.session_id != self._session_id:
+            raise AuthorityTransportError("Authority snapshot request session_id does not match transport session")
+        try:
+            state = self._tracker.state_for(request.channel_id)
+        except Exception as exc:
+            raise AuthorityTransportError(f"tracker.state_for() failed: {_error_text(exc)}") from exc
+        snapshot = AuthoritySnapshot(
+            session_id=self._session_id,
+            channel_id=request.channel_id,
+            authority=state.authority,
+            authority_revision=state.revision,
+        )
+        try:
+            self._send_response(
+                envelope.sender,
+                envelope.message_id,
+                AUTHORITY_SNAPSHOT_SCHEMA,
+                snapshot.to_dict(),
+            )
+        except AuthorityTransportError as exc:
+            self._latch_failure(exc)
+            raise
+        return True
+
+    def _handle_snapshot_response(self, frame: Frame) -> bool:
+        """Bootstrap所有外のsnapshot responseを検証して状態変更せず破棄する。"""
+
+        envelope = frame.envelope
+        snapshot = self._decode_payload(frame, AuthoritySnapshot, "snapshot response")
+        if envelope.target != self._peer_id:
+            raise AuthorityTransportError("Authority snapshot response target must match client.peer_id")
+        if envelope.sender == self._peer_id:
+            raise AuthorityTransportError("Authority snapshot response sender must differ from client.peer_id")
+        if not envelope.correlation_id:
+            raise AuthorityTransportError("Authority snapshot response requires correlation_id")
+        if snapshot.session_id != self._session_id:
+            raise AuthorityTransportError("Authority snapshot response session_id does not match transport session")
+        try:
+            self._tracker.state_for(snapshot.channel_id)
+        except Exception as exc:
+            raise AuthorityTransportError(f"tracker.state_for() failed: {_error_text(exc)}") from exc
         return True
 
     def _handle_response(self, frame: Frame) -> bool:
@@ -456,7 +520,9 @@ class AuthorityHandoffTransport:
             raise AuthorityTransportError(f"client.{operation}() failed: {_error_text(exc)}") from exc
 
 
-def _request_identity(payload: AuthorityHandoffRequest | AuthorityHandoffAccepted | AuthorityHandoffRejected) -> AuthorityHandoffRequest:
+def _request_identity(
+    payload: AuthorityHandoffRequest | AuthorityHandoffAccepted | AuthorityHandoffRejected,
+) -> AuthorityHandoffRequest:
     """Accepted/RejectedからTracker照合用のRequest identityを作る。"""
 
     return AuthorityHandoffRequest(
