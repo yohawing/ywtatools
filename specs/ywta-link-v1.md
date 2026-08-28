@@ -291,6 +291,37 @@ Mayaの`playbackSpeed`が0（every-frame再生）またはwireで表現できな
 抑止できるのは同期的に発生したcallbackだけであり、遅延して到着するMaya callbackのecho判定はControllerが
 Envelopeの`origin_peer_id`と`change_id`をEchoGuardへ関連付けて行う。Bridge単体で遅延echoまで抑止したとみなしてはならない。
 
+#### 4.3.4 Blender Playback Adapter
+
+Blender Adapterは`bpy.app.handlers.animation_playback_pre`、
+`bpy.app.handlers.animation_playback_post`、`bpy.app.handlers.frame_change_post`を購読する。
+再生開始は`animation_playback_pre`で保留し、最初のframe deltaが正なら`forward`、負なら`reverse`として
+確定した時点で`play_started`を通知する。正しい方向queryを依存注入できる場合だけ、delta確定前の通知を許可する。
+再生中の`frame_change_post`は毎Frame eventを生成せず、`animation_playback_post`で最終位置を含む
+`play_stopped`を一度だけ通知する。停止中のframe変更だけを`paused_seek`として通知する。
+
+range、speed、loop意図は専用Blender handlerの有無に依存せず、Host Main Threadのtimer/tickでsnapshot差分を
+検出する。`frame_start`と`frame_end`はBlender側でinclusive、wire側で半開とし、変換は
+`blender_end + frame_step = wire_end_exclusive`、逆変換は`wire_end_exclusive - frame_step = blender_end`とする。
+Blender標準sceneに再生倍率またはloop意図の共通setterがない場合、Adapterはspeed/loopのproviderを注入でき、
+未対応Fieldは`approximated_fields`またはapply statusで報告する。`fps`/`fps_base`はscene timebaseであり、
+再生倍率として変更してはならない。sync modeやframe_stepを暗黙に別のwire Fieldへ再解釈してはならない。
+apply providerを注入する場合は、適用後の状態を同じ意味で読み戻せるquery providerも必須とする。
+
+`use_preview_range`が有効な場合は`frame_preview_start/end`をeffective rangeとして使用し、通常rangeと混同しない。
+RNAのrange境界はintegerだけをexactに受理し、fractional boundaryは黙ってcoerceせずfail closedとする。
+positionの適用は`scene.frame_set(frame, subframe)`を使用する。`frame_change_post`はrender中またはMain Thread以外
+からも発火し得るため、`bpy.app.is_job_running("RENDER")`がtrueまたは状態不明の場合はpaused seekへ昇格しない。
+
+Remote snapshotの適用、scene property更新、play/stop operator呼出しはAdapter生成元のBlender Main Threadに
+限定する。`screen.is_animation_playing`と`bpy.ops.screen.animation_play`、
+`bpy.ops.screen.animation_cancel`はcontext依存のため、Adapterは注入可能なcontrol portを使用し、適用不能時は
+fail closedにする。適用中に発生した同期callbackは通知せず、遅延callbackのecho判定はControllerの
+`PlaybackEchoGuard`へ委ねる。handler/timer wrapperはstable identityを保持し、利用可能なら
+`bpy.app.handlers.persistent`を適用する。timerは`persistent=True`で登録する。handler/timer登録はidempotentで
+重複を作らず、解除失敗時は実際に残ったcallbackを保持して再試行できなければならない。Blender event loopへ
+callback例外を漏らさず、型名と上限付きmessageだけを軽量statusとして保持する。
+
 Material変換、Camera適用、Morph Weight更新、Texture出力、Node生成などのDCC操作はClient SDKではなく
 各DCC Adapterが所有する。
 
