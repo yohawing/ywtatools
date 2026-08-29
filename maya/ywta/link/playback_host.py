@@ -126,6 +126,7 @@ class MayaPlaybackHost:
         self._last_direction = "forward"
         self._last_error: CallbackErrorStatus | None = None
         self._error_count = 0
+        self._failed = False
 
     @property
     def registered(self) -> bool:
@@ -146,6 +147,12 @@ class MayaPlaybackHost:
         return self._last_error
 
     @property
+    def failed(self) -> bool:
+        """同期を継続できないcallback境界の失敗を返す。"""
+
+        return self._failed
+
+    @property
     def time_unit(self) -> Any:
         """MTime constructorへ渡すUI unit enumを返す。"""
 
@@ -161,7 +168,11 @@ class MayaPlaybackHost:
         """Maya callbacksを一度だけ登録する。"""
 
         self._assert_owner_thread("register")
-        self._validate_time_unit_label()
+        try:
+            self._validate_time_unit_label()
+        except BaseException as error:
+            self._record_error("register", error)
+            raise
         if self._registered:
             return False
         condition_message = getattr(self._api, "MConditionMessage", None)
@@ -222,7 +233,12 @@ class MayaPlaybackHost:
         """
 
         self._assert_owner_thread("apply")
-        self._validate_time_unit_label()
+        self._assert_healthy("apply")
+        try:
+            self._validate_time_unit_label()
+        except BaseException as error:
+            self._record_error("apply", error)
+            raise
         if not isinstance(snapshot, PlaybackHostSnapshot):
             raise MayaPlaybackHostError("snapshot must be a PlaybackHostSnapshot")
         self._applying = True
@@ -259,7 +275,12 @@ class MayaPlaybackHost:
         """現在のMaya playback状態をMain Thread上で取得する。"""
 
         self._assert_owner_thread("snapshot")
-        return self._read_snapshot()
+        self._assert_healthy("snapshot")
+        try:
+            return self._read_snapshot()
+        except BaseException as error:
+            self._record_error("snapshot", error)
+            raise
 
     @staticmethod
     def maya_range_to_wire(
@@ -338,7 +359,7 @@ class MayaPlaybackHost:
     def _emit(self, kind: PlaybackHostEventKind) -> None:
         """current snapshotをimmutable eventとして安全に通知する。"""
 
-        if self._applying:
+        if self._failed or self._applying:
             return
         event = PlaybackHostEvent(kind=kind, snapshot=self._read_snapshot())
         try:
@@ -349,6 +370,8 @@ class MayaPlaybackHost:
     def _invoke_callback(self, callback_name: str, callback: Callable[[], None]) -> None:
         """Maya event loopへ例外を漏らさずcallbackを実行する。"""
 
+        if self._failed:
+            return
         try:
             callback()
         except BaseException as exc:
@@ -429,7 +452,7 @@ class MayaPlaybackHost:
         try:
             value = self._direction_query()
         except BaseException as exc:
-            self._record_error("direction_query", exc)
+            self._record_error("direction_query", exc, terminal=False)
             return self._last_direction
         if isinstance(value, bool):
             self._last_direction = "forward" if value else "reverse"
@@ -482,9 +505,17 @@ class MayaPlaybackHost:
         if threading.get_ident() != self._owner_thread_id:
             raise MayaPlaybackHostError(f"{operation} must run on the Maya Main Thread")
 
-    def _record_error(self, callback_name: str, error: BaseException) -> None:
+    def _assert_healthy(self, operation: str) -> None:
+        """terminal failure後の同期操作を拒否する。"""
+
+        if self._failed:
+            raise MayaPlaybackHostError(f"{operation} is unavailable after Playback Host failure")
+
+    def _record_error(self, callback_name: str, error: BaseException, *, terminal: bool = True) -> None:
         """例外本体を保持せず、観測可能な軽量statusを更新する。"""
 
+        if terminal:
+            self._failed = True
         self._error_count += 1
         try:
             message = str(error)

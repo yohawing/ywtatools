@@ -83,6 +83,8 @@ class _Host:
     def __init__(self, events):
         self.events = events
         self.registered = False
+        self.failed = False
+        self.last_error = None
         self.fail_register = False
         self.fail_unregister = False
 
@@ -184,6 +186,14 @@ class MayaPlaybackLifecycleTests(unittest.TestCase):
         )
         self.assertTrue(self.lifecycle.status.closed)
 
+    def test_status_reflects_terminal_host_failure(self):
+        host_error = object()
+        self.host.failed = True
+        self.host.last_error = host_error
+
+        self.assertTrue(self.lifecycle.status.failed)
+        self.assertIs(host_error, self.lifecycle.status.error)
+
     def test_start_failure_rolls_back_in_reverse_order(self):
         self.scene.fail_add = True
         with self.assertRaises(MayaPlaybackLifecycleError):
@@ -245,7 +255,20 @@ class MayaPlaybackLifecycleTests(unittest.TestCase):
         self.assertEqual("timer", self.lifecycle.last_error.callback)
         self.assertEqual("RuntimeError", self.lifecycle.last_error.exception_type)
         self.assertEqual(1, self.lifecycle.last_error.count)
+        self.host.failed = True
+        self.host.last_error = object()
         self.assertTrue(self.lifecycle.status.failed)
+        self.assertIs(self.lifecycle.last_error, self.lifecycle.status.error)
+
+    def test_host_failure_stops_timer_without_pumping_runtime(self):
+        self.lifecycle.start()
+        self.host.failed = True
+
+        self.timer.timeout.emit()
+
+        self.assertFalse(self.lifecycle.status.timer_running)
+        self.assertEqual([], self.runtime.pump_limits)
+        self.assertIn("timer.stop", self.events)
 
     def test_pre_registered_host_is_not_taken_over(self):
         self.host.registered = True

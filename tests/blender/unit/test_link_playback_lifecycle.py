@@ -71,6 +71,8 @@ class _Host:
     def __init__(self, calls: list[str]) -> None:
         self.calls = calls
         self.registered = False
+        self.failed = False
+        self.last_error = None
         self.fail_register = False
         self.fail_unregister = False
 
@@ -181,6 +183,25 @@ class BlenderPlaybackLifecycleTests(unittest.TestCase):
 
         self.assertTrue(self.lifecycle.close())
         self.assertEqual(["runtime.start", "host.register", "runtime.pump", "host.unregister", "runtime.close"], self.calls)
+
+    def test_status_reflects_terminal_host_failure(self) -> None:
+        """Host callback失敗をLifecycleとUIが観測できるstatusへ投影する。"""
+
+        self.lifecycle.start()
+        host_error = _HOST_MODULE.CallbackErrorStatus("timer", "RuntimeError", "host failed", 1)
+        self.host.failed = True
+        self.host.last_error = host_error
+
+        self.assertTrue(self.lifecycle.failed)
+        self.assertIs(host_error, self.lifecycle.last_error)
+        self.assertTrue(self.lifecycle.status.failed)
+        self.assertIs(host_error, self.lifecycle.status.error)
+        callback = self.bpy.app.timers.callbacks[0][0]
+        self.assertIsNone(callback())
+        self.assertFalse(self.lifecycle.timer_registered)
+        self.assertNotIn("runtime.pump", self.calls)
+
+        self.assertTrue(self.lifecycle.close())
 
     def test_timer_unregistration_failure_keeps_actual_ledger_for_retry(self) -> None:
         """timer解除失敗時は後続componentを閉じず、次回closeで再試行する。"""

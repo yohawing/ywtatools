@@ -65,9 +65,7 @@ class BlenderPlaybackLifecycle:
 
         self._bpy = _BPY if bpy_module is None else bpy_module
         if self._bpy is None:
-            raise BlenderPlaybackLifecycleUnavailableError(
-                "Blender Python API is unavailable; inject bpy_module for tests"
-            )
+            raise BlenderPlaybackLifecycleUnavailableError("Blender Python API is unavailable; inject bpy_module for tests")
         self._host = host
         self._runtime = runtime
         self._timer_interval = float(timer_interval)
@@ -90,9 +88,9 @@ class BlenderPlaybackLifecycle:
         return BlenderPlaybackLifecycleStatus(
             started=self._started,
             closed=self._closed,
-            failed=self._failed,
+            failed=self.failed,
             timer_registered=self._timer_registered,
-            error=self._last_error,
+            error=self.last_error,
         )
 
     @property
@@ -117,7 +115,7 @@ class BlenderPlaybackLifecycle:
     def failed(self) -> bool:
         """callbackまたはlifecycle操作が失敗したかを返す。"""
 
-        return self._failed
+        return self._failed or bool(getattr(self._host, "failed", False))
 
     @property
     def timer_registered(self) -> bool:
@@ -129,7 +127,7 @@ class BlenderPlaybackLifecycle:
     def last_error(self) -> CallbackErrorStatus | None:
         """直近の失敗を軽量statusとして返す。"""
 
-        return self._last_error
+        return self._last_error or getattr(self._host, "last_error", None)
 
     def start(self) -> bool:
         """Runtime、Host、pump timerの順で起動する。"""
@@ -259,7 +257,7 @@ class BlenderPlaybackLifecycle:
     def _timer_callback(self) -> float | None:
         """Main Thread timerでpumpし、例外時はNoneを返してtimerを停止する。"""
 
-        if self._closed or not self._timer_registered:
+        if self._closed or not self._timer_registered or self.failed:
             self._timer_registered = False
             return None
         try:

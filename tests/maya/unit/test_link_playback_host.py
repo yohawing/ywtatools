@@ -390,6 +390,7 @@ class MayaPlaybackHostTests(unittest.TestCase):
         _FakeEventMessage.callbacks["playbackModeChanged"]("playbackModeChanged")
         self.assertEqual("forward", failing_host._last_direction)
         self.assertEqual("direction_query", failing_host.last_error.callback)
+        self.assertFalse(failing_host.failed)
 
     def test_playing_time_changed_is_suppressed(self):
         self.host.register()
@@ -510,9 +511,10 @@ class MayaPlaybackHostTests(unittest.TestCase):
 
         with self.assertRaisesRegex(MayaPlaybackHostError, "time unit"):
             host.snapshot()
-        with self.assertRaisesRegex(MayaPlaybackHostError, "time unit"):
+        with self.assertRaisesRegex(MayaPlaybackHostError, "Host failure"):
             host.apply(_snapshot())
         self.assertEqual([], self.anim.calls)
+        self.assertTrue(host.failed)
 
     def test_time_unit_drift_is_isolated_in_callback_status(self):
         current_label = ["film"]
@@ -532,6 +534,11 @@ class MayaPlaybackHostTests(unittest.TestCase):
         self.assertIsNotNone(host.last_error)
         self.assertEqual("MayaPlaybackHostError", host.last_error.exception_type)
         self.assertEqual("timeChanged", host.last_error.callback)
+        self.assertTrue(host.failed)
+
+        current_label[0] = "film"
+        _FakeEventMessage.callbacks["playbackModeChanged"]("playbackModeChanged")
+        self.assertEqual([], self.events)
 
     def test_apply_rejects_non_owner_thread(self):
         errors = []
@@ -559,6 +566,12 @@ class MayaPlaybackHostTests(unittest.TestCase):
         self.assertIsNotNone(host.last_error)
         self.assertEqual("ValueError", host.last_error.exception_type)
         self.assertEqual(1, host.last_error.count)
+        self.assertTrue(host.failed)
+        with self.assertRaisesRegex(MayaPlaybackHostError, "Host failure"):
+            host.snapshot()
+        with self.assertRaisesRegex(MayaPlaybackHostError, "Host failure"):
+            host.apply(_snapshot())
+        self.assertEqual([], self.anim.calls)
 
 
 if __name__ == "__main__":

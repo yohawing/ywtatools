@@ -115,6 +115,7 @@ class BlenderPlaybackHost:
         self._owner_thread_id = threading.get_ident()
         self._registered = False
         self._timer_registered = False
+        self._failed = False
         self._applying = False
         self._playing: bool | None = None
         self._pending_start = False
@@ -142,6 +143,12 @@ class BlenderPlaybackHost:
         """隔離された最後のcallback例外を返す。"""
 
         return self._last_error
+
+    @property
+    def failed(self) -> bool:
+        """callback処理を継続できない失敗が発生したかを返す。"""
+
+        return self._failed
 
     @property
     def last_apply_approximated_fields(self) -> tuple[str, ...]:
@@ -248,6 +255,8 @@ class BlenderPlaybackHost:
         """
 
         self._assert_owner_thread("apply")
+        if self._failed:
+            raise BlenderPlaybackHostError("BlenderPlaybackHost has failed")
         if not isinstance(snapshot, PlaybackHostSnapshot):
             raise BlenderPlaybackHostError("snapshot must be a PlaybackHostSnapshot")
         scene = self._scene()
@@ -291,6 +300,8 @@ class BlenderPlaybackHost:
         """現在のBlender playback状態をMain Thread上で取得する。"""
 
         self._assert_owner_thread("snapshot")
+        if self._failed:
+            raise BlenderPlaybackHostError("BlenderPlaybackHost has failed")
         return self._read_snapshot()
 
     @staticmethod
@@ -430,7 +441,7 @@ class BlenderPlaybackHost:
     def _emit(self, kind: PlaybackHostEventKind, scene: Any = None) -> None:
         """current snapshotをimmutable eventとして安全に通知する。"""
 
-        if self._applying:
+        if self._applying or self._failed:
             return
         try:
             scene = self._scene(scene)
@@ -443,6 +454,8 @@ class BlenderPlaybackHost:
     def _invoke_callback(self, callback_name: str, callback: Callable[[], None]) -> None:
         """Blender event loopへ例外を漏らさずcallbackを実行する。"""
 
+        if self._failed:
+            return
         try:
             callback()
         except BaseException as exc:
@@ -579,7 +592,7 @@ class BlenderPlaybackHost:
         try:
             value = self._job_running_query()
         except BaseException as exc:
-            self._record_error("job_running_query", exc)
+            self._record_error("job_running_query", exc, terminal=False)
             return None
         if isinstance(value, bool):
             return value
@@ -602,7 +615,7 @@ class BlenderPlaybackHost:
         try:
             value = self._direction_query()
         except BaseException as exc:
-            self._record_error("direction_query", exc)
+            self._record_error("direction_query", exc, terminal=False)
             return None
         if isinstance(value, bool):
             value = "forward" if value else "reverse"
@@ -821,7 +834,7 @@ class BlenderPlaybackHost:
     def _timer_callback(self) -> float | None:
         """Blender timerから呼ばれ、例外をstatusへ隔離して再登録間隔を返す。"""
 
-        if not self._registered:
+        if not self._registered or self._failed:
             # BlenderはNoneを返したtimer callbackを台帳から除去する。
             self._timer_registered = False
             return None
@@ -829,6 +842,8 @@ class BlenderPlaybackHost:
             self.tick()
         except BaseException as exc:
             self._record_error("timer", exc)
+            self._timer_registered = False
+            return None
         return self._timer_interval if self._registered else None
 
     def _assert_owner_thread(self, operation: str) -> None:
@@ -837,9 +852,11 @@ class BlenderPlaybackHost:
         if threading.get_ident() != self._owner_thread_id:
             raise BlenderPlaybackHostError(f"{operation} must run on the Blender Main Thread")
 
-    def _record_error(self, callback_name: str, error: BaseException) -> None:
+    def _record_error(self, callback_name: str, error: BaseException, *, terminal: bool = True) -> None:
         """例外本体を保持せず、観測可能な軽量statusを更新する。"""
 
+        if terminal:
+            self._failed = True
         self._error_count += 1
         try:
             message = str(error)

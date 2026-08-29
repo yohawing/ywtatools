@@ -176,11 +176,13 @@ class BlenderPlaybackHostTests(unittest.TestCase):
 
         result = host._timer_callback()
 
-        self.assertEqual(result, host._timer_interval)
+        self.assertIsNone(result)
+        self.assertTrue(host.failed)
+        self.assertFalse(host._timer_registered)
         self.assertIsNotNone(host.last_error)
         self.assertEqual(host.last_error.exception_type, "BlenderPlaybackHostError")
 
-    def test_invalid_rate_callbacks_leave_state_unchanged_and_recover(self):
+    def test_invalid_rate_callbacks_fail_terminally_without_later_publish(self):
         expected_rate = RationalRate(24, 1)
 
         def validate_timebase(scene):
@@ -218,6 +220,8 @@ class BlenderPlaybackHostTests(unittest.TestCase):
             ),
         )
         self.assertEqual([], self.events)
+        self.assertTrue(host.failed)
+        self.assertEqual(1, host.last_error.count)
 
         self.scene.render.fps = 24
         self.screen.is_animation_playing = True
@@ -228,14 +232,8 @@ class BlenderPlaybackHostTests(unittest.TestCase):
         host._animation_playback_post_callback(self.scene)
         self.scene.frame_current = 5
         host._frame_change_post_callback(self.scene)
-        self.assertEqual(
-            [
-                PlaybackHostEventKind.PLAY_STARTED,
-                PlaybackHostEventKind.PLAY_STOPPED,
-                PlaybackHostEventKind.PAUSED_SEEK,
-            ],
-            [event.kind for event in self.events],
-        )
+        self.assertEqual([], self.events)
+        self.assertEqual(1, host.last_error.count)
 
     def test_snapshot_rejects_non_owner_thread(self):
         errors = []
@@ -513,6 +511,7 @@ class BlenderPlaybackHostTests(unittest.TestCase):
         self.assertEqual([], self.events)
         self.assertIsNotNone(host.last_error)
         self.assertIn("Main Thread", host.last_error.message)
+        self.assertTrue(host.failed)
 
     def test_apply_is_restricted_to_owner_thread(self):
         errors = []
@@ -543,13 +542,39 @@ class BlenderPlaybackHostTests(unittest.TestCase):
         self.assertIsNotNone(host.last_error)
         self.assertEqual("ValueError", host.last_error.exception_type)
         self.assertEqual(1, host.last_error.count)
+        self.assertTrue(host.failed)
+
+        dcc_state = (self.scene.frame_current, self.scene.frame_start, self.scene.frame_end, tuple(self.controls))
+        with self.assertRaisesRegex(BlenderPlaybackHostError, "has failed"):
+            host.apply(_snapshot(position=12))
+        with self.assertRaisesRegex(BlenderPlaybackHostError, "has failed"):
+            host.snapshot()
+        self.assertEqual(
+            dcc_state,
+            (self.scene.frame_current, self.scene.frame_start, self.scene.frame_end, tuple(self.controls)),
+        )
 
     def test_timer_callback_does_not_leak_scene_error(self):
         host = BlenderPlaybackHost(self.events.append, bpy_module=self.bpy, playback_control=self._control)
         host.register()
         self.scene.frame_end = object()
-        self.assertEqual(0.1, host._timer_callback_wrapper())
+        self.assertIsNone(host._timer_callback_wrapper())
         self.assertEqual("BlenderPlaybackHostError", host.last_error.exception_type)
+        self.assertTrue(host.failed)
+
+    def test_optional_direction_and_job_query_failures_are_not_terminal(self):
+        host = BlenderPlaybackHost(
+            self.events.append,
+            bpy_module=self.bpy,
+            playback_control=self._control,
+            direction_query=mock.Mock(side_effect=RuntimeError("direction unavailable")),
+            job_running_query=mock.Mock(side_effect=RuntimeError("job unavailable")),
+        )
+
+        self.assertIsNone(host._query_direction())
+        self.assertIsNone(host._render_state())
+        self.assertFalse(host.failed)
+        self.assertEqual("job_running_query", host.last_error.callback)
 
 
 if __name__ == "__main__":

@@ -110,16 +110,24 @@ class MayaPlaybackLifecycle:
         return self._last_error
 
     @property
+    def failed(self) -> bool:
+        """Lifecycle自身またはHostのterminal failureを返す。"""
+
+        return self._failed or bool(getattr(self._host, "failed", False))
+
+    @property
     def status(self) -> MayaPlaybackLifecycleStatus:
         """Sessionの軽量な状態snapshotを返す。"""
 
+        host_failed = bool(getattr(self._host, "failed", False))
+        host_error = getattr(self._host, "last_error", None) if host_failed else None
         return MayaPlaybackLifecycleStatus(
             started=self._started,
             closed=self._closed,
-            failed=self._failed,
+            failed=self.failed,
             timer_running=self._timer_running,
             exit_callback_registered=self._exit_callback_id is not None,
-            error=self._last_error,
+            error=self._last_error or host_error,
         )
 
     def start(self) -> bool:
@@ -202,6 +210,12 @@ class MayaPlaybackLifecycle:
         """QTimer callbackでRuntimeのpump例外を隔離する。"""
 
         if self._closed or not self._started or not self._timer_running:
+            return
+        if self.failed:
+            stop_errors: list[BaseException] = []
+            self._stop_timer(stop_errors)
+            if stop_errors:
+                self._record_error("timer_stop", stop_errors[0])
             return
         try:
             self._assert_owner_thread("timer callback")

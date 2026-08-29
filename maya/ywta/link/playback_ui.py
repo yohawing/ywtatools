@@ -33,7 +33,7 @@ _menu_cmds: Any | None = None
 def is_enabled() -> bool:
     """現在Playback Syncが有効かを返す。"""
 
-    return _ACTIVE_SESSION is not None
+    return _ACTIVE_SESSION is not None and not _session_terminal(_ACTIVE_SESSION)
 
 
 def active_playback_session() -> Any | None:
@@ -67,7 +67,9 @@ def set_enabled(
     _require_main_thread("set_enabled")
     if enabled:
         if _ACTIVE_SESSION is not None:
-            return True
+            if not _session_terminal(_ACTIVE_SESSION):
+                return True
+            close(cmds_module=cmds_module)
         return _enable(bootstrap)
 
     if _ACTIVE_SESSION is None:
@@ -89,7 +91,7 @@ def close(*, cmds_module: Any | None = None) -> bool:
         result = session.close()
     except BaseException as error:
         raise PlaybackUiError("Playback Sync close failed") from error
-    if result is not True:
+    if result is not True and not _session_closed(session):
         raise PlaybackUiError("Playback Sync close did not complete")
     _ACTIVE_SESSION = None
     return True
@@ -172,6 +174,20 @@ def _enable(bootstrap: Callable[[], Any] | None) -> bool:
         raise PlaybackUiError("Playback Sync start failed") from error
     _ACTIVE_SESSION = session
     return True
+
+
+def _session_terminal(session: Any) -> bool:
+    """Lifecycle status上でfailedまたはclosedのSessionを判定する。"""
+
+    status = getattr(getattr(session, "lifecycle", None), "status", None)
+    return bool(status is not None and (getattr(status, "failed", False) or getattr(status, "closed", False)))
+
+
+def _session_closed(session: Any) -> bool:
+    """close結果がFalseでも既にclosedなら解放済みとして扱う。"""
+
+    status = getattr(getattr(session, "lifecycle", None), "status", None)
+    return bool(status is not None and getattr(status, "closed", False))
 
 
 def _require_main_thread(operation: str) -> None:

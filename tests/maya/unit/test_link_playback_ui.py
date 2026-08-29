@@ -34,11 +34,12 @@ class _Cmds:
 class _Session:
     """開始・終了呼び出しを記録するSession fake。"""
 
-    def __init__(self, *, start=True, close=True):
+    def __init__(self, *, start=True, close=True, failed=False, closed=False):
         self.start_result = start
         self.close_result = close
         self.starts = 0
         self.closes = 0
+        self.lifecycle = types.SimpleNamespace(status=types.SimpleNamespace(failed=failed, closed=closed))
 
     def start(self):
         self.starts += 1
@@ -50,6 +51,8 @@ class _Session:
         self.closes += 1
         if isinstance(self.close_result, BaseException):
             raise self.close_result
+        if self.close_result is True:
+            self.lifecycle.status.closed = True
         return self.close_result
 
 
@@ -162,6 +165,41 @@ class PlaybackUiTests(unittest.TestCase):
         self.assertFalse(playback_ui.is_enabled())
         self.assertIsNone(playback_ui.active_playback_session())
         self.assertEqual(2, session.closes)
+
+    def test_failed_session_is_off_and_enable_replaces_it(self):
+        failed = _Session(failed=True)
+        fresh = _Session()
+        playback_ui._ACTIVE_SESSION = failed
+
+        self.assertFalse(playback_ui.is_enabled())
+        self.assertTrue(playback_ui.set_enabled(True, bootstrap=lambda: fresh))
+        self.assertEqual(1, failed.closes)
+        self.assertEqual(1, fresh.starts)
+        self.assertIs(fresh, playback_ui.active_playback_session())
+
+    def test_failed_session_close_failure_is_retained_for_retry(self):
+        failed = _Session(close=RuntimeError("close failed"), failed=True)
+        fresh = _Session()
+        playback_ui._ACTIVE_SESSION = failed
+
+        with self.assertRaises(playback_ui.PlaybackUiError):
+            playback_ui.set_enabled(True, bootstrap=lambda: fresh)
+        self.assertFalse(playback_ui.is_enabled())
+        self.assertIs(failed, playback_ui.active_playback_session())
+        self.assertEqual(0, fresh.starts)
+
+        failed.close_result = True
+        self.assertTrue(playback_ui.set_enabled(True, bootstrap=lambda: fresh))
+        self.assertIs(fresh, playback_ui.active_playback_session())
+
+    def test_closed_session_is_released_before_fresh_bootstrap(self):
+        closed = _Session(close=False, closed=True)
+        fresh = _Session()
+        playback_ui._ACTIVE_SESSION = closed
+
+        self.assertTrue(playback_ui.set_enabled(True, bootstrap=lambda: fresh))
+        self.assertEqual(1, closed.closes)
+        self.assertIs(fresh, playback_ui.active_playback_session())
 
     def test_callback_restores_checkbox_and_warns_on_failure(self):
         playback_ui.create_menu_item("animationMenu", cmds_module=self.cmds)
