@@ -15,6 +15,7 @@ from .authority import (
 )
 from .authority_transport import AuthorityHandoffTransport, AuthorityTransportError, AuthorityTransportThreadError
 from .camera import Camera, CameraValidationError
+from .camera_bootstrap import CameraBootstrapConfig, CameraBootstrapError, bootstrap_camera_session
 from .camera_session import CameraSession, CameraSessionConfig, CameraSessionError, compose_camera_session
 from .camera_sync import (
     CameraController,
@@ -68,6 +69,8 @@ __all__ = (
     "AuthorityTransportThreadError",
     "AuthorityValidationError",
     "Camera",
+    "CameraBootstrapConfig",
+    "CameraBootstrapError",
     "CameraController",
     "CameraEchoGuard",
     "CameraHandoffCoordinator",
@@ -128,6 +131,7 @@ __all__ = (
     "Transform",
     "TransformValidationError",
     "bootstrap_playback_session",
+    "bootstrap_camera_session",
     "compose_camera_session",
     "compose_playback_session",
     "resolve_broker_executable",
