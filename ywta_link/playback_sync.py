@@ -154,9 +154,11 @@ class PlaybackSyncRuntime:
                 self._raise_receiver_error()
                 self._poll_coordinator()
                 return drained
-            except Exception as error:
+            except BaseException as error:
                 if not self.status.failed:
                     self._mark_failed(error)
+                if not isinstance(error, Exception):
+                    raise
                 raise self._runtime_error("PlaybackSyncRuntime pump failed", error) from error
         finally:
             self._leave()

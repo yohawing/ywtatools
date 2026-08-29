@@ -181,10 +181,12 @@ class SchemaRegistry:
         capabilities: Iterable[str] | None = None,
         mapping_profiles: Iterable[str] | None = None,
     ) -> None:
-        schema_source = schemas or SCHEMA_FIELDS
-        self.schemas = {key: frozenset(value) for key, value in schema_source.items()}
-        self.capabilities = set(capabilities or CAPABILITY_IDS)
-        self.mapping_profiles = set(mapping_profiles or MAPPING_PROFILE_IDS)
+        schema_source = SCHEMA_FIELDS if schemas is None else schemas
+        capability_source = CAPABILITY_IDS if capabilities is None else capabilities
+        mapping_profile_source = MAPPING_PROFILE_IDS if mapping_profiles is None else mapping_profiles
+        self.schemas = MappingProxyType({key: frozenset(value) for key, value in schema_source.items()})
+        self.capabilities = frozenset(capability_source)
+        self.mapping_profiles = frozenset(mapping_profile_source)
 
     def has_schema(self, schema_id: object) -> bool:
         """登録済みSchemaかを返す。"""

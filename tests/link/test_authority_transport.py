@@ -6,11 +6,6 @@ import threading
 import unittest
 
 from ywta_link import (
-    AUTHORITY_ACCEPTED_SCHEMA,
-    AUTHORITY_REJECTED_SCHEMA,
-    AUTHORITY_REQUEST_SCHEMA,
-    AUTHORITY_SNAPSHOT_REQUEST_SCHEMA,
-    AUTHORITY_SNAPSHOT_SCHEMA,
     AuthorityHandoffAccepted,
     AuthorityHandoffRequest,
     AuthorityHandoffTracker,
@@ -24,6 +19,13 @@ from ywta_link import (
     Frame,
     PlaybackTopicTransport,
     PlaybackTransportError,
+)
+from ywta_link.authority import (
+    AUTHORITY_ACCEPTED_SCHEMA,
+    AUTHORITY_REJECTED_SCHEMA,
+    AUTHORITY_REQUEST_SCHEMA,
+    AUTHORITY_SNAPSHOT_REQUEST_SCHEMA,
+    AUTHORITY_SNAPSHOT_SCHEMA,
 )
 
 

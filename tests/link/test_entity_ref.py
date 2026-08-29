@@ -7,11 +7,10 @@ import unittest
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
-from ywta_link import (
+from ywta_link import EntityReference, EntityReferenceValidationError
+from ywta_link.entity_ref import (
     ENTITY_REFERENCE_FIELDS,
     ENTITY_REFERENCE_SCHEMA,
-    EntityReference,
-    EntityReferenceValidationError,
 )
 from ywta_link.errors import ValidationError
 from ywta_link.registry import DEFAULT_REGISTRY

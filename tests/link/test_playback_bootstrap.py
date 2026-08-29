@@ -6,8 +6,6 @@ import unittest
 from unittest.mock import patch
 
 from ywta_link import (
-    AUTHORITY_ACCEPTED_SCHEMA,
-    AUTHORITY_SNAPSHOT_SCHEMA,
     AuthorityHandoffAccepted,
     Envelope,
     Frame,
@@ -18,6 +16,7 @@ from ywta_link import (
     RationalRate,
     bootstrap_playback_session,
 )
+from ywta_link.authority import AUTHORITY_ACCEPTED_SCHEMA, AUTHORITY_SNAPSHOT_SCHEMA
 from ywta_link.playback_bootstrap import BROKER_PEER_ID
 from ywta_link.registry import SLOT_DESCRIPTOR_SCHEMA
 

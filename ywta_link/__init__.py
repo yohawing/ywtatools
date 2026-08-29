@@ -1,16 +1,9 @@
-"""YWTA Link v1の依存なしProtocol foundation。"""
+"""YWTA Link v1の主要な利用者向けAPI。
+
+Wire定数や低レベルI/Oは、定義元のサブモジュールから明示的にimportする。
+"""
 
 from .authority import (
-    AUTHORITY_ACCEPTED_FIELDS,
-    AUTHORITY_ACCEPTED_SCHEMA,
-    AUTHORITY_REJECTED_FIELDS,
-    AUTHORITY_REJECTED_SCHEMA,
-    AUTHORITY_REQUEST_FIELDS,
-    AUTHORITY_REQUEST_SCHEMA,
-    AUTHORITY_SNAPSHOT_FIELDS,
-    AUTHORITY_SNAPSHOT_REQUEST_FIELDS,
-    AUTHORITY_SNAPSHOT_REQUEST_SCHEMA,
-    AUTHORITY_SNAPSHOT_SCHEMA,
     AuthorityHandoffAccepted,
     AuthorityHandoffRejected,
     AuthorityHandoffRequest,
@@ -19,48 +12,22 @@ from .authority import (
     AuthoritySnapshotRequest,
     AuthorityState,
     AuthorityValidationError,
-    PendingHandoff,
 )
 from .authority_transport import AuthorityHandoffTransport, AuthorityTransportError, AuthorityTransportThreadError
-from .adapter import (
-    AdapterDispatch,
-    AdapterDispatchError,
-    DispatchErrorInfo,
-    DispatchOverflowError,
-    DispatchStatus,
-    HandlerErrorInfo,
-)
-from .contract import NegotiationResult, SyncChannel, SyncContract
-from .camera import CAMERA_FIELDS, CAMERA_SCHEMA, FILM_FIT_VALUES, GATE_FIT_VALUES, Camera, CameraValidationError
+from .camera import Camera, CameraValidationError
 from .client import LinkClient, LinkClientError
-from .entity_ref import (
-    ENTITY_REFERENCE_FIELDS,
-    ENTITY_REFERENCE_SCHEMA,
-    EntityReference,
-    EntityReferenceValidationError,
+from .contract import NegotiationResult, SyncChannel, SyncContract
+from .entity_ref import EntityReference, EntityReferenceValidationError
+from .envelope import Envelope
+from .frame import Frame, FrameError
+from .playback import Playback, PlaybackEchoGuard, PlaybackValidationError
+from .playback_bootstrap import PlaybackBootstrapConfig, PlaybackBootstrapError, bootstrap_playback_session
+from .playback_controller import (
+    PlaybackController,
+    PlaybackControllerError,
+    PlaybackControllerThreadError,
 )
-from .envelope import Envelope, decode_envelope, encode_envelope
-from .frame import Frame, FrameError, FrameLimits, decode_frame, encode_frame, read_frame, write_frame
-from .presence import (
-    PEER_HELLO_SCHEMA,
-    PRESENCE_MAX_CAPABILITIES,
-    PRESENCE_MAX_CAPABILITY_LENGTH,
-    PRESENCE_MAX_PROTOCOL_VERSION,
-    PRESENCE_MAX_PROTOCOL_VERSIONS,
-    PRESENCE_MAX_STRING_LENGTH,
-    PeerPresence,
-    PresenceValidationError,
-)
-from .playback import (
-    PLAYBACK_DIRECTION_VALUES,
-    PLAYBACK_FIELDS,
-    PLAYBACK_LOOP_MODE_VALUES,
-    PLAYBACK_SCHEMA,
-    PLAYBACK_STATE_VALUES,
-    Playback,
-    PlaybackEchoGuard,
-    PlaybackValidationError,
-)
+from .playback_handoff import PlaybackHandoffCoordinator, PlaybackHandoffError, PlaybackHandoffThreadError
 from .playback_host import (
     PlaybackHostEvent,
     PlaybackHostEventKind,
@@ -68,67 +35,17 @@ from .playback_host import (
     PlaybackHostSnapshot,
     PlaybackHostValidationError,
 )
-from .playback_handoff import (
-    PlaybackHandoffCoordinator,
-    PlaybackHandoffError,
-    PlaybackHandoffErrorInfo,
-    PlaybackHandoffStatus,
-    PlaybackHandoffThreadError,
-)
-from .playback_bootstrap import (
-    PlaybackBootstrapConfig,
-    PlaybackBootstrapError,
-    bootstrap_playback_session,
-)
-from .playback_mapping import DEFAULT_REQUIRED_EXACT_FIELDS, PlaybackTimeMapper, PlaybackTimeMappingError
-from .playback_controller import (
-    AuthorityProvider,
-    PlaybackController,
-    PlaybackControllerError,
-    PlaybackControllerErrorInfo,
-    PlaybackControllerStatus,
-    PlaybackControllerThreadError,
-    PlaybackHostApply,
-    PlaybackPublisher,
-)
-from .playback_transport import PlaybackTopicTransport, PlaybackTransportError, PlaybackTransportThreadError
-from .playback_sync import (
-    PlaybackSyncRuntime,
-    PlaybackSyncRuntimeError,
-    PlaybackSyncRuntimeErrorInfo,
-    PlaybackSyncRuntimeStatus,
-)
+from .playback_mapping import PlaybackTimeMapper, PlaybackTimeMappingError
 from .playback_session import PlaybackSession, PlaybackSessionConfig, PlaybackSessionError, compose_playback_session
+from .playback_sync import PlaybackSyncRuntime, PlaybackSyncRuntimeError
+from .playback_transport import PlaybackTopicTransport, PlaybackTransportError, PlaybackTransportThreadError
+from .presence import PeerPresence, PresenceValidationError
+from .runtime import RuntimeManifest, resolve_broker_executable
 from .session import ChannelRevisionTracker, SessionState, SyncSession
-from .runtime import RuntimeError, RuntimeManifest, read_runtime_manifest, resolve_broker_executable
-from .time import RATE_FIELDS, TIME_FIELDS, TIME_SCHEMA, RationalRate, Time, TimeValidationError
-from .transform import (
-    AXIS_VALUES,
-    COORDINATE_SYSTEM_FIELDS,
-    HANDEDNESS_VALUES,
-    SPACE_VALUES,
-    TRANSFORM_FIELDS,
-    TRANSFORM_SCHEMA,
-    UNIT_VALUES,
-    CoordinateSystem,
-    Transform,
-    TransformValidationError,
-)
+from .time import RationalRate, Time, TimeValidationError
+from .transform import CoordinateSystem, Transform, TransformValidationError
 
 __all__ = (
-    "AdapterDispatch",
-    "AdapterDispatchError",
-    "DispatchErrorInfo",
-    "AUTHORITY_ACCEPTED_FIELDS",
-    "AUTHORITY_ACCEPTED_SCHEMA",
-    "AUTHORITY_REJECTED_FIELDS",
-    "AUTHORITY_REJECTED_SCHEMA",
-    "AUTHORITY_REQUEST_FIELDS",
-    "AUTHORITY_REQUEST_SCHEMA",
-    "AUTHORITY_SNAPSHOT_FIELDS",
-    "AUTHORITY_SNAPSHOT_REQUEST_FIELDS",
-    "AUTHORITY_SNAPSHOT_REQUEST_SCHEMA",
-    "AUTHORITY_SNAPSHOT_SCHEMA",
     "AuthorityHandoffAccepted",
     "AuthorityHandoffRejected",
     "AuthorityHandoffRequest",
@@ -136,111 +53,61 @@ __all__ = (
     "AuthorityHandoffTransport",
     "AuthoritySnapshot",
     "AuthoritySnapshotRequest",
+    "AuthorityState",
     "AuthorityTransportError",
     "AuthorityTransportThreadError",
-    "AuthorityState",
     "AuthorityValidationError",
-    "PendingHandoff",
-    "ChannelRevisionTracker",
-    "CAMERA_FIELDS",
-    "CAMERA_SCHEMA",
-    "FILM_FIT_VALUES",
-    "GATE_FIT_VALUES",
     "Camera",
     "CameraValidationError",
-    "ENTITY_REFERENCE_FIELDS",
-    "ENTITY_REFERENCE_SCHEMA",
+    "ChannelRevisionTracker",
+    "CoordinateSystem",
     "EntityReference",
     "EntityReferenceValidationError",
     "Envelope",
     "Frame",
     "FrameError",
-    "FrameLimits",
     "LinkClient",
     "LinkClientError",
-    "DispatchOverflowError",
-    "DispatchStatus",
-    "HandlerErrorInfo",
-    "PEER_HELLO_SCHEMA",
-    "PRESENCE_MAX_CAPABILITIES",
-    "PRESENCE_MAX_CAPABILITY_LENGTH",
-    "PRESENCE_MAX_PROTOCOL_VERSION",
-    "PRESENCE_MAX_PROTOCOL_VERSIONS",
-    "PRESENCE_MAX_STRING_LENGTH",
+    "NegotiationResult",
     "PeerPresence",
-    "PresenceValidationError",
-    "PLAYBACK_DIRECTION_VALUES",
-    "PLAYBACK_FIELDS",
-    "PLAYBACK_LOOP_MODE_VALUES",
-    "PLAYBACK_SCHEMA",
-    "PLAYBACK_STATE_VALUES",
     "Playback",
+    "PlaybackBootstrapConfig",
+    "PlaybackBootstrapError",
+    "PlaybackController",
+    "PlaybackControllerError",
+    "PlaybackControllerThreadError",
     "PlaybackEchoGuard",
-    "PlaybackValidationError",
+    "PlaybackHandoffError",
+    "PlaybackHandoffCoordinator",
+    "PlaybackHandoffThreadError",
     "PlaybackHostEvent",
     "PlaybackHostEventKind",
     "PlaybackHostRange",
     "PlaybackHostSnapshot",
     "PlaybackHostValidationError",
-    "PlaybackHandoffCoordinator",
-    "PlaybackHandoffError",
-    "PlaybackHandoffErrorInfo",
-    "PlaybackHandoffStatus",
-    "PlaybackHandoffThreadError",
-    "PlaybackBootstrapConfig",
-    "PlaybackBootstrapError",
-    "bootstrap_playback_session",
-    "DEFAULT_REQUIRED_EXACT_FIELDS",
-    "PlaybackTimeMapper",
-    "PlaybackTimeMappingError",
-    "AuthorityProvider",
-    "PlaybackController",
-    "PlaybackControllerError",
-    "PlaybackControllerErrorInfo",
-    "PlaybackControllerStatus",
-    "PlaybackControllerThreadError",
-    "PlaybackHostApply",
-    "PlaybackPublisher",
-    "PlaybackTopicTransport",
-    "PlaybackTransportError",
-    "PlaybackTransportThreadError",
-    "PlaybackSyncRuntime",
-    "PlaybackSyncRuntimeError",
-    "PlaybackSyncRuntimeErrorInfo",
-    "PlaybackSyncRuntimeStatus",
     "PlaybackSession",
     "PlaybackSessionConfig",
     "PlaybackSessionError",
-    "RATE_FIELDS",
+    "PlaybackSyncRuntime",
+    "PlaybackSyncRuntimeError",
+    "PlaybackTimeMapper",
+    "PlaybackTimeMappingError",
+    "PlaybackTopicTransport",
+    "PlaybackTransportError",
+    "PlaybackTransportThreadError",
+    "PlaybackValidationError",
+    "PresenceValidationError",
     "RationalRate",
-    "TIME_FIELDS",
-    "TIME_SCHEMA",
-    "Time",
-    "TimeValidationError",
-    "AXIS_VALUES",
-    "COORDINATE_SYSTEM_FIELDS",
-    "HANDEDNESS_VALUES",
-    "SPACE_VALUES",
-    "TRANSFORM_FIELDS",
-    "TRANSFORM_SCHEMA",
-    "UNIT_VALUES",
-    "CoordinateSystem",
-    "Transform",
-    "TransformValidationError",
-    "NegotiationResult",
+    "RuntimeManifest",
     "SessionState",
     "SyncChannel",
     "SyncContract",
     "SyncSession",
-    "RuntimeError",
-    "RuntimeManifest",
-    "decode_envelope",
-    "decode_frame",
-    "encode_envelope",
-    "encode_frame",
-    "read_frame",
-    "read_runtime_manifest",
-    "resolve_broker_executable",
-    "write_frame",
+    "Time",
+    "TimeValidationError",
+    "Transform",
+    "TransformValidationError",
+    "bootstrap_playback_session",
     "compose_playback_session",
+    "resolve_broker_executable",
 )

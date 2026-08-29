@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Any, Mapping
 
 from .contract import SyncContract
-from .errors import AuthorityViolation, InvalidStateTransition, StaleRevision, ValidationError
+from .errors import AuthorityViolation, InvalidStateTransition, StaleRevision, ValidationError, _validate_identifier
 
 
 class SessionState(str, Enum):
@@ -179,15 +179,7 @@ class ChannelRevisionTracker:
 
 
 def _identifier(value: object, field_name: str) -> str:
-    """空白だけでないUTF-8文字列を識別子として検証する。"""
-
-    if not isinstance(value, str) or not value or not value.strip():
-        raise ValidationError(f"{field_name} must be a non-whitespace string")
-    try:
-        value.encode("utf-8")
-    except UnicodeEncodeError as exc:
-        raise ValidationError(f"{field_name} must be valid UTF-8") from exc
-    return value
+    return _validate_identifier(value, field_name, ValidationError)
 
 
 def _content_revision(value: object) -> int:

@@ -8,13 +8,8 @@ import time
 import unittest
 from typing import Callable
 
-from ywta_link import (
-    AdapterDispatch,
-    AdapterDispatchError,
-    DispatchErrorInfo,
-    Envelope,
-    Frame,
-)
+from ywta_link import Envelope, Frame
+from ywta_link.adapter import AdapterDispatch, AdapterDispatchError, DispatchErrorInfo
 
 
 def _frame(message_id: str) -> Frame:

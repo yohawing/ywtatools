@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import threading
 from dataclasses import dataclass
 from typing import Callable
@@ -11,6 +10,7 @@ from .adapter import AdapterDispatch
 from .authority import AuthorityHandoffTracker
 from .authority_transport import AuthorityHandoffTransport
 from .client import LinkClient
+from .errors import _bounded_error_details, _non_negative_finite, _positive_finite, _validate_identifier
 from .playback_handoff import PlaybackHandoffCoordinator
 from .playback_controller import PlaybackController
 from .playback_host import PlaybackHostEvent, PlaybackHostSnapshot
@@ -49,19 +49,9 @@ class PlaybackSessionConfig:
             raise PlaybackSessionError("topic must differ from the Session control topic")
         if isinstance(self.queue_capacity, bool) or not isinstance(self.queue_capacity, int) or self.queue_capacity <= 0:
             raise PlaybackSessionError("queue_capacity must be a positive integer")
-        if (
-            isinstance(self.stop_timeout, bool)
-            or not isinstance(self.stop_timeout, (int, float))
-            or not math.isfinite(float(self.stop_timeout))
-            or self.stop_timeout < 0
-        ):
+        if not _non_negative_finite(self.stop_timeout):
             raise PlaybackSessionError("stop_timeout must be a non-negative finite number")
-        if (
-            isinstance(self.handoff_timeout, bool)
-            or not isinstance(self.handoff_timeout, (int, float))
-            or not math.isfinite(float(self.handoff_timeout))
-            or self.handoff_timeout <= 0
-        ):
+        if not _positive_finite(self.handoff_timeout):
             raise PlaybackSessionError("handoff_timeout must be a positive finite number")
         try:
             PlaybackTimeMapper(
@@ -295,14 +285,7 @@ class _HostRelay:
 
 
 def _identifier(value: object, name: str) -> None:
-    """空白だけでないUTF-8識別子を検証する。"""
-
-    if not isinstance(value, str) or not value or not value.strip():
-        raise PlaybackSessionError(f"{name} must be a non-whitespace string")
-    try:
-        value.encode("utf-8")
-    except UnicodeEncodeError as error:
-        raise PlaybackSessionError(f"{name} must be valid UTF-8") from error
+    _validate_identifier(value, name, PlaybackSessionError)
 
 
 def _validate_client_identity(client: object, expected_peer_id: str) -> None:
@@ -387,10 +370,7 @@ def _rollback_construction(
 def _error_text(error: BaseException) -> str:
     """cleanup例外を公開例外message向けの短い文字列へ変換する。"""
 
-    try:
-        return f"{type(error).__name__}: {str(error)[:1024]}"
-    except Exception:
-        return f"{type(error).__name__}: <unprintable exception>"
+    return ": ".join(_bounded_error_details(error))
 
 
 __all__ = ("PlaybackSessionConfig", "PlaybackSession", "PlaybackSessionError", "compose_playback_session")

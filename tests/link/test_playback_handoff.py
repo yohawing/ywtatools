@@ -7,9 +7,6 @@ import time
 import unittest
 
 from ywta_link import (
-    AUTHORITY_ACCEPTED_SCHEMA,
-    AUTHORITY_REJECTED_SCHEMA,
-    AUTHORITY_REQUEST_SCHEMA,
     AuthorityHandoffAccepted,
     AuthorityHandoffRequest,
     AuthorityHandoffTracker,
@@ -29,6 +26,7 @@ from ywta_link import (
     RationalRate,
     Time,
 )
+from ywta_link.authority import AUTHORITY_ACCEPTED_SCHEMA, AUTHORITY_REJECTED_SCHEMA, AUTHORITY_REQUEST_SCHEMA
 
 
 class _Client:
@@ -161,7 +159,10 @@ class PlaybackHandoffCoordinatorTest(unittest.TestCase):
         """実Transport/Controllerを使ったCoordinatorを構成する。"""
 
         client = _Client("peer-local")
-        tracker = AuthorityHandoffTracker({"timeline": authority}, session_id="session-001")
+        tracker = AuthorityHandoffTracker(
+            {"timeline": authority, "other-channel": authority},
+            session_id="session-001",
+        )
         authority_transport = AuthorityHandoffTransport(client, "room-001", tracker)
         authority_transport.subscribe()
         published: list[object] = []
@@ -277,10 +278,11 @@ class PlaybackHandoffCoordinatorTest(unittest.TestCase):
         self.assertEqual(tracker.pending_for("timeline").request.change_id, "change-first")  # type: ignore[union-attr]
         self.assertEqual(published, [])
 
-    def test_accepted_response_does_not_publish(self) -> None:
-        """Accepted target responseはcontrol publishまでpublishしない。"""
+    def test_accepted_response_waits_for_publish_and_extends_deadline_once(self) -> None:
+        """Accepted responseはpublishせず、その待機期限を一度だけ更新する。"""
 
-        coordinator, tracker, client, published, _applied = self._make()
+        clock = _Clock()
+        coordinator, tracker, client, published, _applied = self._make(clock=clock)
         coordinator.handle_host_event(_event("change-latest"))
         request = tracker.pending_for("timeline").request  # type: ignore[union-attr]
         request_message_id = tracker.pending_for("timeline").request_message_id  # type: ignore[union-attr]
@@ -302,10 +304,52 @@ class PlaybackHandoffCoordinatorTest(unittest.TestCase):
             body=accepted.to_dict(),
             correlation_id=request_message_id,
         )
+        clock.now = 0.75
         self.assertTrue(coordinator.handle_authority_frame(frame))
         self.assertEqual(published, [])
         self.assertTrue(coordinator.status.pending)
         self.assertEqual([name for name, _ in client.calls].count("publish"), 0)
+        clock.now = 1.1
+        self.assertFalse(coordinator.poll_timeout())
+        coordinator.handle_authority_frame(frame)
+        clock.now = 1.76
+        self.assertTrue(coordinator.poll_timeout())
+
+    def test_other_channel_accepted_response_does_not_extend_deadline(self) -> None:
+        """別channelのAccepted responseで対象channelの期限を変更しない。"""
+
+        clock = _Clock()
+        coordinator, tracker, _client, _published, _applied = self._make(clock=clock)
+        coordinator.handle_host_event(_event("timeline-change"))
+        other_request = AuthorityHandoffRequest(
+            session_id="session-001",
+            channel_id="other-channel",
+            current_authority="peer-remote",
+            next_authority="peer-local",
+            expected_authority_revision=0,
+            change_id="other-change",
+        )
+        coordinator.authority_transport.request_handoff(other_request)
+        other_pending = tracker.pending_for("other-channel")
+        self.assertIsNotNone(other_pending)
+        accepted = AuthorityHandoffAccepted(
+            **other_request.to_dict(),
+            new_authority_revision=1,
+        )
+        frame = _frame(
+            message_id="other-accepted-response",
+            message_type="response",
+            sender="peer-remote",
+            target="peer-local",
+            schema=AUTHORITY_ACCEPTED_SCHEMA,
+            body=accepted.to_dict(),
+            correlation_id=other_pending.request_message_id,  # type: ignore[union-attr]
+        )
+
+        clock.now = 0.75
+        coordinator.handle_authority_frame(frame)
+        clock.now = 1.01
+        self.assertTrue(coordinator.poll_timeout())
 
     def test_accepted_publish_publishes_latest_event_once(self) -> None:
         """Accepted control publish後に最新保留eventを一度だけpublishする。"""

@@ -8,6 +8,7 @@ from typing import Any
 
 from .client import LinkClient
 from .frame import Frame
+from .errors import _bounded_error_message, _validate_identifier
 from .playback import PLAYBACK_SCHEMA, Playback, PlaybackValidationError
 from .playback_controller import PlaybackController
 from ._topic_lease import claim_topic, release_topic
@@ -174,25 +175,10 @@ class PlaybackTopicTransport:
 
 
 def _identifier(value: object, field_name: str) -> str:
-    """空白だけでないUTF-8のRoom/Topic IDを受け入れる。"""
-
-    if not isinstance(value, str) or not value or not value.strip():
-        raise PlaybackTransportError(f"{field_name} must be a non-whitespace string")
-    try:
-        value.encode("utf-8")
-    except UnicodeEncodeError as exc:
-        raise PlaybackTransportError(f"{field_name} must be valid UTF-8") from exc
-    return value
+    return _validate_identifier(value, field_name, PlaybackTransportError)
 
 
-def _error_text(error: Exception) -> str:
-    """ClientまたはController例外を安全な短い文字列へ変換する。"""
-
-    try:
-        message = str(error)
-    except Exception:
-        message = "<unprintable exception>"
-    return message[:1024]
+_error_text = _bounded_error_message
 
 
 __all__ = ("PlaybackTopicTransport", "PlaybackTransportError", "PlaybackTransportThreadError")

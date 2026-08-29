@@ -7,7 +7,7 @@ import weakref
 from dataclasses import dataclass
 from typing import Callable
 
-from .errors import AuthorityViolation, _bounded_error_details
+from .errors import AuthorityViolation, _bounded_error_details, _validate_identifier
 from .playback import Playback, PlaybackEchoGuard
 from .playback_host import PlaybackHostEvent, PlaybackHostSnapshot
 from .playback_mapping import PlaybackTimeMapper
@@ -251,15 +251,7 @@ def _claim_guard(guard: PlaybackEchoGuard) -> None:
 
 
 def _identifier(value: object, field_name: str) -> str:
-    """空白だけでないUTF-8文字列を識別子として受け入れる。"""
-
-    if not isinstance(value, str) or not value or not value.strip():
-        raise PlaybackControllerError(f"{field_name} must be a non-whitespace string")
-    try:
-        value.encode("utf-8")
-    except UnicodeEncodeError as exc:
-        raise PlaybackControllerError(f"{field_name} must be valid UTF-8") from exc
-    return value
+    return _validate_identifier(value, field_name, PlaybackControllerError)
 
 
 __all__ = (

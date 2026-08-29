@@ -9,7 +9,6 @@ import unittest
 from typing import Callable
 
 from ywta_link import (
-    AdapterDispatch,
     AuthorityHandoffTracker,
     AuthorityHandoffTransport,
     Envelope,
@@ -28,6 +27,7 @@ from ywta_link import (
     RationalRate,
     Time,
 )
+from ywta_link.adapter import AdapterDispatch
 
 
 class _Client:
@@ -430,6 +430,28 @@ class PlaybackSyncRuntimeTest(unittest.TestCase):
         self.assertEqual(dispatch.take_failed().envelope.message_id, "failed")  # type: ignore[union-attr]
         with self.assertRaises(PlaybackSyncRuntimeError):
             runtime.pump()
+        runtime.close()
+
+    def test_base_exception_handler_failure_is_recorded_and_reraised(self) -> None:
+        """非Exceptionのhandler失敗もFailedへ記録し、元の例外を再送出する。"""
+
+        runtime, _client, dispatch, _authority, transport, _controller = self._runtime()
+        self._replace(transport, "subscribe", lambda: True)
+        self._replace(dispatch, "start", lambda: True)
+        runtime.start()
+        with dispatch._lock:  # type: ignore[attr-defined]
+            dispatch._queue.append(_frame("interrupted"))  # type: ignore[attr-defined]
+        self._replace(
+            transport,
+            "handle_frame",
+            lambda _frame, _controller: (_ for _ in ()).throw(KeyboardInterrupt("interrupted")),
+        )
+
+        with self.assertRaisesRegex(KeyboardInterrupt, "interrupted"):
+            runtime.pump()
+        self.assertTrue(runtime.status.failed)
+        self.assertEqual(runtime.status.error.exception_type, "KeyboardInterrupt")  # type: ignore[union-attr]
+        self.assertEqual(dispatch.status.failed_count, 1)
         runtime.close()
 
     def test_receiver_error_is_promoted_from_background_dispatch(self) -> None:

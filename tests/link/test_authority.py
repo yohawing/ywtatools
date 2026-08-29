@@ -8,12 +8,6 @@ from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 from ywta_link import (
-    AUTHORITY_ACCEPTED_FIELDS,
-    AUTHORITY_ACCEPTED_SCHEMA,
-    AUTHORITY_REJECTED_FIELDS,
-    AUTHORITY_REJECTED_SCHEMA,
-    AUTHORITY_REQUEST_FIELDS,
-    AUTHORITY_REQUEST_SCHEMA,
     AuthorityHandoffAccepted,
     AuthorityHandoffRejected,
     AuthorityHandoffRequest,
@@ -21,6 +15,14 @@ from ywta_link import (
     AuthoritySnapshot,
     AuthorityState,
     AuthorityValidationError,
+)
+from ywta_link.authority import (
+    AUTHORITY_ACCEPTED_FIELDS,
+    AUTHORITY_ACCEPTED_SCHEMA,
+    AUTHORITY_REJECTED_FIELDS,
+    AUTHORITY_REJECTED_SCHEMA,
+    AUTHORITY_REQUEST_FIELDS,
+    AUTHORITY_REQUEST_SCHEMA,
 )
 from ywta_link.errors import AuthorityViolation, StaleRevision
 from ywta_link.envelope import Envelope
@@ -165,9 +167,7 @@ class AuthorityTrackerTest(unittest.TestCase):
 
         request = self._request()
         self.tracker.request_handoff(request, requester="maya:peer-001", request_message_id="request-001")
-        accepted = self.tracker.accept_handoff(
-            request, actor="blender:peer-001", correlation_id="request-001"
-        )
+        accepted = self.tracker.accept_handoff(request, actor="blender:peer-001", correlation_id="request-001")
 
         self.assertEqual(accepted.new_authority_revision, 1)
         self.assertEqual(self.tracker.state_for("timeline").authority, "maya:peer-001")
@@ -182,9 +182,7 @@ class AuthorityTrackerTest(unittest.TestCase):
         with self.assertRaises(AuthorityViolation):
             self.tracker.accept_handoff(request, actor="maya:peer-001", correlation_id="request-001")
         with self.assertRaises(AuthorityViolation):
-            self.tracker.reject_handoff(
-                request, actor="maya:peer-001", reason="not allowed", correlation_id="request-001"
-            )
+            self.tracker.reject_handoff(request, actor="maya:peer-001", reason="not allowed", correlation_id="request-001")
         self.assertEqual(self.tracker.pending_for("timeline").request, request)
         self.assertEqual(self.tracker.pending_for("timeline").request_message_id, "request-001")
         self.assertEqual(self.tracker.state_for("timeline").revision, 0)
@@ -194,9 +192,7 @@ class AuthorityTrackerTest(unittest.TestCase):
 
         request = self._request()
         self.tracker.request_handoff(request, requester="maya:peer-001", request_message_id="request-001")
-        rejected = self.tracker.reject_handoff(
-            request, actor="blender:peer-001", reason="busy", correlation_id="request-001"
-        )
+        rejected = self.tracker.reject_handoff(request, actor="blender:peer-001", reason="busy", correlation_id="request-001")
 
         self.assertEqual(rejected.reason, "busy")
         self.assertEqual(self.tracker.state_for("timeline").authority, "blender:peer-001")
@@ -240,16 +236,11 @@ class AuthorityTrackerTest(unittest.TestCase):
         """Blender/Maya/Unityが同じrequestとaccepted fan-outを観測して同じstateへ収束する。"""
 
         request = self._request()
-        replicas = [
-            AuthorityHandoffTracker({"timeline": "blender:peer-001"}, session_id="session-001")
-            for _ in range(3)
-        ]
+        replicas = [AuthorityHandoffTracker({"timeline": "blender:peer-001"}, session_id="session-001") for _ in range(3)]
         for replica in replicas:
             replica.request_handoff(request, requester="maya:peer-001", request_message_id="request-001")
 
-        accepted = replicas[0].accept_handoff(
-            request, actor="blender:peer-001", correlation_id="request-001"
-        )
+        accepted = replicas[0].accept_handoff(request, actor="blender:peer-001", correlation_id="request-001")
         for replica in replicas[1:]:
             replica.apply_accepted(accepted, actor="blender:peer-001", correlation_id="request-001")
 
@@ -278,9 +269,7 @@ class AuthorityTrackerTest(unittest.TestCase):
         authority.request_handoff(request_a, requester="maya:peer-001", request_message_id="request-a")
         maya.request_handoff(request_a, requester="maya:peer-001", request_message_id="request-a")
         unity.request_handoff(request_b, requester="unity:peer-001", request_message_id="request-b")
-        accepted_a = authority.accept_handoff(
-            request_a, actor="blender:peer-001", correlation_id="request-a"
-        )
+        accepted_a = authority.accept_handoff(request_a, actor="blender:peer-001", correlation_id="request-a")
 
         # Brokerのsender exclusion相当として、発行元Authorityは自分のaccept結果を再適用しない。
         maya.apply_accepted(accepted_a, actor="blender:peer-001", correlation_id="request-a")
@@ -384,9 +373,7 @@ class AuthorityTrackerTest(unittest.TestCase):
         with self.assertRaises(StaleRevision):
             self.tracker.accept_handoff(request, actor="blender:peer-001", correlation_id="request-other")
         with self.assertRaises(StaleRevision):
-            self.tracker.reject_handoff(
-                request, actor="blender:peer-001", reason="busy", correlation_id="request-other"
-            )
+            self.tracker.reject_handoff(request, actor="blender:peer-001", reason="busy", correlation_id="request-other")
         self.assertEqual(self.tracker.pending_for("timeline").request_message_id, "request-001")
 
     def test_unrelated_rejected_response_does_not_clear_local_pending(self) -> None:
@@ -433,7 +420,9 @@ class AuthorityTrackerTest(unittest.TestCase):
         self.tracker.request_handoff(request, requester="maya:peer-001", request_message_id="request-001")
         with self.assertRaises(AuthorityValidationError):
             self.tracker.accept_handoff(
-                request, actor="blender:peer-001", correlation_id=None  # type: ignore[arg-type]
+                request,
+                actor="blender:peer-001",
+                correlation_id=None,  # type: ignore[arg-type]
             )
 
     def test_disconnect_never_auto_promotes(self) -> None:

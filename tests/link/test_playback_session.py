@@ -6,7 +6,6 @@ import unittest
 from types import SimpleNamespace
 
 from ywta_link import (
-    AUTHORITY_REJECTED_SCHEMA,
     AuthorityHandoffTracker,
     AuthorityHandoffRejected,
     Envelope,
@@ -22,6 +21,7 @@ from ywta_link import (
     Time,
     compose_playback_session,
 )
+from ywta_link.authority import AUTHORITY_REJECTED_SCHEMA
 
 
 class _Client:

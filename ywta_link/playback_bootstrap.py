@@ -21,6 +21,7 @@ from .authority import (
     AuthorityValidationError,
 )
 from .client import LinkClient
+from .errors import _bounded_error_message, _non_negative_finite, _positive_finite, _validate_identifier
 from .frame import Frame, FrameTimeout
 from .playback import PLAYBACK_SCHEMA
 from .playback_session import (
@@ -544,38 +545,10 @@ def _message_id(value: object, name: str) -> str:
 
 
 def _identifier(value: object, name: str) -> str:
-    """空白だけでないUTF-8識別子を検証する。"""
-
-    if not isinstance(value, str) or not value or not value.strip():
-        raise PlaybackBootstrapError(f"{name} must be a non-whitespace string")
-    try:
-        value.encode("utf-8")
-    except UnicodeEncodeError as error:
-        raise PlaybackBootstrapError(f"{name} must be valid UTF-8") from error
-    return value
+    return _validate_identifier(value, name, PlaybackBootstrapError)
 
 
-def _positive_finite(value: object) -> bool:
-    """boolを除く正の有限数かを返す。"""
-
-    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(float(value)) and float(value) > 0
-
-
-def _non_negative_finite(value: object) -> bool:
-    """boolを除く0以上の有限数かを返す。"""
-
-    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(float(value)) and float(value) >= 0
-
-
-def _error_text(error: BaseException | None) -> str:
-    """例外messageを上限付きの安全な文字列へ変換する。"""
-
-    if error is None:
-        return "unknown error"
-    try:
-        return str(error)[:1024]
-    except Exception:
-        return "<unprintable exception>"
+_error_text = _bounded_error_message
 
 
 __all__ = (

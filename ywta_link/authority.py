@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from .contract import SyncContract
-from .errors import AuthorityViolation, StaleRevision, ValidationError
+from .errors import AuthorityViolation, StaleRevision, ValidationError, _validate_identifier
 from .registry import DEFAULT_REGISTRY
 from .session import ChannelRevisionTracker
 
@@ -72,15 +72,7 @@ def _object(value: object, field_name: str) -> Mapping[str, Any]:
 
 
 def _identifier(value: object, field_name: str) -> str:
-    """空白だけでないUTF-8文字列を識別子として受け入れる。"""
-
-    if not isinstance(value, str) or not value or not value.strip():
-        raise AuthorityValidationError(f"{field_name} must be a non-whitespace string")
-    try:
-        value.encode("utf-8")
-    except UnicodeEncodeError as exc:
-        raise AuthorityValidationError(f"{field_name} must be valid UTF-8") from exc
-    return value
+    return _validate_identifier(value, field_name, AuthorityValidationError)
 
 
 def _revision(value: object, field_name: str) -> int:

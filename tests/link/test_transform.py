@@ -8,17 +8,15 @@ import unittest
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
-from ywta_link import (
+from ywta_link import CoordinateSystem, Transform, TransformValidationError
+from ywta_link.transform import (
     AXIS_VALUES,
     COORDINATE_SYSTEM_FIELDS,
-    CoordinateSystem,
     HANDEDNESS_VALUES,
     SPACE_VALUES,
     TRANSFORM_FIELDS,
     TRANSFORM_SCHEMA,
     UNIT_VALUES,
-    Transform,
-    TransformValidationError,
 )
 from ywta_link.entity_ref import EntityReference
 from ywta_link.registry import DEFAULT_REGISTRY

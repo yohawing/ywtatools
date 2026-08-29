@@ -16,7 +16,7 @@ from .authority import (
     AuthorityHandoffTracker,
 )
 from .authority_transport import AuthorityHandoffTransport
-from .errors import _bounded_error_details
+from .errors import _bounded_error_details, _positive_finite, _validate_identifier
 from .frame import Frame
 from .playback_controller import PlaybackController
 from .playback_host import PlaybackHostEvent, PlaybackHostSnapshot
@@ -107,6 +107,7 @@ class PlaybackHandoffCoordinator:
         self._status_lock = threading.Lock()
         self._pending_deadline: float | None = None
         self._retained_event: PlaybackHostEvent | None = None
+        self._accepted_response_seen = False
         self._closed = False
         self._failed = False
         self._error: PlaybackHandoffErrorInfo | None = None
@@ -183,6 +184,7 @@ class PlaybackHandoffCoordinator:
             )
             self._authority_transport.request_handoff(request)
             self._pending_deadline = self._deadline()
+            self._accepted_response_seen = False
             return False
         except Exception as error:
             self._fail(error)
@@ -210,7 +212,11 @@ class PlaybackHandoffCoordinator:
             after_pending = self._tracker.pending_for(self._channel_id)
             after_state = self._tracker.state_for(self._channel_id)
             if envelope.type == "response" and envelope.schema == AUTHORITY_ACCEPTED_SCHEMA:
-                # Accepted target responseはTrackerを変更しないため何もしない。
+                # response受信後にcontrol publishが受信backlogへ並ぶ時間を一度だけ確保する。
+                request_message_id = getattr(before_pending, "request_message_id", None)
+                if envelope.correlation_id == request_message_id and not self._accepted_response_seen:
+                    self._pending_deadline = self._deadline()
+                    self._accepted_response_seen = True
                 return True
             if envelope.type == "response" and envelope.schema == AUTHORITY_REJECTED_SCHEMA:
                 if before_pending is not None and after_pending is None:
@@ -263,6 +269,7 @@ class PlaybackHandoffCoordinator:
             self._closed = True
         self._retained_event = None
         self._pending_deadline = None
+        self._accepted_response_seen = False
         return True
 
     def _accept_inbound_request(self) -> None:
@@ -304,6 +311,7 @@ class PlaybackHandoffCoordinator:
         if result is not True:
             raise PlaybackHandoffError("accepted handoff event was not published")
         self._pending_deadline = None
+        self._accepted_response_seen = False
         self._baseline = event.snapshot
         self._retained_event = None
 
@@ -313,6 +321,7 @@ class PlaybackHandoffCoordinator:
         self._rollback_apply(self._baseline)
         self._retained_event = None
         self._pending_deadline = None
+        self._accepted_response_seen = False
 
     def _deadline(self) -> float:
         """注入clockから有限なhandoff期限を計算する。"""
@@ -353,21 +362,7 @@ class PlaybackHandoffCoordinator:
 
 
 def _identifier(value: object, field_name: str) -> str:
-    """空白だけでないUTF-8文字列を識別子として受け入れる。"""
-
-    if not isinstance(value, str) or not value or not value.strip():
-        raise PlaybackHandoffError(f"{field_name} must be a non-whitespace string")
-    try:
-        value.encode("utf-8")
-    except UnicodeEncodeError as error:
-        raise PlaybackHandoffError(f"{field_name} must be valid UTF-8") from error
-    return value
-
-
-def _positive_finite(value: object) -> bool:
-    """boolを除く正の有限数を検証する。"""
-
-    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(float(value)) and float(value) > 0
+    return _validate_identifier(value, field_name, PlaybackHandoffError)
 
 
 __all__ = (

@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import unittest
 
-from ywta_link import (
+from ywta_link import AuthoritySnapshot, AuthoritySnapshotRequest
+from ywta_link.authority import (
     AUTHORITY_SNAPSHOT_FIELDS,
     AUTHORITY_SNAPSHOT_REQUEST_FIELDS,
     AUTHORITY_SNAPSHOT_REQUEST_SCHEMA,
     AUTHORITY_SNAPSHOT_SCHEMA,
-    AuthoritySnapshot,
-    AuthoritySnapshotRequest,
 )
 from ywta_link.registry import (
     DEFAULT_REGISTRY,
     SCHEMA_FIELDS,
+    SchemaRegistry,
     SLOT_DESCRIPTOR_SCHEMA,
     SLOT_JOIN_SCHEMA,
     SYNC_SCHEMAS,
@@ -66,6 +66,24 @@ class SchemaRegistryTest(unittest.TestCase):
         for schema, fields in expected.items():
             with self.subTest(schema=schema):
                 self.assertEqual(DEFAULT_REGISTRY.require_schema(schema), fields)
+
+    def test_empty_custom_registry_does_not_fall_back_to_defaults(self) -> None:
+        """明示した空の登録集合を既定値と区別する。"""
+
+        registry = SchemaRegistry({}, (), ())
+        self.assertEqual(dict(registry.schemas), {})
+        self.assertEqual(registry.capabilities, frozenset())
+        self.assertEqual(registry.mapping_profiles, frozenset())
+
+    def test_default_registry_collections_are_immutable(self) -> None:
+        """共有する既定Registryを外部から変更できない。"""
+
+        with self.assertRaises(TypeError):
+            DEFAULT_REGISTRY.schemas["custom.v1"] = frozenset()  # type: ignore[index]
+        with self.assertRaises(AttributeError):
+            DEFAULT_REGISTRY.capabilities.add("custom.v1")  # type: ignore[attr-defined]
+        with self.assertRaises(AttributeError):
+            DEFAULT_REGISTRY.mapping_profiles.clear()  # type: ignore[attr-defined]
 
 
 if __name__ == "__main__":

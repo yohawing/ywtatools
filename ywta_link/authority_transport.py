@@ -22,6 +22,7 @@ from .authority import (
     AuthorityValidationError,
 )
 from .frame import Frame
+from .errors import _bounded_error_message, _validate_identifier
 from ._topic_lease import claim_topic, release_topic
 
 
@@ -532,15 +533,7 @@ def _request_identity(
 
 
 def _identifier(value: object, field_name: str) -> str:
-    """空白だけでないUTF-8識別子を受け入れる。"""
-
-    if not isinstance(value, str) or not value or not value.strip():
-        raise AuthorityTransportError(f"{field_name} must be a non-whitespace string")
-    try:
-        value.encode("utf-8")
-    except UnicodeEncodeError as exc:
-        raise AuthorityTransportError(f"{field_name} must be valid UTF-8") from exc
-    return value
+    return _validate_identifier(value, field_name, AuthorityTransportError)
 
 
 def _require_message_id(value: object, operation: str) -> str:
@@ -551,14 +544,7 @@ def _require_message_id(value: object, operation: str) -> str:
     return value
 
 
-def _error_text(error: Exception) -> str:
-    """ClientまたはTracker例外を安全な短い文字列へ変換する。"""
-
-    try:
-        message = str(error)
-    except Exception:
-        message = "<unprintable exception>"
-    return message[:1024]
+_error_text = _bounded_error_message
 
 
 __all__ = ("AuthorityHandoffTransport", "AuthorityTransportError", "AuthorityTransportThreadError")
