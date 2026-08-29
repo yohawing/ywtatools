@@ -238,7 +238,7 @@ class BlenderPlaybackHost:
         if old_loop != new_loop:
             self._emit(PlaybackHostEventKind.MODE_CHANGED, scene)
 
-    def apply(self, snapshot: PlaybackHostSnapshot | Mapping[str, Any]) -> None:
+    def apply(self, snapshot: PlaybackHostSnapshot) -> None:
         """Remote snapshotをBlender Main Threadへ適用する。
 
         Blenderのinclusiveな``frame_end``へはwireの``end_exclusive - frame_step``を
@@ -248,7 +248,8 @@ class BlenderPlaybackHost:
         """
 
         self._assert_owner_thread("apply")
-        snapshot = _coerce_snapshot(snapshot)
+        if not isinstance(snapshot, PlaybackHostSnapshot):
+            raise BlenderPlaybackHostError("snapshot must be a PlaybackHostSnapshot")
         scene = self._scene()
         self._validate_timebase(scene)
         frame_step = self._read_frame_step(scene)
@@ -886,33 +887,6 @@ def _integer_boundary(value: object, field_name: str, *, positive: bool = False)
     if positive and integer <= 0:
         raise BlenderPlaybackHostError(f"{field_name} must be positive")
     return integer
-
-
-def _coerce_snapshot(value: PlaybackHostSnapshot | Mapping[str, Any]) -> PlaybackHostSnapshot:
-    """mappingをimmutableなHost snapshotへ変換する。"""
-
-    if isinstance(value, PlaybackHostSnapshot):
-        return value
-    if not isinstance(value, Mapping):
-        raise BlenderPlaybackHostError("snapshot must be PlaybackHostSnapshot or mapping")
-    playback_range = value.get("playback_range")
-    if isinstance(playback_range, PlaybackHostRange):
-        range_value = playback_range
-    elif isinstance(playback_range, Mapping):
-        range_value = PlaybackHostRange(playback_range["start"], playback_range["end_exclusive"])
-    else:
-        range_value = PlaybackHostRange(value["range_start"], value["range_end_exclusive"])
-    return PlaybackHostSnapshot(
-        state=value["state"],
-        position=value["position"],
-        playback_range=range_value,
-        speed=value["speed"],
-        direction=value["direction"],
-        loop_mode=value["loop_mode"],
-        time_unit=value.get("time_unit", "frames"),
-        change_id=value.get("change_id", uuid.uuid4().hex),
-        approximated_fields=tuple(value.get("approximated_fields", ())),
-    )
 
 
 __all__ = (

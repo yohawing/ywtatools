@@ -432,6 +432,15 @@ class BlenderPlaybackHostTests(unittest.TestCase):
         self.assertEqual(("speed", "loop_mode"), self.host.last_apply_approximated_fields)
         self.assertEqual([], self.controls)
 
+    def test_remote_apply_rejects_mapping_without_mutating_blender(self):
+        initial = (self.scene.frame_start, self.scene.frame_end, self.scene.frame_current)
+
+        with self.assertRaisesRegex(BlenderPlaybackHostError, "PlaybackHostSnapshot"):
+            self.host.apply({"state": "paused"})  # type: ignore[arg-type]
+
+        self.assertEqual(initial, (self.scene.frame_start, self.scene.frame_end, self.scene.frame_current))
+        self.assertEqual([], self.controls)
+
     def test_remote_play_apply_uses_control_port(self):
         self.host.register()
         self.host.apply(_snapshot(state="playing", direction="forward"))

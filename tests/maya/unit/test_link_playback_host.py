@@ -462,6 +462,12 @@ class MayaPlaybackHostTests(unittest.TestCase):
             self.anim.calls,
         )
 
+    def test_apply_rejects_mapping_without_mutating_maya(self):
+        with self.assertRaisesRegex(MayaPlaybackHostError, "PlaybackHostSnapshot"):
+            self.host.apply({"state": "paused"})  # type: ignore[arg-type]
+
+        self.assertEqual([], self.anim.calls)
+
     def test_apply_uses_mtime_ui_unit_enum(self):
         class RecordingAnim(_FakeAnim):
             def __init__(self):

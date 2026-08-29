@@ -214,7 +214,7 @@ class MayaPlaybackHost:
 
     close = unregister
 
-    def apply(self, snapshot: PlaybackHostSnapshot | Mapping[str, Any]) -> None:
+    def apply(self, snapshot: PlaybackHostSnapshot) -> None:
         """Remote snapshotをMaya Main Threadへ適用する。
 
         適用中に発生するMaya callbackはlocal eventとして通知しない。Mayaのinclusiveな
@@ -223,7 +223,8 @@ class MayaPlaybackHost:
 
         self._assert_owner_thread("apply")
         self._validate_time_unit_label()
-        snapshot = _coerce_snapshot(snapshot)
+        if not isinstance(snapshot, PlaybackHostSnapshot):
+            raise MayaPlaybackHostError("snapshot must be a PlaybackHostSnapshot")
         self._applying = True
         try:
             stop = getattr(self._anim, "stop", None)
@@ -575,33 +576,6 @@ def _time_value(value: Any) -> float | int:
         member = member()
     _finite_number(member, "time")
     return member
-
-
-def _coerce_snapshot(value: PlaybackHostSnapshot | Mapping[str, Any]) -> PlaybackHostSnapshot:
-    """mappingをimmutableなHost snapshotへ変換する。"""
-
-    if isinstance(value, PlaybackHostSnapshot):
-        return value
-    if not isinstance(value, Mapping):
-        raise MayaPlaybackHostError("snapshot must be PlaybackHostSnapshot or mapping")
-    playback_range = value.get("playback_range")
-    if isinstance(playback_range, PlaybackHostRange):
-        range_value = playback_range
-    elif isinstance(playback_range, Mapping):
-        range_value = PlaybackHostRange(playback_range["start"], playback_range["end_exclusive"])
-    else:
-        range_value = PlaybackHostRange(value["range_start"], value["range_end_exclusive"])
-    return PlaybackHostSnapshot(
-        state=value["state"],
-        position=value["position"],
-        playback_range=range_value,
-        speed=value["speed"],
-        direction=value["direction"],
-        loop_mode=value["loop_mode"],
-        time_unit=value.get("time_unit", "ui"),
-        change_id=value.get("change_id", uuid.uuid4().hex),
-        approximated_fields=tuple(value.get("approximated_fields", ())),
-    )
 
 
 def _default_direction_query() -> bool | None:
