@@ -58,6 +58,12 @@ class MayaCameraBinding:
 
 _INCH_TO_MM = 25.4
 _CM_TO_MM = 10.0
+_FILM_FIT_MEMBERS = {
+    "horizontal": "kHorizontalFilmFit",
+    "vertical": "kVerticalFilmFit",
+    "fill": "kFillFilmFit",
+    "overscan": "kOverscanFilmFit",
+}
 
 
 class MayaCameraHost:
@@ -214,14 +220,12 @@ class MayaCameraHost:
 
         self._assert_owner_thread("apply")
         self._assert_healthy("apply")
-        if not isinstance(camera, Camera):
-            raise MayaCameraHostError("camera must be a Camera")
-        if not math.isclose(camera.aspect_ratio, self._binding.aspect_ratio, rel_tol=1e-9, abs_tol=0.0):
-            raise MayaCameraHostError("camera aspect_ratio must match the bound Maya output aspect")
+        self._validate_apply(camera)
         self._applying = True
         try:
+            film_fit = self._preflight_shape(camera)
             self._apply_transform(camera.transform)
-            self._apply_shape(camera)
+            self._apply_shape(camera, film_fit)
             self._suppressed_signature = _camera_signature(self._read_snapshot())
             self._dirty = False
         except BaseException as exc:
@@ -325,7 +329,7 @@ class MayaCameraHost:
             raise MayaCameraHostUnavailableError("MFnTransform.setTransformation is unavailable")
         setter(local)
 
-    def _apply_shape(self, camera: Camera) -> None:
+    def _apply_shape(self, camera: Camera, film_fit: Any) -> None:
         """Common lens値をMFnCameraへ適用する。"""
 
         camera_fn = self._binding.camera_fn
@@ -344,6 +348,63 @@ class MayaCameraHost:
         _set_member(camera_fn, "verticalFilmAperture", camera.vertical_aperture / _INCH_TO_MM)
         _set_member(camera_fn, "horizontalFilmOffset", camera.aperture_offset[0] / _INCH_TO_MM)
         _set_member(camera_fn, "verticalFilmOffset", camera.aperture_offset[1] / _INCH_TO_MM)
+        # nullはHost固有の既存film fitを維持する。
+        if film_fit is not None:
+            _set_member(camera_fn, "filmFit", film_fit)
+
+    def _validate_apply(self, camera: Camera) -> None:
+        """Mayaがlosslessに適用できるCommon Cameraだけを受け入れる。"""
+
+        if not isinstance(camera, Camera):
+            raise MayaCameraHostError("camera must be a Camera")
+        expected = CoordinateSystem("world", "right", "+y", "-z", None)
+        if camera.transform.coordinate_system != expected or camera.transform.unit != "millimeter":
+            raise MayaCameraHostError("camera transform must use canonical RH Y-up/-Z millimeter world coordinates")
+        if not math.isclose(camera.aspect_ratio, self._binding.aspect_ratio, rel_tol=1e-9, abs_tol=0.0):
+            raise MayaCameraHostError("camera aspect_ratio must match the bound Maya output aspect")
+        if camera.exposure is not None:
+            raise MayaCameraHostError("camera exposure is unsupported by Maya Camera Host")
+        if camera.gate_fit is not None:
+            raise MayaCameraHostError("camera gate_fit is unsupported by Maya Camera Host")
+        if camera.projection == "orthographic" and camera.film_fit is not None:
+            raise MayaCameraHostError("camera film_fit must be null for orthographic projection")
+
+    def _preflight_shape(self, camera: Camera) -> Any:
+        """transform変更前に必要なMFnCamera write surfaceを検証する。"""
+
+        members = ["isOrtho", "nearClippingPlane", "farClippingPlane"]
+        if camera.focus_distance is not None:
+            members.append("focusDistance")
+        if camera.f_stop is not None:
+            members.append("fStop")
+        if camera.projection == "orthographic":
+            members.append("orthoWidth")
+        else:
+            members.extend(
+                (
+                    "focalLength",
+                    "horizontalFilmAperture",
+                    "verticalFilmAperture",
+                    "horizontalFilmOffset",
+                    "verticalFilmOffset",
+                )
+            )
+            if camera.film_fit is not None:
+                members.append("filmFit")
+        for name in members:
+            _require_writable_member(self._binding.camera_fn, name)
+        return self._film_fit_value(camera.film_fit)
+
+    def _film_fit_value(self, film_fit: str | None) -> Any:
+        """Common film fitをMFnCamera enumへ変換する。"""
+
+        if film_fit is None:
+            return None
+        maya_name = _FILM_FIT_MEMBERS[film_fit]
+        value = getattr(self._binding.camera_fn, maya_name, None)
+        if value is None:
+            raise MayaCameraHostUnavailableError(f"MFnCamera.{maya_name} is unavailable")
+        return value
 
     def _camera_callback(self, *_args: Any) -> None:
         """world matrixまたはshape変更をdirty flagへ変換する。"""
@@ -413,12 +474,7 @@ class MayaCameraHost:
         """MFnCamera filmFit enumをCommon文字列へ変換する。"""
 
         camera_fn = self._binding.camera_fn
-        for common, maya_name in (
-            ("horizontal", "kHorizontalFilmFit"),
-            ("vertical", "kVerticalFilmFit"),
-            ("fill", "kFillFilmFit"),
-            ("overscan", "kOverscanFilmFit"),
-        ):
+        for common, maya_name in _FILM_FIT_MEMBERS.items():
             if value == getattr(camera_fn, maya_name, object()):
                 return common
         return None
@@ -515,6 +571,16 @@ def _set_member(instance: Any, name: str, value: Any) -> None:
     if not hasattr(instance, name):
         raise MayaCameraHostUnavailableError(f"MFnCamera.{name} is unavailable")
     setattr(instance, name, value)
+
+
+def _require_writable_member(instance: Any, name: str) -> None:
+    """setter methodまたは書き込み対象propertyの存在を検証する。"""
+
+    setter = getattr(instance, "set" + name[0].upper() + name[1:], None)
+    descriptor = getattr(type(instance), name, None)
+    read_only = isinstance(descriptor, property) and descriptor.fset is None
+    if not callable(setter) and (not hasattr(instance, name) or read_only):
+        raise MayaCameraHostUnavailableError(f"MFnCamera.{name} is unavailable")
 
 
 def _finite_value(value: Any, field_name: str = "value") -> float:

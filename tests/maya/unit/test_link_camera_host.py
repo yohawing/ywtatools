@@ -282,6 +282,44 @@ class MayaCameraHostTests(unittest.TestCase):
         _DagMessage.callback()
         self.assertFalse(self.host.flush())
 
+    def test_apply_maps_perspective_film_fit_to_maya_enum(self):
+        camera = dataclasses.replace(_camera(), film_fit="vertical")
+
+        self.host.apply(camera)
+
+        self.assertEqual(_CameraFn.kVerticalFilmFit, self.binding.camera_fn.filmFit)
+
+    def test_apply_rejects_unsupported_common_fields_before_mutation(self):
+        noncanonical = dataclasses.replace(
+            _camera().transform,
+            coordinate_system=CoordinateSystem("world", "right", "+z", "-y", None),
+        )
+        cases = (
+            (dataclasses.replace(_camera(), transform=noncanonical), "canonical"),
+            (
+                dataclasses.replace(_camera(), transform=dataclasses.replace(_camera().transform, unit="centimeter")),
+                "canonical",
+            ),
+            (dataclasses.replace(_camera(), exposure=1.0), "exposure"),
+            (dataclasses.replace(_camera(), gate_fit="fill"), "gate_fit"),
+            (dataclasses.replace(_camera(projection="orthographic"), film_fit="horizontal"), "film_fit"),
+        )
+        for camera, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(MayaCameraHostError, message):
+                    self.host.apply(camera)
+                self.assertIsNone(self.binding.transform_fn.applied)
+
+    def test_apply_preflights_missing_camera_member_before_transform_mutation(self):
+        del self.binding.camera_fn.verticalFilmOffset
+
+        with self.assertRaises(MayaCameraHostError):
+            self.host.apply(_camera())
+
+        self.assertIsNone(self.binding.transform_fn.applied)
+        self.assertTrue(self.host.failed)
+        self.assertIn("verticalFilmOffset", self.host.last_error.message)
+
     def test_apply_rejects_mismatched_output_aspect_before_mutation(self):
         camera = _camera(aspect_ratio=1.0)
         with self.assertRaisesRegex(MayaCameraHostError, "aspect_ratio"):
