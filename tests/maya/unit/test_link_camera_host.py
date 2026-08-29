@@ -107,8 +107,8 @@ class _CameraFn:
 
     def __init__(self, *, orthographic=False):
         self.isOrtho = orthographic
-        self.nearClippingPlane = 0.1
-        self.farClippingPlane = 1000.0
+        self._near_clipping_plane = 0.1
+        self._far_clipping_plane = 1000.0
         self.focusDistance = 350.0
         self.fStop = 2.8
         self.focalLength = 50.0
@@ -118,6 +118,32 @@ class _CameraFn:
         self.verticalFilmOffset = -2.0 / 25.4
         self.filmFit = self.kHorizontalFilmFit
         self.orthoWidth = 200.0
+
+    @property
+    def nearClippingPlane(self):
+        return self._near_clipping_plane
+
+    @nearClippingPlane.setter
+    def nearClippingPlane(self, value):
+        if value >= self._far_clipping_plane:
+            raise ValueError("near clip must remain below current far clip")
+        self._near_clipping_plane = value
+
+    @property
+    def farClippingPlane(self):
+        return self._far_clipping_plane
+
+    @farClippingPlane.setter
+    def farClippingPlane(self, value):
+        if value <= self._near_clipping_plane:
+            raise ValueError("far clip must remain above current near clip")
+        self._far_clipping_plane = value
+
+    def setNearFarClippingPlanes(self, near, far):
+        if near >= far:
+            raise ValueError("near clip must be below far clip")
+        self._near_clipping_plane = near
+        self._far_clipping_plane = far
 
 
 class _DagMessage:
@@ -289,6 +315,16 @@ class MayaCameraHostTests(unittest.TestCase):
 
         self.assertEqual(_CameraFn.kVerticalFilmFit, self.binding.camera_fn.filmFit)
 
+    def test_apply_sets_near_far_atomically_when_target_near_exceeds_current_far(self):
+        self.binding.camera_fn.setNearFarClippingPlanes(1.0, 10.0)
+        camera = dataclasses.replace(_camera(), clipping_range=(200.0, 1000.0))
+
+        self.host.apply(camera)
+
+        self.assertEqual(20.0, self.binding.camera_fn.nearClippingPlane)
+        self.assertEqual(100.0, self.binding.camera_fn.farClippingPlane)
+        self.assertIsNotNone(self.binding.transform_fn.applied)
+
     def test_apply_rejects_unsupported_common_fields_before_mutation(self):
         noncanonical = dataclasses.replace(
             _camera().transform,
@@ -319,6 +355,15 @@ class MayaCameraHostTests(unittest.TestCase):
         self.assertIsNone(self.binding.transform_fn.applied)
         self.assertTrue(self.host.failed)
         self.assertIn("verticalFilmOffset", self.host.last_error.message)
+
+    def test_apply_requires_atomic_near_far_api_before_transform_mutation(self):
+        self.binding.camera_fn.setNearFarClippingPlanes = None
+
+        with self.assertRaises(MayaCameraHostError):
+            self.host.apply(_camera())
+
+        self.assertIsNone(self.binding.transform_fn.applied)
+        self.assertIn("setNearFarClippingPlanes", self.host.last_error.message)
 
     def test_apply_rejects_mismatched_output_aspect_before_mutation(self):
         camera = _camera(aspect_ratio=1.0)

@@ -334,8 +334,10 @@ class MayaCameraHost:
 
         camera_fn = self._binding.camera_fn
         _set_member(camera_fn, "isOrtho", camera.projection == "orthographic")
-        _set_member(camera_fn, "nearClippingPlane", camera.clipping_range[0] / _CM_TO_MM)
-        _set_member(camera_fn, "farClippingPlane", camera.clipping_range[1] / _CM_TO_MM)
+        camera_fn.setNearFarClippingPlanes(
+            camera.clipping_range[0] / _CM_TO_MM,
+            camera.clipping_range[1] / _CM_TO_MM,
+        )
         if camera.focus_distance is not None:
             _set_member(camera_fn, "focusDistance", camera.focus_distance / _CM_TO_MM)
         if camera.f_stop is not None:
@@ -372,7 +374,10 @@ class MayaCameraHost:
     def _preflight_shape(self, camera: Camera) -> Any:
         """transform変更前に必要なMFnCamera write surfaceを検証する。"""
 
-        members = ["isOrtho", "nearClippingPlane", "farClippingPlane"]
+        camera_fn = self._binding.camera_fn
+        if not callable(getattr(camera_fn, "setNearFarClippingPlanes", None)):
+            raise MayaCameraHostUnavailableError("MFnCamera.setNearFarClippingPlanes is unavailable")
+        members = ["isOrtho"]
         if camera.focus_distance is not None:
             members.append("focusDistance")
         if camera.f_stop is not None:
@@ -392,7 +397,7 @@ class MayaCameraHost:
             if camera.film_fit is not None:
                 members.append("filmFit")
         for name in members:
-            _require_writable_member(self._binding.camera_fn, name)
+            _require_writable_member(camera_fn, name)
         return self._film_fit_value(camera.film_fit)
 
     def _film_fit_value(self, film_fit: str | None) -> Any:
