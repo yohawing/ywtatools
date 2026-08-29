@@ -5,15 +5,14 @@ import ywta
 DEFAULT_RELOAD_PACKAGES = ["ywta"]
 
 
-def _close_playback_ui_before_reload():
-    """既存Playback Sessionをreload前に解放し、失敗時はreloadを止める。"""
+def _close_link_ui_before_reload():
+    """既存Link Sessionをreload前に解放し、失敗時はreloadを止める。"""
 
-    playback_ui = sys.modules.get("ywta.link.playback_ui")
-    if playback_ui is None:
-        return
-    close = getattr(playback_ui, "close", None)
-    if callable(close):
-        close()
+    for module_name in ("ywta.link.playback_ui", "ywta.link.camera_ui"):
+        link_ui = sys.modules.get(module_name)
+        close = getattr(link_ui, "close", None) if link_ui is not None else None
+        if callable(close):
+            close()
 
 
 class RollbackImporter(object):
@@ -46,7 +45,7 @@ class RollbackImporter(object):
             None
         """
 
-        _close_playback_ui_before_reload()
+        _close_link_ui_before_reload()
         for modname in sys.modules.keys():
             if modname not in self.previous_modules:
                 # Force reload when modname next imported
@@ -72,7 +71,7 @@ class RollbackImporter(object):
         if packages is None:
             packages = DEFAULT_RELOAD_PACKAGES
 
-        _close_playback_ui_before_reload()
+        _close_link_ui_before_reload()
 
         # construct reload list
         reloadList = []

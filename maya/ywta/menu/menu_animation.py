@@ -6,6 +6,7 @@
 
 import maya.cmds as cmds
 
+import ywta.link.camera_ui as camera_ui
 import ywta.link.playback_ui as playback_ui
 
 
@@ -130,5 +131,6 @@ def create_animation_menu(parent_menu):
     )
 
     playback_ui.create_menu_item(animation_menu)
+    camera_ui.create_menu_item(animation_menu)
 
     return animation_menu
