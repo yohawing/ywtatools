@@ -102,6 +102,19 @@ class _Host:
         self.registered = False
         return True
 
+    def quarantine(self):
+        """callback解除前にlocal publishを停止する。"""
+
+        was_failed = self.failed
+        self.failed = True
+        return not was_failed
+
+    def emit_local(self):
+        """登録中のcallbackだけがlocal publishへ到達することを再現する。"""
+
+        if self.registered and not self.failed:
+            self.events.append("host.local_publish")
+
 
 class _SceneMessage:
     """MSceneMessage.addCallbackの最小fake。"""
@@ -255,10 +268,53 @@ class MayaPlaybackLifecycleTests(unittest.TestCase):
         self.assertEqual("timer", self.lifecycle.last_error.callback)
         self.assertEqual("RuntimeError", self.lifecycle.last_error.exception_type)
         self.assertEqual(1, self.lifecycle.last_error.count)
+        self.assertFalse(self.host.registered)
         self.host.failed = True
         self.host.last_error = object()
         self.assertTrue(self.lifecycle.status.failed)
         self.assertIs(self.lifecycle.last_error, self.lifecycle.status.error)
+
+    def test_terminal_failure_notifies_once_on_timer_thread(self):
+        """非同期終端失敗はtimer処理中に一度だけ通知する。"""
+
+        notifications = []
+        lifecycle = MayaPlaybackLifecycle(
+            self.runtime,
+            self.host,
+            timer=self.timer,
+            scene_message=self.scene,
+            message=self.message,
+            on_terminal=lambda: notifications.append(threading.get_ident()),
+        )
+        lifecycle.start()
+        self.runtime.fail_pump = True
+
+        self.timer.timeout.emit()
+        self.timer.timeout.emit()
+
+        self.assertEqual([threading.get_ident()], notifications)
+
+    def test_terminal_notification_failure_is_isolated(self):
+        """UI通知失敗はtimer callback外へ伝播させない。"""
+
+        def fail_notification():
+            raise RuntimeError("refresh failed")
+
+        lifecycle = MayaPlaybackLifecycle(
+            self.runtime,
+            self.host,
+            timer=self.timer,
+            scene_message=self.scene,
+            message=self.message,
+            on_terminal=fail_notification,
+        )
+        lifecycle.start()
+        self.runtime.fail_pump = True
+
+        self.timer.timeout.emit()
+
+        self.assertEqual("timer", lifecycle.last_error.callback)
+        self.assertTrue(lifecycle.status.failed)
 
     def test_host_failure_stops_timer_without_pumping_runtime(self):
         self.lifecycle.start()
@@ -267,8 +323,32 @@ class MayaPlaybackLifecycleTests(unittest.TestCase):
         self.timer.timeout.emit()
 
         self.assertFalse(self.lifecycle.status.timer_running)
+        self.assertFalse(self.host.registered)
         self.assertEqual([], self.runtime.pump_limits)
         self.assertIn("timer.stop", self.events)
+        self.assertIn("host.unregister", self.events)
+
+        self.host.emit_local()
+        self.assertNotIn("host.local_publish", self.events)
+
+    def test_pump_failure_quarantines_publish_before_unregister_retry(self):
+        """callback解除失敗中もlocal publishを止め、closeで解除を再試行する。"""
+
+        self.lifecycle.start()
+        self.runtime.fail_pump = True
+        self.host.fail_unregister = True
+
+        self.timer.timeout.emit()
+
+        self.assertTrue(self.host.failed)
+        self.assertTrue(self.host.registered)
+        self.assertTrue(self.lifecycle._host_registered)
+        self.host.emit_local()
+        self.assertNotIn("host.local_publish", self.events)
+        self.host.fail_unregister = False
+        self.message.fail_remove = False
+        self.assertTrue(self.lifecycle.close())
+        self.assertFalse(self.host.registered)
 
     def test_pre_registered_host_is_not_taken_over(self):
         self.host.registered = True

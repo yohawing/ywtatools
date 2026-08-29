@@ -225,6 +225,15 @@ class MayaPlaybackHost:
 
     close = unregister
 
+    def quarantine(self) -> bool:
+        """callback解除完了前でもlocal publishを即時停止する。"""
+
+        self._assert_owner_thread("quarantine")
+        if self._failed:
+            return False
+        self._failed = True
+        return True
+
     def apply(self, snapshot: PlaybackHostSnapshot) -> None:
         """Remote snapshotをMaya Main Threadへ適用する。
 

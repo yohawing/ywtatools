@@ -41,6 +41,7 @@ class MayaPlaybackLifecycle:
         timer_factory: Callable[[], Any] | None = None,
         scene_message: Any = None,
         message: Any = None,
+        on_terminal: Callable[[], None] | None = None,
         timer_interval_ms: int = 100,
         max_pump_items: int | None = 64,
     ) -> None:
@@ -48,13 +49,15 @@ class MayaPlaybackLifecycle:
 
         for component, methods, name in (
             (runtime, ("start", "pump", "close"), "runtime"),
-            (host, ("register", "unregister"), "host"),
+            (host, ("register", "unregister", "quarantine"), "host"),
         ):
             _require_methods(component, methods, name)
         if timer is not None and timer_factory is not None:
             raise MayaPlaybackLifecycleError("timer and timer_factory are mutually exclusive")
         if timer_factory is not None and not callable(timer_factory):
             raise MayaPlaybackLifecycleError("timer_factory must be callable")
+        if on_terminal is not None and not callable(on_terminal):
+            raise MayaPlaybackLifecycleError("on_terminal must be callable")
         if isinstance(timer_interval_ms, bool) or not isinstance(timer_interval_ms, int) or timer_interval_ms <= 0:
             raise MayaPlaybackLifecycleError("timer_interval_ms must be a positive integer")
         if max_pump_items is not None and (
@@ -67,6 +70,8 @@ class MayaPlaybackLifecycle:
         self._owner_thread_id = threading.get_ident()
         self._timer_interval_ms = timer_interval_ms
         self._max_pump_items = max_pump_items
+        self._on_terminal = on_terminal
+        self._terminal_notified = False
         self._started = False
         self._closed = False
         self._failed = False
@@ -212,10 +217,8 @@ class MayaPlaybackLifecycle:
         if self._closed or not self._started or not self._timer_running:
             return
         if self.failed:
-            stop_errors: list[BaseException] = []
-            self._stop_timer(stop_errors)
-            if stop_errors:
-                self._record_error("timer_stop", stop_errors[0])
+            self._quarantine_host()
+            self._notify_terminal()
             return
         try:
             self._assert_owner_thread("timer callback")
@@ -226,10 +229,8 @@ class MayaPlaybackLifecycle:
         except BaseException as error:
             self._failed = True
             self._record_error("timer", error)
-            stop_errors: list[BaseException] = []
-            self._stop_timer(stop_errors)
-            if stop_errors:
-                self._record_error("timer_stop", stop_errors[0])
+            self._quarantine_host()
+            self._notify_terminal()
 
     def _on_maya_exiting(self, *_args: Any) -> None:
         """Maya終了callbackからMain Thread cleanupを開始する。"""
@@ -324,6 +325,39 @@ class MayaPlaybackLifecycle:
         if not callable(connect):
             raise MayaPlaybackLifecycleUnavailableError("QTimer.timeout.connect is unavailable")
         connect(self._on_timer)
+
+    def _quarantine_host(self) -> None:
+        """終端失敗後のtimerとHost callbackをbest-effortで隔離する。"""
+
+        try:
+            self._host.quarantine()
+        except BaseException as error:
+            self._record_secondary_error("host_quarantine", error)
+        for callback, cleanup in (
+            ("timer_stop", self._stop_timer),
+            ("host_unregister", self._unregister_host),
+        ):
+            errors: list[BaseException] = []
+            cleanup(errors)
+            if errors:
+                self._record_secondary_error(callback, errors[0])
+
+    def _notify_terminal(self) -> None:
+        """終端失敗を所有Main Thread上で一度だけ通知する。"""
+
+        if self._terminal_notified or self._on_terminal is None:
+            return
+        self._terminal_notified = True
+        try:
+            self._on_terminal()
+        except BaseException as error:
+            self._record_secondary_error("on_terminal", error)
+
+    def _record_secondary_error(self, callback: str, error: BaseException) -> None:
+        """既存の終端原因がない場合だけ補助cleanup失敗を記録する。"""
+
+        if self._last_error is None and getattr(self._host, "last_error", None) is None:
+            self._record_error(callback, error)
 
     @staticmethod
     def _make_timer(timer_factory: Callable[[], Any] | None) -> Any:

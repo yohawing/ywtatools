@@ -45,7 +45,17 @@ def active_playback_session() -> Any | None:
 def _bootstrap_session() -> Any:
     """Maya向けdefault bootstrapをUIから遅延実行する。"""
 
-    return bootstrap_maya_playback_session()
+    return bootstrap_maya_playback_session(lifecycle_options={"on_terminal": _refresh_menu_state})
+
+
+def _refresh_menu_state() -> bool:
+    """checkboxをMain Thread上で実際のSession状態へ合わせる。"""
+
+    _require_main_thread("refresh")
+    actual = is_enabled()
+    maya_cmds = cmds if _menu_cmds is None else _menu_cmds
+    _set_menu_state(actual, maya_cmds)
+    return actual
 
 
 def set_enabled(

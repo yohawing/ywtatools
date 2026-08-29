@@ -213,6 +213,25 @@ class PlaybackUiTests(unittest.TestCase):
         self.assertEqual(1, len(self.cmds.warnings))
         self.assertIn("Playback Sync", self.cmds.warnings[0])
 
+    def test_default_bootstrap_registers_terminal_state_refresh(self):
+        """default Sessionは終端失敗時のcheckbox更新をLifecycleへ渡す。"""
+
+        with mock.patch.object(playback_ui, "bootstrap_maya_playback_session", return_value="session") as bootstrap:
+            self.assertEqual("session", playback_ui._bootstrap_session())
+
+        callback = bootstrap.call_args.kwargs["lifecycle_options"]["on_terminal"]
+        self.assertIs(playback_ui._refresh_menu_state, callback)
+
+    def test_terminal_state_refresh_unchecks_existing_menu_item(self):
+        """Main Thread上の終端通知でcheckboxを実Session状態へ戻す。"""
+
+        playback_ui.create_menu_item("animationMenu", cmds_module=self.cmds)
+        self.cmds.checkbox = True
+        playback_ui._ACTIVE_SESSION = _Session(failed=True)
+
+        self.assertFalse(playback_ui._refresh_menu_state())
+        self.assertFalse(self.cmds.checkbox)
+
     def test_reload_closes_playback_before_reloading_modules(self):
         events = []
 

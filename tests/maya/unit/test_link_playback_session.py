@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import ywta.link.session as maya_session
+import ywta.link.playback_host as maya_playback_host
 from ywta.link import (
     MayaPlaybackHost,
     MayaPlaybackLifecycle,
@@ -97,7 +98,7 @@ class _MTime:
         return self.seconds
 
 
-class _BootstrapApi(_Api):
+class _BootstrapApi:
     """default bootstrap用のMaya API fake。"""
 
     MTime = _MTime
@@ -301,6 +302,28 @@ class MayaPlaybackSessionTests(unittest.TestCase):
         lifecycle = captured["lifecycle"](host, runtime)
         self.assertIsInstance(lifecycle, MayaPlaybackLifecycle)
         self.assertIs(lifecycle._timer, timer)
+
+    def test_argumentless_bootstrap_leaves_host_to_resolve_split_maya_modules(self):
+        """実MayaではHostがOpenMayaとOpenMayaAnimを別々に解決する。"""
+
+        captured = {}
+        open_maya_anim = SimpleNamespace(MAnimControl=_Anim)
+
+        def fake_bootstrap(config, host_factory, lifecycle_factory, connection_factory):
+            captured["host"] = host_factory
+            return "session"
+
+        with (
+            mock.patch.object(maya_session, "_resolve_api", return_value=_BootstrapApi),
+            mock.patch.object(maya_session, "bootstrap_playback_session", side_effect=fake_bootstrap),
+            mock.patch.object(maya_playback_host, "_OPEN_MAYA", _BootstrapApi),
+            mock.patch.object(maya_playback_host, "_OPEN_MAYA_ANIM", open_maya_anim),
+        ):
+            self.assertEqual("session", bootstrap_maya_playback_session(cmds_module=_Cmds()))
+            host = captured["host"](lambda _event: None)
+
+        self.assertIs(_BootstrapApi, host._api)
+        self.assertIs(_Anim, host._anim)
 
     def test_default_bootstrap_rejects_duplicate_host_api_and_time_unit(self):
         for option in ("api", "time_unit"):

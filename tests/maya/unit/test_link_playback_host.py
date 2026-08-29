@@ -556,6 +556,34 @@ class MayaPlaybackHostTests(unittest.TestCase):
         self.assertIsInstance(errors[0], MayaPlaybackHostError)
         self.assertIn("Main Thread", str(errors[0]))
 
+    def test_quarantine_is_owner_thread_only_and_stops_registered_callbacks(self):
+        """callback解除前でも隔離後のlocal publishを拒否する。"""
+
+        errors = []
+
+        def quarantine_from_worker():
+            try:
+                self.host.quarantine()
+            except Exception as error:  # noqa: BLE001 - thread境界の契約を確認する。
+                errors.append(error)
+
+        thread = threading.Thread(target=quarantine_from_worker)
+        thread.start()
+        thread.join()
+        self.assertEqual(1, len(errors))
+        self.assertIsInstance(errors[0], MayaPlaybackHostError)
+        self.assertFalse(self.host.failed)
+
+        self.host.register()
+        callback = _FakeEventMessage.callbacks["playbackModeChanged"]
+        self.assertTrue(self.host.quarantine())
+        self.assertFalse(self.host.quarantine())
+        callback("playbackModeChanged")
+
+        self.assertEqual([], self.events)
+        self.assertTrue(self.host.registered)
+        self.assertTrue(self.host.unregister())
+
     def test_callback_exception_isolated_and_observable(self):
         def fail(_event):
             raise ValueError("controller failed")

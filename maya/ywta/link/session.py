@@ -84,7 +84,7 @@ def bootstrap_maya_playback_session(
     host_factory, lifecycle_factory = _maya_factories(
         host_kwargs,
         lifecycle_kwargs,
-        api=resolved_api,
+        api=resolved_api if api is not None else _UNSET,
         time_unit=time_unit,
         time_unit_label=time_unit_label,
         time_unit_label_provider=lambda: _current_time_unit_label(maya_cmds),
