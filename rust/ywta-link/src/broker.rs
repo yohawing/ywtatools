@@ -3,10 +3,12 @@
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
+use std::hash::Hash;
 use std::io;
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -23,12 +25,20 @@ const MONITOR_PEER_PREFIX: &str = "ywta-link:monitor:";
 const MONITOR_INCLUDE_PRESENCE_FIELD: &str = "ywta_include_presence";
 const SESSION_SLOT_JOIN_SCHEMA: &str = "ywta.session.slot.join.v1";
 const SESSION_SLOT_DESCRIPTOR_SCHEMA: &str = "ywta.session.slot.descriptor.v1";
-const MAX_SESSION_SLOT_TEXT_BYTES: usize = 256;
+const MAX_IDENTIFIER_BYTES: usize = 256;
 const MAX_SESSION_SLOT_METADATA_BYTES: usize = 32 * 1024;
 const MAX_SESSION_SLOTS: usize = 256;
 const MAX_PENDING_REQUESTS: usize = 1024;
+const MAX_PENDING_REQUESTS_PER_PEER: usize = 64;
+const MAX_CONNECTIONS: usize = 64;
+const MAX_ROOMS_PER_PEER: usize = 64;
+const MAX_SUBSCRIPTIONS_PER_PEER: usize = 256;
+const ACCEPT_BUDGET_PER_TICK: usize = 16;
+const EVENT_BUDGET_PER_TICK: usize = 64;
+pub(crate) const MONITOR_MAX_HEADER_LEN: usize = 16 * 1024 * 1024;
 const PENDING_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const OUTGOING_QUEUE_CAPACITY: usize = 8;
+const OUTGOING_QUEUE_BYTE_CAPACITY: usize = 32 * 1024 * 1024;
 const NETWORK_EVENT_QUEUE_CAPACITY: usize = 8;
 
 static BROKER_INSTANCE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -40,7 +50,7 @@ pub type ConnectionId = u64;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Delivery {
     pub peer_id: String,
-    pub frame: Frame,
+    pub frame: Arc<Frame>,
 }
 
 /// CLI Monitorが取得するBrokerの接続状態。
@@ -87,6 +97,8 @@ pub enum BrokerError {
     UnsupportedMessageType(MessageType),
     DuplicatePendingRequest(String),
     PendingRequestCapacityExceeded,
+    RoomCapacityExceeded,
+    SubscriptionCapacityExceeded,
     UnknownCorrelationId(String),
     ResponseSenderMismatch(String),
     ResponseTargetMismatch(String),
@@ -136,6 +148,10 @@ impl fmt::Display for BrokerError {
             }
             Self::PendingRequestCapacityExceeded => {
                 formatter.write_str("pending request limit exceeded")
+            }
+            Self::RoomCapacityExceeded => formatter.write_str("peer room limit exceeded"),
+            Self::SubscriptionCapacityExceeded => {
+                formatter.write_str("peer subscription limit exceeded")
             }
             Self::UnknownCorrelationId(correlation_id) => {
                 write!(
@@ -231,12 +247,27 @@ struct PendingRequest {
     created_at: Instant,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 struct SessionSlotDescriptor {
     slot_id: String,
     session_id: String,
     initial_authority: String,
     metadata: Value,
+}
+
+#[derive(Serialize)]
+struct SessionSlotResponse<'a> {
+    #[serde(flatten)]
+    descriptor: &'a SessionSlotDescriptor,
+    created: bool,
+    state_peer: &'a str,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SessionSlotRequest {
+    slot_id: String,
+    metadata: Map<String, Value>,
 }
 
 #[derive(Debug)]
@@ -298,6 +329,9 @@ impl BrokerCore {
         if frame.envelope.sender != peer_id {
             return Err(BrokerError::SenderSpoofing);
         }
+        if !is_session_slot_request(&frame) {
+            validate_frame_identifiers(&frame)?;
+        }
 
         if self.monitor_connections.contains(&connection_id)
             && !matches!(
@@ -311,6 +345,9 @@ impl BrokerCore {
         match frame.envelope.message_type {
             MessageType::Join => {
                 let room = required_room(&frame)?;
+                if membership_at_capacity(&self.rooms, &room, &peer_id, MAX_ROOMS_PER_PEER) {
+                    return Err(BrokerError::RoomCapacityExceeded);
+                }
                 self.rooms.entry(room).or_default().insert(peer_id);
                 Ok(Vec::new())
             }
@@ -323,10 +360,16 @@ impl BrokerCore {
                 let room = required_room(&frame)?;
                 self.require_room_member(&peer_id, &room)?;
                 let topic = required_topic(&frame)?;
-                self.subscriptions
-                    .entry((room, topic))
-                    .or_default()
-                    .insert(peer_id);
+                let key = (room, topic);
+                if membership_at_capacity(
+                    &self.subscriptions,
+                    &key,
+                    &peer_id,
+                    MAX_SUBSCRIPTIONS_PER_PEER,
+                ) {
+                    return Err(BrokerError::SubscriptionCapacityExceeded);
+                }
+                self.subscriptions.entry(key).or_default().insert(peer_id);
                 Ok(Vec::new())
             }
             MessageType::Unsubscribe => {
@@ -488,6 +531,7 @@ impl BrokerCore {
         if !matches!(frame.envelope.message_type, MessageType::Hello) {
             return Err(BrokerError::HelloRequired);
         }
+        validate_frame_identifiers(&frame)?;
         if is_monitor_peer(&frame.envelope.sender)
             && frame.envelope.schema.as_deref() == Some(PEER_HELLO_SCHEMA)
         {
@@ -532,9 +576,10 @@ impl BrokerCore {
             }
             return Ok(vec![Delivery {
                 peer_id: target,
-                frame,
+                frame: Arc::new(frame),
             }]);
         }
+        let frame = Arc::new(frame);
         let peers = match &frame.envelope.topic {
             Some(topic) => self.subscriptions.get(&(room, topic.clone())),
             None => self.rooms.get(&room),
@@ -545,7 +590,7 @@ impl BrokerCore {
             .filter(|peer_id| peer_id.as_str() != sender)
             .map(|peer_id| Delivery {
                 peer_id: peer_id.clone(),
-                frame: frame.clone(),
+                frame: Arc::clone(&frame),
             })
             .collect())
     }
@@ -566,7 +611,14 @@ impl BrokerCore {
                 frame.envelope.message_id.clone(),
             ));
         }
-        if self.pending_requests.len() >= MAX_PENDING_REQUESTS {
+        if self.pending_requests.len() >= MAX_PENDING_REQUESTS
+            || self
+                .pending_requests
+                .values()
+                .filter(|pending| pending.requester == sender)
+                .count()
+                >= MAX_PENDING_REQUESTS_PER_PEER
+        {
             return Err(BrokerError::PendingRequestCapacityExceeded);
         }
         self.pending_requests.insert(
@@ -580,7 +632,7 @@ impl BrokerCore {
         );
         Ok(vec![Delivery {
             peer_id: target,
-            frame,
+            frame: Arc::new(frame),
         }])
     }
 
@@ -617,7 +669,7 @@ impl BrokerCore {
         );
         Ok(vec![Delivery {
             peer_id: target,
-            frame,
+            frame: Arc::new(frame),
         }])
     }
 
@@ -759,7 +811,7 @@ impl BrokerCore {
         )?;
         Ok(vec![Delivery {
             peer_id: sender.to_owned(),
-            frame: response,
+            frame: Arc::new(response),
         }])
     }
 
@@ -812,33 +864,23 @@ fn parse_session_slot_request(frame: &Frame) -> Result<(String, Value), BrokerEr
             "raw binary body must be empty",
         ));
     }
-    let body = frame
-        .envelope
-        .body
-        .as_ref()
-        .and_then(Value::as_object)
-        .ok_or(BrokerError::InvalidSessionSlotRequest(
-            "body must be an object",
-        ))?;
-    if body.len() != 2 || !body.contains_key("slot_id") || !body.contains_key("metadata") {
-        return Err(BrokerError::InvalidSessionSlotRequest(
-            "body must contain exactly slot_id and metadata",
-        ));
-    }
-    let slot_id = body.get("slot_id").and_then(Value::as_str).ok_or(
-        BrokerError::InvalidSessionSlotRequest("slot_id must be a string"),
-    )?;
+    let request: SessionSlotRequest = serde_json::from_value(
+        frame
+            .envelope
+            .body
+            .clone()
+            .ok_or(BrokerError::InvalidSessionSlotRequest("body is required"))?,
+    )
+    .map_err(|_| {
+        BrokerError::InvalidSessionSlotRequest(
+            "body must contain exactly string slot_id and object metadata",
+        )
+    })?;
     validate_session_slot_text(
-        slot_id,
+        &request.slot_id,
         "slot_id must be non-whitespace UTF-8 up to 256 bytes",
     )?;
-    let metadata = body
-        .get("metadata")
-        .filter(|value| value.is_object())
-        .cloned()
-        .ok_or(BrokerError::InvalidSessionSlotRequest(
-            "metadata must be an object",
-        ))?;
+    let metadata = Value::Object(request.metadata);
     if serde_json::to_vec(&metadata)
         .expect("serde_json::Value must serialize")
         .len()
@@ -848,11 +890,11 @@ fn parse_session_slot_request(frame: &Frame) -> Result<(String, Value), BrokerEr
             "metadata must not exceed 32 KiB when serialized",
         ));
     }
-    Ok((slot_id.to_owned(), metadata))
+    Ok((request.slot_id, metadata))
 }
 
 fn validate_session_slot_text(value: &str, reason: &'static str) -> Result<(), BrokerError> {
-    if value.trim().is_empty() || value.len() > MAX_SESSION_SLOT_TEXT_BYTES {
+    if !is_valid_identifier(value) {
         Err(BrokerError::InvalidSessionSlotRequest(reason))
     } else {
         Ok(())
@@ -864,26 +906,12 @@ fn json_session_slot_descriptor(
     created: bool,
     state_peer: &str,
 ) -> Value {
-    let mut body = Map::new();
-    body.insert(
-        "slot_id".to_owned(),
-        Value::String(descriptor.slot_id.clone()),
-    );
-    body.insert(
-        "session_id".to_owned(),
-        Value::String(descriptor.session_id.clone()),
-    );
-    body.insert(
-        "initial_authority".to_owned(),
-        Value::String(descriptor.initial_authority.clone()),
-    );
-    body.insert("metadata".to_owned(), descriptor.metadata.clone());
-    body.insert("created".to_owned(), Value::Bool(created));
-    body.insert(
-        "state_peer".to_owned(),
-        Value::String(state_peer.to_owned()),
-    );
-    Value::Object(body)
+    serde_json::to_value(SessionSlotResponse {
+        descriptor,
+        created,
+        state_peer,
+    })
+    .expect("session slot response must serialize")
 }
 
 fn required_room(frame: &Frame) -> Result<String, BrokerError> {
@@ -1011,6 +1039,97 @@ pub struct BrokerServer {
     runtime_token: Option<String>,
 }
 
+fn is_session_slot_request(frame: &Frame) -> bool {
+    matches!(frame.envelope.message_type, MessageType::Request)
+        && frame.envelope.target.as_deref() == Some(RUNTIME_BROKER_SENDER)
+}
+
+fn validate_frame_identifiers(frame: &Frame) -> Result<(), BrokerError> {
+    let identifiers = [
+        Some(frame.envelope.message_id.as_str()),
+        Some(frame.envelope.sender.as_str()),
+        frame.envelope.room.as_deref(),
+        frame.envelope.target.as_deref(),
+        frame.envelope.topic.as_deref(),
+        frame.envelope.correlation_id.as_deref(),
+        frame.envelope.schema.as_deref(),
+    ];
+    if identifiers
+        .into_iter()
+        .flatten()
+        .any(|value| !is_valid_identifier(value))
+    {
+        return Err(BrokerError::Frame(FrameError::from(
+            crate::envelope::EnvelopeError::new(
+                "identifier must be non-whitespace, control-free, and at most 256 UTF-8 bytes",
+            ),
+        )));
+    }
+    Ok(())
+}
+
+fn is_valid_identifier(value: &str) -> bool {
+    !value.trim().is_empty()
+        && value.len() <= MAX_IDENTIFIER_BYTES
+        && !value.chars().any(char::is_control)
+}
+
+fn membership_at_capacity<K: Eq + Hash>(
+    memberships: &HashMap<K, HashSet<String>>,
+    key: &K,
+    peer_id: &str,
+    limit: usize,
+) -> bool {
+    !memberships
+        .get(key)
+        .is_some_and(|members| members.contains(peer_id))
+        && memberships
+            .values()
+            .filter(|members| members.contains(peer_id))
+            .count()
+            >= limit
+}
+
+fn is_exact_monitor_hello(frame: &Frame) -> bool {
+    matches!(frame.envelope.message_type, MessageType::Hello)
+        && frame.envelope.room.is_none()
+        && frame.envelope.target.is_none()
+        && frame.envelope.topic.is_none()
+        && frame.envelope.correlation_id.is_none()
+        && frame.envelope.schema.is_none()
+        && frame.envelope.body.is_none()
+        && frame.body.is_empty()
+        && frame.envelope.extra.len() == 2
+        && has_runtime_challenge(frame)
+        && frame
+            .envelope
+            .extra
+            .get(RUNTIME_CHALLENGE_FIELD)
+            .and_then(Value::as_str)
+            .is_some_and(is_valid_identifier)
+        && frame
+            .envelope
+            .extra
+            .get(RUNTIME_TOKEN_FIELD)
+            .is_some_and(Value::is_string)
+}
+
+fn monitor_hello_matches_token(frame: &Frame, expected: &str) -> bool {
+    frame
+        .envelope
+        .extra
+        .get(RUNTIME_TOKEN_FIELD)
+        .and_then(Value::as_str)
+        .is_some_and(|actual| actual.len() <= MAX_IDENTIFIER_BYTES && actual == expected)
+}
+
+fn monitor_frame_limits() -> FrameLimits {
+    FrameLimits {
+        max_header_len: MONITOR_MAX_HEADER_LEN,
+        max_body_len: 0,
+    }
+}
+
 impl BrokerServer {
     /// loopbackだけへlistenerをbindする。
     pub fn bind(config: BrokerConfig) -> Result<Self, BrokerError> {
@@ -1039,7 +1158,12 @@ impl BrokerServer {
 
     /// runtime manifestを所有するBrokerだけのinstance tokenを設定する。
     pub fn set_runtime_token(&mut self, token: String) {
-        self.runtime_token = Some(token);
+        self.runtime_token = (!token.is_empty()
+            && token.len() <= MAX_IDENTIFIER_BYTES
+            && token
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')))
+        .then_some(token);
     }
 
     /// idle条件を満たすまでBroker event loopを実行する。
@@ -1058,13 +1182,19 @@ impl BrokerServer {
     }
 
     fn accept_pending_connections(&mut self) -> Result<(), BrokerError> {
-        loop {
+        for _ in 0..ACCEPT_BUDGET_PER_TICK {
             match self.listener.accept() {
-                Ok((stream, _)) => self.start_connection(stream)?,
+                Ok((stream, _)) if self.connections.len() < MAX_CONNECTIONS => {
+                    self.start_connection(stream)?
+                }
+                Ok((stream, _)) => {
+                    let _ = stream.shutdown(Shutdown::Both);
+                }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(()),
                 Err(error) => return Err(BrokerError::Io(error)),
             }
         }
+        Ok(())
     }
 
     fn start_connection(&mut self, stream: TcpStream) -> Result<(), BrokerError> {
@@ -1074,6 +1204,7 @@ impl BrokerServer {
         let reader_stream = stream.try_clone().map_err(BrokerError::Io)?;
         let closer = stream.try_clone().map_err(BrokerError::Io)?;
         let (outgoing, outgoing_receiver) = mpsc::sync_channel(OUTGOING_QUEUE_CAPACITY);
+        let queued_bytes = Arc::new(AtomicUsize::new(0));
         let event_sender = self.event_sender.clone();
         let limits = self.config.frame_limits;
         spawn_writer(
@@ -1081,13 +1212,13 @@ impl BrokerServer {
             stream,
             outgoing_receiver,
             event_sender.clone(),
-            limits,
         );
         let _reader_thread = spawn_reader(connection_id, reader_stream, event_sender, limits);
         self.connections.insert(
             connection_id,
             NetworkConnection {
                 outgoing,
+                queued_bytes,
                 closer,
                 accepted_at: Instant::now(),
             },
@@ -1097,7 +1228,10 @@ impl BrokerServer {
     }
 
     fn process_network_events(&mut self) {
-        while let Ok(event) = self.event_receiver.try_recv() {
+        for _ in 0..EVENT_BUDGET_PER_TICK {
+            let Ok(event) = self.event_receiver.try_recv() else {
+                break;
+            };
             match event {
                 NetworkEvent::Received {
                     connection_id,
@@ -1123,7 +1257,7 @@ impl BrokerServer {
                     ) {
                         Ok(deliveries) => {
                             if let Some(ack) = runtime_ack {
-                                self.send_to_connection(connection_id, ack);
+                                self.send_to_connection(connection_id, Arc::new(ack));
                             }
                             if let Some((request_id, include_presence)) = monitor_request {
                                 match self.monitor_snapshot_response(
@@ -1131,9 +1265,11 @@ impl BrokerServer {
                                     &request_id,
                                     include_presence,
                                 ) {
-                                    Ok(response) => {
-                                        self.send_to_connection(connection_id, response)
-                                    }
+                                    Ok(response) => self.send_to_connection_with_limits(
+                                        connection_id,
+                                        Arc::new(response),
+                                        monitor_frame_limits(),
+                                    ),
                                     Err(_) => self.close_connection(connection_id),
                                 }
                             }
@@ -1159,7 +1295,10 @@ impl BrokerServer {
             let Some(connection) = self.connections.get(&connection_id) else {
                 continue;
             };
-            if connection.outgoing.try_send(delivery.frame).is_err() {
+            if connection
+                .try_queue(delivery.frame, self.config.frame_limits)
+                .is_err()
+            {
                 failed_connections.push(connection_id);
             }
         }
@@ -1168,11 +1307,20 @@ impl BrokerServer {
         }
     }
 
-    fn send_to_connection(&mut self, connection_id: ConnectionId, frame: Frame) {
+    fn send_to_connection(&mut self, connection_id: ConnectionId, frame: Arc<Frame>) {
+        self.send_to_connection_with_limits(connection_id, frame, self.config.frame_limits);
+    }
+
+    fn send_to_connection_with_limits(
+        &mut self,
+        connection_id: ConnectionId,
+        frame: Arc<Frame>,
+        limits: FrameLimits,
+    ) {
         let failed = self
             .connections
             .get(&connection_id)
-            .is_none_or(|connection| connection.outgoing.try_send(frame).is_err());
+            .is_none_or(|connection| connection.try_queue(frame, limits).is_err());
         if failed {
             self.close_connection(connection_id);
         }
@@ -1241,9 +1389,9 @@ impl BrokerServer {
     fn monitor_hello_is_authorized(&self, frame: &Frame) -> bool {
         self.runtime_token
             .as_deref()
-            .is_some_and(|token| !token.is_empty())
+            .is_some_and(|token| monitor_hello_matches_token(frame, token))
             && is_valid_monitor_peer(&frame.envelope.sender)
-            && has_runtime_challenge(frame)
+            && is_exact_monitor_hello(frame)
     }
 
     fn close_expired_handshakes_at(&mut self, now: Instant) {
@@ -1270,7 +1418,9 @@ impl BrokerServer {
     }
 
     fn runtime_ack_for(&self, frame: &Frame) -> Option<Frame> {
-        if !matches!(frame.envelope.message_type, MessageType::Hello) {
+        if !matches!(frame.envelope.message_type, MessageType::Hello)
+            || (is_monitor_peer(&frame.envelope.sender) && !self.monitor_hello_is_authorized(frame))
+        {
             return None;
         }
         let challenge = frame
@@ -1307,9 +1457,53 @@ impl BrokerServer {
 }
 
 struct NetworkConnection {
-    outgoing: SyncSender<Frame>,
+    outgoing: SyncSender<QueuedFrame>,
+    queued_bytes: Arc<AtomicUsize>,
     closer: TcpStream,
     accepted_at: Instant,
+}
+
+impl NetworkConnection {
+    fn try_queue(&self, frame: Arc<Frame>, limits: FrameLimits) -> Result<(), ()> {
+        let queued = QueuedFrame::reserve(frame, Arc::clone(&self.queued_bytes), limits)?;
+        self.outgoing.try_send(queued).map_err(|_| ())
+    }
+}
+
+struct QueuedFrame {
+    frame: Arc<Frame>,
+    queued_bytes: Arc<AtomicUsize>,
+    wire_len: usize,
+    limits: FrameLimits,
+}
+
+impl QueuedFrame {
+    fn reserve(
+        frame: Arc<Frame>,
+        queued_bytes: Arc<AtomicUsize>,
+        limits: FrameLimits,
+    ) -> Result<Self, ()> {
+        let wire_len = frame.wire_len(limits).map_err(|_| ())?;
+        queued_bytes
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                current
+                    .checked_add(wire_len)
+                    .filter(|total| *total <= OUTGOING_QUEUE_BYTE_CAPACITY)
+            })
+            .map_err(|_| ())?;
+        Ok(Self {
+            frame,
+            queued_bytes,
+            wire_len,
+            limits,
+        })
+    }
+}
+
+impl Drop for QueuedFrame {
+    fn drop(&mut self) {
+        self.queued_bytes.fetch_sub(self.wire_len, Ordering::AcqRel);
+    }
 }
 
 enum NetworkEvent {
@@ -1347,25 +1541,23 @@ fn spawn_reader(
 fn spawn_writer(
     connection_id: ConnectionId,
     stream: TcpStream,
-    receiver: Receiver<Frame>,
+    receiver: Receiver<QueuedFrame>,
     event_sender: SyncSender<NetworkEvent>,
-    limits: FrameLimits,
 ) {
     thread::spawn(move || {
         let mut stream = stream;
-        writer_loop(connection_id, &mut stream, receiver, event_sender, limits);
+        writer_loop(connection_id, &mut stream, receiver, event_sender);
     });
 }
 
 fn writer_loop(
     connection_id: ConnectionId,
     writer: &mut impl io::Write,
-    receiver: Receiver<Frame>,
+    receiver: Receiver<QueuedFrame>,
     event_sender: SyncSender<NetworkEvent>,
-    limits: FrameLimits,
 ) {
     while let Ok(frame) = receiver.recv() {
-        if frame.write_to(writer, limits).is_err() {
+        if frame.frame.write_to(writer, frame.limits).is_err() {
             let _ = event_sender.send(NetworkEvent::Disconnected { connection_id });
             return;
         }
@@ -1392,6 +1584,11 @@ mod tests {
         body: &[u8],
     ) -> Frame {
         let message_id = format!("{sender}-{message_type:?}");
+        let message_id = if message_id.len() > MAX_IDENTIFIER_BYTES {
+            format!("test-{message_type:?}")
+        } else {
+            message_id
+        };
         frame_with_id(
             sender,
             &message_id,
@@ -1547,10 +1744,16 @@ mod tests {
 
     fn monitor_hello(sender: &str, challenge: Option<&str>) -> Frame {
         let mut frame = hello(sender);
+        frame.envelope.schema = None;
+        frame.envelope.body = None;
         if let Some(challenge) = challenge {
             frame.envelope.extra.insert(
                 RUNTIME_CHALLENGE_FIELD.to_owned(),
                 Value::String(challenge.to_owned()),
+            );
+            frame.envelope.extra.insert(
+                RUNTIME_TOKEN_FIELD.to_owned(),
+                Value::String("runtime-token".to_owned()),
             );
         }
         frame
@@ -1600,7 +1803,9 @@ mod tests {
     }
 
     fn connect(core: &mut BrokerCore, connection_id: ConnectionId, peer_id: &str) {
-        core.receive(connection_id, hello(peer_id))
+        let mut frame = hello(peer_id);
+        frame.envelope.message_id = "hello".to_owned();
+        core.receive(connection_id, frame)
             .expect("hello must register peer");
     }
 
@@ -1716,11 +1921,158 @@ mod tests {
         assert!(!server.monitor_hello_is_authorized(&monitor_frame));
 
         server.set_runtime_token("runtime-token".to_owned());
+        assert!(is_exact_monitor_hello(&monitor_frame));
+        assert!(monitor_hello_matches_token(&monitor_frame, "runtime-token"));
         assert!(server.monitor_hello_is_authorized(&monitor_frame));
         assert!(!server.monitor_hello_is_authorized(&hello("maya:two")));
         assert!(!server.monitor_hello_is_authorized(&monitor_hello(monitor_id, None)));
         server.set_runtime_token(String::new());
         assert!(!server.monitor_hello_is_authorized(&monitor_frame));
+
+        server.set_runtime_token("runtime-token".to_owned());
+        let mut wrong_token = monitor_frame.clone();
+        wrong_token.envelope.extra.insert(
+            RUNTIME_TOKEN_FIELD.to_owned(),
+            Value::String("wrong-token".to_owned()),
+        );
+        assert!(!server.monitor_hello_is_authorized(&wrong_token));
+
+        let mut unexpected_field = monitor_frame.clone();
+        unexpected_field
+            .envelope
+            .extra
+            .insert("unexpected".to_owned(), Value::Bool(true));
+        assert!(!server.monitor_hello_is_authorized(&unexpected_field));
+
+        let mut binary_body = monitor_frame;
+        binary_body.body.push(1);
+        assert!(!server.monitor_hello_is_authorized(&binary_body));
+    }
+
+    #[test]
+    fn peer_room_and_subscription_memberships_are_bounded() {
+        let mut core = BrokerCore::default();
+        connect(&mut core, 1, "blender:one");
+        for index in 0..MAX_ROOMS_PER_PEER {
+            core.receive(1, join("blender:one", &format!("room-{index}")))
+                .expect("room below the per-peer limit must join");
+        }
+        assert!(matches!(
+            core.receive(1, join("blender:one", "room-overflow")),
+            Err(BrokerError::RoomCapacityExceeded)
+        ));
+
+        for index in 0..MAX_SUBSCRIPTIONS_PER_PEER {
+            core.receive(
+                1,
+                subscribe("blender:one", "room-0", &format!("topic-{index}")),
+            )
+            .expect("subscription below the per-peer limit must succeed");
+        }
+        assert!(matches!(
+            core.receive(1, subscribe("blender:one", "room-0", "topic-overflow")),
+            Err(BrokerError::SubscriptionCapacityExceeded)
+        ));
+        core.receive(1, subscribe("blender:one", "room-0", "topic-0"))
+            .expect("duplicate membership at capacity must remain idempotent");
+    }
+
+    #[test]
+    fn broadcast_deliveries_share_one_frame_allocation() {
+        let mut core = BrokerCore::default();
+        for (connection_id, peer_id) in [(1, "blender:one"), (2, "maya:two"), (3, "unity:three")] {
+            connect(&mut core, connection_id, peer_id);
+            core.receive(connection_id, join(peer_id, "room-a"))
+                .expect("join must succeed");
+        }
+        let deliveries = core
+            .receive(
+                1,
+                frame(
+                    "blender:one",
+                    MessageType::Publish,
+                    Some("room-a"),
+                    None,
+                    None,
+                    &[7; 1024],
+                ),
+            )
+            .expect("broadcast must route");
+        assert_eq!(deliveries.len(), 2);
+        assert!(Arc::ptr_eq(&deliveries[0].frame, &deliveries[1].frame));
+    }
+
+    #[test]
+    fn maximum_legal_monitor_snapshot_fits_the_monitor_header_limit() {
+        let escaped_suffix = "\\\"".repeat(124);
+        let peers = (0..MAX_CONNECTIONS - 1)
+            .map(|index| format!("peer-{index:02}-{escaped_suffix}"))
+            .collect::<Vec<_>>();
+        let members = peers.clone();
+        let subscriptions = (0..MAX_SUBSCRIPTIONS_PER_PEER)
+            .map(|index| SubscriptionSnapshot {
+                topic: format!("topic-{index:03}-{}", "\\\"".repeat(123)),
+                members: members.clone(),
+            })
+            .collect::<Vec<_>>();
+        let rooms = (0..MAX_ROOMS_PER_PEER)
+            .map(|index| RoomSnapshot {
+                room: format!("room-{index:02}-{escaped_suffix}"),
+                members: members.clone(),
+                subscriptions: if index == 0 {
+                    subscriptions.clone()
+                } else {
+                    Vec::new()
+                },
+            })
+            .collect::<Vec<_>>();
+        let capabilities = (0..crate::presence::PRESENCE_MAX_CAPABILITIES)
+            .map(|index| format!("c{index:03}{}.v1", "c".repeat(248)))
+            .collect::<Vec<_>>();
+        let presence = peers
+            .iter()
+            .map(|peer_id| PeerPresence {
+                peer_id: peer_id.clone(),
+                application: "\0".repeat(crate::presence::PRESENCE_MAX_STRING_LENGTH),
+                application_version: "\u{1f}".repeat(crate::presence::PRESENCE_MAX_STRING_LENGTH),
+                plugin_version: "\u{7f}".repeat(crate::presence::PRESENCE_MAX_STRING_LENGTH),
+                protocol_versions: vec![1],
+                capabilities: capabilities.clone(),
+            })
+            .collect();
+        let frame = Frame::new(
+            Envelope {
+                protocol_version: 1,
+                message_id: "maximum-monitor-snapshot".to_owned(),
+                message_type: MessageType::MonitorSnapshotResponse,
+                sender: RUNTIME_BROKER_SENDER.to_owned(),
+                room: None,
+                target: Some("ywta-link:monitor:test".to_owned()),
+                topic: None,
+                correlation_id: Some("maximum-request".to_owned()),
+                schema: Some(MONITOR_SNAPSHOT_SCHEMA.to_owned()),
+                body: Some(
+                    serde_json::to_value(BrokerSnapshot {
+                        protocol_version: 1,
+                        endpoint: "127.0.0.1:49152".to_owned(),
+                        pid: 1,
+                        peers,
+                        presence,
+                        rooms,
+                    })
+                    .expect("snapshot must serialize"),
+                ),
+                extra: Default::default(),
+            },
+            Vec::new(),
+        )
+        .expect("snapshot frame must be valid");
+
+        assert!(frame.wire_len(monitor_frame_limits()).is_ok());
+        assert!(matches!(
+            frame.wire_len(FrameLimits::default()),
+            Err(FrameError::LengthLimitExceeded)
+        ));
     }
 
     #[test]
@@ -2336,7 +2688,7 @@ mod tests {
         invalid.push(invalid_slot);
         let mut oversized_slot = valid.clone();
         oversized_slot.envelope.body = Some(json!({
-            "slot_id": "x".repeat(MAX_SESSION_SLOT_TEXT_BYTES + 1),
+            "slot_id": "x".repeat(MAX_IDENTIFIER_BYTES + 1),
             "metadata": {},
         }));
         invalid.push(oversized_slot);
@@ -2377,26 +2729,36 @@ mod tests {
             assert!(core.session_slots.is_empty());
         }
 
-        let oversized = "x".repeat(MAX_SESSION_SLOT_TEXT_BYTES + 1);
-        for (sender, room, message_id) in [
-            ("   ", "room", "request"),
-            (&oversized, "room", "request"),
-            ("peer", "   ", "request"),
-            ("peer", &oversized, "request"),
-            ("peer", "room", "   "),
-            ("peer", "room", &oversized),
-        ] {
+        let oversized = "x".repeat(MAX_IDENTIFIER_BYTES + 1);
+        for (sender, room, message_id) in [("peer", "room", "   "), ("peer", "room", &oversized)] {
             assert_invalid_text(sender, room, message_id);
+        }
+        let mut oversized_sender = hello(&oversized);
+        oversized_sender.envelope.message_id = "hello".to_owned();
+        for mut invalid_sender in [hello("   "), hello("peer\n"), oversized_sender] {
+            invalid_sender.envelope.message_id = "hello".to_owned();
+            assert!(matches!(
+                BrokerCore::default().receive(1, invalid_sender),
+                Err(BrokerError::Frame(_))
+            ));
+        }
+        let mut oversized_room_core = BrokerCore::default();
+        connect(&mut oversized_room_core, 1, "peer");
+        for room in ["   ", "room\u{7f}", oversized.as_str()] {
+            assert!(matches!(
+                oversized_room_core.receive(1, join("peer", room)),
+                Err(BrokerError::Frame(_))
+            ));
         }
     }
 
     #[test]
     fn session_slot_metadata_enforces_serialized_size_boundary() {
         let mut core = BrokerCore::default();
-        let sender = "s".repeat(MAX_SESSION_SLOT_TEXT_BYTES);
-        let room = "r".repeat(MAX_SESSION_SLOT_TEXT_BYTES);
-        let message_id = "m".repeat(MAX_SESSION_SLOT_TEXT_BYTES);
-        let slot_id = "l".repeat(MAX_SESSION_SLOT_TEXT_BYTES);
+        let sender = "s".repeat(MAX_IDENTIFIER_BYTES);
+        let room = "r".repeat(MAX_IDENTIFIER_BYTES);
+        let message_id = "m".repeat(MAX_IDENTIFIER_BYTES);
+        let slot_id = "l".repeat(MAX_IDENTIFIER_BYTES);
         connect(&mut core, 1, &sender);
         core.receive(1, join(&sender, &room))
             .expect("join must succeed");
@@ -2639,7 +3001,7 @@ mod tests {
             core.receive(connection_id, join(peer_id, "room-a"))
                 .expect("join must succeed");
         }
-        for index in 0..MAX_PENDING_REQUESTS {
+        for index in 0..MAX_PENDING_REQUESTS_PER_PEER {
             core.receive(
                 1,
                 request(
@@ -2659,7 +3021,7 @@ mod tests {
             ),
             Err(BrokerError::PendingRequestCapacityExceeded)
         ));
-        assert_eq!(core.pending_request_count(), MAX_PENDING_REQUESTS);
+        assert_eq!(core.pending_request_count(), MAX_PENDING_REQUESTS_PER_PEER);
 
         let now = Instant::now();
         for pending in core.pending_requests.values_mut() {
@@ -2682,6 +3044,35 @@ mod tests {
                 )
             ),
             Err(BrokerError::UnknownCorrelationId(correlation_id)) if correlation_id == "request-0"
+        ));
+    }
+
+    #[test]
+    fn pending_requests_keep_a_broker_wide_bound() {
+        let mut core = BrokerCore::default();
+        connect(&mut core, 1, "blender:one");
+        connect(&mut core, 2, "maya:two");
+        for (connection_id, peer_id) in [(1, "blender:one"), (2, "maya:two")] {
+            core.receive(connection_id, join(peer_id, "room-a"))
+                .expect("join must succeed");
+        }
+        for index in 0..MAX_PENDING_REQUESTS {
+            core.pending_requests.insert(
+                format!("existing-{index}"),
+                PendingRequest {
+                    requester: format!("other-{index}"),
+                    target: "maya:two".to_owned(),
+                    room: "room-a".to_owned(),
+                    created_at: Instant::now(),
+                },
+            );
+        }
+        assert!(matches!(
+            core.receive(
+                1,
+                request("blender:one", "request-overflow", "room-a", "maya:two")
+            ),
+            Err(BrokerError::PendingRequestCapacityExceeded)
         ));
     }
 
@@ -2829,20 +3220,22 @@ mod tests {
         }
 
         let (sender, receiver) = mpsc::channel();
+        let queued_bytes = Arc::new(AtomicUsize::new(0));
         sender
-            .send(hello("blender:one"))
+            .send(
+                QueuedFrame::reserve(
+                    Arc::new(hello("blender:one")),
+                    queued_bytes,
+                    FrameLimits::default(),
+                )
+                .expect("test frame must reserve"),
+            )
             .expect("send must succeed");
         drop(sender);
         let (event_sender, event_receiver) = mpsc::sync_channel(1);
         let mut writer = FailingWriter;
 
-        writer_loop(
-            42,
-            &mut writer,
-            receiver,
-            event_sender,
-            FrameLimits::default(),
-        );
+        writer_loop(42, &mut writer, receiver, event_sender);
 
         assert!(matches!(
             event_receiver.recv_timeout(Duration::from_secs(1)),
@@ -2891,9 +3284,17 @@ mod tests {
             .expect("client must connect");
         let (closer, _) = listener.accept().expect("server stream must connect");
         let (outgoing, receiver) = mpsc::sync_channel(OUTGOING_QUEUE_CAPACITY);
+        let queued_bytes = Arc::new(AtomicUsize::new(0));
         for _ in 0..OUTGOING_QUEUE_CAPACITY {
             outgoing
-                .try_send(hello("queued:peer"))
+                .try_send(
+                    QueuedFrame::reserve(
+                        Arc::new(hello("queued:peer")),
+                        Arc::clone(&queued_bytes),
+                        FrameLimits::default(),
+                    )
+                    .expect("small frame must reserve"),
+                )
                 .expect("queue must accept frames up to its capacity");
         }
         let mut server = BrokerServer::bind(BrokerConfig::default()).expect("server must bind");
@@ -2902,6 +3303,7 @@ mod tests {
             1,
             NetworkConnection {
                 outgoing,
+                queued_bytes,
                 closer,
                 accepted_at: Instant::now(),
             },
@@ -2909,7 +3311,7 @@ mod tests {
 
         server.dispatch(vec![Delivery {
             peer_id: "maya:slow".to_owned(),
-            frame: hello("blender:one"),
+            frame: Arc::new(hello("blender:one")),
         }]);
 
         assert!(!server.connections.contains_key(&1));
@@ -2919,14 +3321,77 @@ mod tests {
     }
 
     #[test]
+    fn outgoing_queue_byte_limit_closes_on_distinct_large_frames() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("listener must bind");
+        let client = TcpStream::connect(listener.local_addr().expect("address must resolve"))
+            .expect("client must connect");
+        let (closer, _) = listener.accept().expect("server stream must connect");
+        let (outgoing, receiver) = mpsc::sync_channel(OUTGOING_QUEUE_CAPACITY);
+        let queued_bytes = Arc::new(AtomicUsize::new(0));
+        let mut server = BrokerServer::bind(BrokerConfig::default()).expect("server must bind");
+        connect(&mut server.core, 1, "maya:slow");
+        server.connections.insert(
+            1,
+            NetworkConnection {
+                outgoing,
+                queued_bytes: Arc::clone(&queued_bytes),
+                closer,
+                accepted_at: Instant::now(),
+            },
+        );
+        for fill in [1, 2] {
+            let mut large_frame = frame(
+                "blender:one",
+                MessageType::Publish,
+                Some("room-a"),
+                None,
+                None,
+                &[],
+            );
+            large_frame.body = vec![fill; FrameLimits::default().max_body_len];
+            server.dispatch(vec![Delivery {
+                peer_id: "maya:slow".to_owned(),
+                frame: Arc::new(large_frame),
+            }]);
+        }
+
+        assert!(!server.connections.contains_key(&1));
+        assert_eq!(receiver.try_iter().count(), 1);
+        assert_eq!(queued_bytes.load(Ordering::Acquire), 0);
+        drop(client);
+    }
+
+    #[test]
+    fn server_rejects_connections_above_the_global_limit() {
+        let mut server = BrokerServer::bind(BrokerConfig::default()).expect("server must bind");
+        let address = server.local_addr().expect("address must resolve");
+        let mut clients = Vec::new();
+        for _ in 0..=MAX_CONNECTIONS {
+            clients.push(TcpStream::connect(address).expect("client must connect"));
+            server
+                .accept_pending_connections()
+                .expect("accept must remain available at capacity");
+        }
+        assert_eq!(server.connections.len(), MAX_CONNECTIONS);
+        drop(clients);
+    }
+
+    #[test]
     fn runtime_hello_ack_echoes_challenge_and_instance_token() {
         let mut server = BrokerServer::bind(BrokerConfig::default()).expect("server must bind");
         server.set_runtime_token("runtime-token-001".to_owned());
-        let mut client_hello = hello("blender:one");
+        let mut regular_hello = hello("blender:regular");
+        regular_hello.envelope.extra.insert(
+            RUNTIME_CHALLENGE_FIELD.to_owned(),
+            json!("regular-challenge"),
+        );
+        assert!(server.runtime_ack_for(&regular_hello).is_some());
+
+        let mut client_hello = monitor_hello("ywta-link:monitor:test", Some("challenge-001"));
         client_hello
             .envelope
             .extra
-            .insert(RUNTIME_CHALLENGE_FIELD.to_owned(), json!("challenge-001"));
+            .insert(RUNTIME_TOKEN_FIELD.to_owned(), json!("runtime-token-001"));
 
         let acknowledgement = server
             .runtime_ack_for(&client_hello)

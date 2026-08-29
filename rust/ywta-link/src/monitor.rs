@@ -8,7 +8,7 @@ use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::broker::BrokerSnapshot;
+use crate::broker::{BrokerSnapshot, MONITOR_MAX_HEADER_LEN};
 use crate::envelope::{Envelope, MessageType, MONITOR_SNAPSHOT_SCHEMA};
 use crate::frame::{Frame, FrameError, FrameLimits};
 use crate::presence::PeerPresence;
@@ -19,6 +19,8 @@ const BROKER_SENDER: &str = "ywta-link:broker";
 const MONITOR_TIMEOUT: Duration = Duration::from_secs(2);
 const RUNTIME_FILE_SUFFIX: &str = "YWTA\\Link\\runtime\\v1\\broker.json";
 const MONITOR_INCLUDE_PRESENCE_FIELD: &str = "ywta_include_presence";
+const RUNTIME_CHALLENGE_FIELD: &str = "ywta_runtime_challenge";
+const RUNTIME_TOKEN_FIELD: &str = "ywta_runtime_token";
 
 /// CLI Monitorが扱うsnapshotの種別。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -129,15 +131,16 @@ pub fn query(runtime_file: impl AsRef<Path>) -> Result<BrokerSnapshot, MonitorEr
     stream.set_write_timeout(Some(MONITOR_TIMEOUT))?;
     let peer_id = unique_id("monitor");
     let challenge = unique_id("challenge");
-    let hello = hello_frame(&peer_id, &challenge)?;
-    hello.write_to(&mut stream, FrameLimits::default())?;
+    let limits = monitor_frame_limits();
+    let hello = hello_frame(&peer_id, &challenge, &manifest.token)?;
+    hello.write_to(&mut stream, limits)?;
 
-    let acknowledgement = Frame::read_from(&mut stream, FrameLimits::default())?;
+    let acknowledgement = Frame::read_from(&mut stream, limits)?;
     validate_runtime_ack(&acknowledgement, &hello, &challenge, &manifest.token)?;
 
     let request = snapshot_request(&peer_id)?;
-    request.write_to(&mut stream, FrameLimits::default())?;
-    let response = Frame::read_from(&mut stream, FrameLimits::default())?;
+    request.write_to(&mut stream, limits)?;
+    let response = Frame::read_from(&mut stream, limits)?;
     validate_snapshot_response(&response, &request, &peer_id, &manifest)
 }
 
@@ -158,6 +161,13 @@ fn validate_runtime_ack(
     if frame.envelope.message_type != MessageType::Hello
         || frame.envelope.sender != BROKER_SENDER
         || frame.envelope.correlation_id.as_deref() != Some(hello.envelope.message_id.as_str())
+        || frame.envelope.room.is_some()
+        || frame.envelope.target.is_some()
+        || frame.envelope.topic.is_some()
+        || frame.envelope.schema.is_some()
+        || frame.envelope.body.is_some()
+        || !frame.body.is_empty()
+        || frame.envelope.extra.len() != 2
     {
         return Err(MonitorError::Protocol(
             "runtime hello acknowledgement does not match request".to_owned(),
@@ -166,12 +176,12 @@ fn validate_runtime_ack(
     let echoed_challenge = frame
         .envelope
         .extra
-        .get("ywta_runtime_challenge")
+        .get(RUNTIME_CHALLENGE_FIELD)
         .and_then(Value::as_str);
     let echoed_token = frame
         .envelope
         .extra
-        .get("ywta_runtime_token")
+        .get(RUNTIME_TOKEN_FIELD)
         .and_then(Value::as_str);
     if echoed_challenge != Some(challenge) || echoed_token != Some(token) {
         return Err(MonitorError::Protocol(
@@ -310,11 +320,22 @@ fn is_sorted_unique(values: &[String]) -> bool {
     values.windows(2).all(|window| window[0] < window[1])
 }
 
-fn hello_frame(peer_id: &str, challenge: &str) -> Result<Frame, MonitorError> {
+fn monitor_frame_limits() -> FrameLimits {
+    FrameLimits {
+        max_header_len: MONITOR_MAX_HEADER_LEN,
+        max_body_len: 0,
+    }
+}
+
+fn hello_frame(peer_id: &str, challenge: &str, token: &str) -> Result<Frame, MonitorError> {
     let mut extra = Map::new();
     extra.insert(
-        "ywta_runtime_challenge".to_owned(),
+        RUNTIME_CHALLENGE_FIELD.to_owned(),
         Value::String(challenge.to_owned()),
+    );
+    extra.insert(
+        RUNTIME_TOKEN_FIELD.to_owned(),
+        Value::String(token.to_owned()),
     );
     Ok(Frame::new(
         Envelope {
@@ -749,10 +770,7 @@ mod tests {
             serde_json::to_vec(&wrong_manifest).expect("manifest must encode"),
         )
         .expect("wrong manifest must write");
-        assert!(matches!(
-            query(&runtime_file),
-            Err(MonitorError::Protocol(message)) if message.contains("token mismatch")
-        ));
+        assert!(query(&runtime_file).is_err());
         fs::write(
             &runtime_file,
             serde_json::to_vec(&RuntimeManifest {

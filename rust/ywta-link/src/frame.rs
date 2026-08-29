@@ -100,6 +100,16 @@ impl From<EnvelopeError> for FrameError {
 }
 
 impl Frame {
+    /// wire上で占有する正確なbyte数を、本文を複製せず返す。
+    pub(crate) fn wire_len(&self, limits: FrameLimits) -> Result<usize, FrameError> {
+        let header_len = self.envelope.to_json()?.len();
+        ensure_lengths(header_len, self.body.len(), limits)?;
+        FIXED_HEADER_LEN
+            .checked_add(header_len)
+            .and_then(|value| value.checked_add(self.body.len()))
+            .ok_or(FrameError::LengthOverflow)
+    }
+
     /// 検証済みEnvelopeからframeを作る。
     pub fn new(envelope: Envelope, body: Vec<u8>) -> Result<Self, FrameError> {
         envelope.validate()?;
@@ -166,9 +176,19 @@ impl Frame {
 
     /// 任意のWrite実装へ正確に1個のframeを書く。
     pub fn write_to(&self, writer: &mut impl Write, limits: FrameLimits) -> Result<(), FrameError> {
-        writer
-            .write_all(&self.encode(limits)?)
-            .map_err(FrameError::Io)
+        let header = self.envelope.to_json()?;
+        ensure_lengths(header.len(), self.body.len(), limits)?;
+        let header_len = u32::try_from(header.len()).map_err(|_| FrameError::LengthOverflow)?;
+        let body_len = u64::try_from(self.body.len()).map_err(|_| FrameError::LengthOverflow)?;
+        let mut fixed_header = [0_u8; FIXED_HEADER_LEN];
+        fixed_header[..4].copy_from_slice(&FRAME_MAGIC);
+        fixed_header[4..6].copy_from_slice(&FRAME_PROTOCOL_VERSION.to_be_bytes());
+        fixed_header[6..8].copy_from_slice(&FRAME_FLAGS.to_be_bytes());
+        fixed_header[8..12].copy_from_slice(&header_len.to_be_bytes());
+        fixed_header[12..20].copy_from_slice(&body_len.to_be_bytes());
+        writer.write_all(&fixed_header).map_err(FrameError::Io)?;
+        writer.write_all(&header).map_err(FrameError::Io)?;
+        writer.write_all(&self.body).map_err(FrameError::Io)
     }
 }
 
@@ -270,6 +290,12 @@ mod tests {
             Frame::decode(&encoded, FrameLimits::default()).expect("decode must succeed"),
             frame
         );
+
+        let mut streamed = Vec::new();
+        frame
+            .write_to(&mut streamed, FrameLimits::default())
+            .expect("segmented write must succeed");
+        assert_eq!(streamed, encoded);
     }
 
     #[test]

@@ -3,12 +3,15 @@
 use std::error::Error;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+
+const MAX_RUNTIME_MANIFEST_BYTES: usize = 4096;
+const MAX_RUNTIME_TOKEN_BYTES: usize = 256;
 
 /// runtime fileへ保存する、接続先Brokerの最小情報。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -87,6 +90,11 @@ impl RuntimeManifest {
 
     /// JSON byte列をparseして、Broker接続に使える値だけを受け入れる。
     pub fn from_json(json: &[u8]) -> Result<Self, RuntimeError> {
+        if json.len() > MAX_RUNTIME_MANIFEST_BYTES {
+            return Err(RuntimeError::InvalidManifest(
+                "runtime manifest exceeds 4 KiB".to_owned(),
+            ));
+        }
         let manifest: Self = serde_json::from_slice(json).map_err(RuntimeError::Json)?;
         manifest.validate()?;
         Ok(manifest)
@@ -94,7 +102,12 @@ impl RuntimeManifest {
 
     /// runtime fileからcompleteなmanifestだけを読む。
     pub fn read(path: impl AsRef<Path>) -> Result<Self, RuntimeError> {
-        let json = fs::read(path).map_err(RuntimeError::Io)?;
+        let mut json = Vec::new();
+        File::open(path)
+            .map_err(RuntimeError::Io)?
+            .take((MAX_RUNTIME_MANIFEST_BYTES + 1) as u64)
+            .read_to_end(&mut json)
+            .map_err(RuntimeError::Io)?;
         Self::from_json(&json)
     }
 
@@ -105,9 +118,17 @@ impl RuntimeManifest {
                 "protocol_version must be 1".to_owned(),
             ));
         }
-        if self.pid == 0 || self.token.is_empty() {
+        if self.pid == 0
+            || self.token.is_empty()
+            || self.token.len() > MAX_RUNTIME_TOKEN_BYTES
+            || !self
+                .token
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
             return Err(RuntimeError::InvalidManifest(
-                "pid and token must be non-empty".to_owned(),
+                "pid must be non-zero and token must be 1 to 256 filename-safe ASCII bytes"
+                    .to_owned(),
             ));
         }
         let endpoint = self.endpoint.parse::<SocketAddr>().map_err(|_| {
@@ -211,6 +232,32 @@ mod tests {
     fn manifest() -> RuntimeManifest {
         RuntimeManifest::for_endpoint("127.0.0.1:34567".parse().expect("address must parse"))
             .expect("loopback manifest must be valid")
+    }
+
+    #[test]
+    fn manifest_read_and_token_are_bounded() {
+        let directory = test_directory("bounded-manifest");
+        fs::create_dir_all(&directory).expect("test directory must exist");
+        let path = directory.join("runtime.json");
+        fs::write(&path, vec![b' '; MAX_RUNTIME_MANIFEST_BYTES + 1])
+            .expect("oversized fixture must write");
+        assert!(matches!(
+            RuntimeManifest::read(&path),
+            Err(RuntimeError::InvalidManifest(message)) if message.contains("4 KiB")
+        ));
+
+        let mut invalid_token = manifest();
+        invalid_token.token = "x".repeat(MAX_RUNTIME_TOKEN_BYTES + 1);
+        assert!(matches!(
+            invalid_token.validate(),
+            Err(RuntimeError::InvalidManifest(_))
+        ));
+        invalid_token.token = "unsafe/path".to_owned();
+        assert!(matches!(
+            invalid_token.validate(),
+            Err(RuntimeError::InvalidManifest(_))
+        ));
+        let _ = fs::remove_dir_all(directory);
     }
 
     #[test]
