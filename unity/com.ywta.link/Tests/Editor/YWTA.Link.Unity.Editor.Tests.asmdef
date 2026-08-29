@@ -1,0 +1,15 @@
+{
+  "name": "YWTA.Link.Unity.Editor.Tests",
+  "rootNamespace": "YWTA.Link.Unity.Tests",
+  "references": ["YWTA.Link.Unity.Editor"],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": ["TestAssemblies"]
+}
