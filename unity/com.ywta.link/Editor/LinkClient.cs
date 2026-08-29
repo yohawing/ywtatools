@@ -40,9 +40,10 @@ namespace YWTA.Link.Unity
         private volatile bool _stopping;
         private string _failure;
         private readonly Func<Thread, TimeSpan, bool> _join;
+        private readonly string[] _capabilities;
 
         internal LinkClient(string peerId, int queueCapacity = 256,
-            Func<Thread, TimeSpan, bool> join = null, Thread receiver = null)
+            Func<Thread, TimeSpan, bool> join = null, Thread receiver = null, string[] capabilities = null)
         {
             if (string.IsNullOrWhiteSpace(peerId))
             {
@@ -58,6 +59,7 @@ namespace YWTA.Link.Unity
             _queueCapacity = queueCapacity;
             _join = join ?? ((thread, timeout) => thread.Join(timeout));
             _receiver = receiver;
+            _capabilities = capabilities ?? new[] { "playback.apply.v1", "playback.read.v1", "sync.authority.v1" };
         }
 
         internal string PeerId { get; }
@@ -86,7 +88,7 @@ namespace YWTA.Link.Unity
 
             string challenge = endpoint.Token == null ? null : LinkProtocol.NewId();
             string helloId = LinkProtocol.NewId();
-            SendJson(JsonWire.RuntimeHello(PeerId, helloId, challenge));
+            SendJson(JsonWire.RuntimeHello(PeerId, helloId, challenge, _capabilities));
 
             if (endpoint.Token != null)
             {

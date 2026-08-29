@@ -294,36 +294,28 @@ namespace YWTA.Link.Unity
                 throw new InvalidOperationException("Authority handoff request is stale or malformed");
             }
 
-            AuthorityHandoff accepted = new AuthorityHandoff
-            {
-                session_id = _sessionId,
-                channel_id = LinkProtocol.ChannelId,
-                current_authority = _authority,
-                next_authority = request.next_authority,
-                expected_authority_revision = _authorityRevision,
-                new_authority_revision = _authorityRevision + 1,
-                change_id = request.change_id
-            };
+            var core = CurrentAuthorityCore();
+            AuthorityHandoff accepted = core.Accept(request);
             string responseId = LinkProtocol.NewId();
             _client.SendJson(JsonWire.AuthorityAccepted(
                 _peerId, responseId, "response", request.next_authority, null, frame.Header.message_id, accepted));
             _client.SendJson(JsonWire.AuthorityAccepted(
                 _peerId, LinkProtocol.NewId(), "publish", null, ControlTopic, frame.Header.message_id, accepted));
-            _authority = accepted.next_authority;
-            _authorityRevision = accepted.new_authority_revision;
+            _authority = core.Authority;
+            _authorityRevision = core.Revision;
         }
 
         private void ApplyAccepted(LinkFrame frame)
         {
             AuthorityHandoff accepted = WireDecoder.AuthorityHandoff(frame, true);
-            if (!MatchesCurrent(accepted) || accepted.new_authority_revision != _authorityRevision + 1 ||
-                frame.Header.sender != accepted.current_authority)
+            var core = CurrentAuthorityCore();
+            if (frame.Header.sender != accepted.current_authority)
             {
                 throw new InvalidOperationException("Authority accepted publish is stale or malformed");
             }
-
-            _authority = accepted.next_authority;
-            _authorityRevision = accepted.new_authority_revision;
+            core.Apply(accepted);
+            _authority = core.Authority;
+            _authorityRevision = core.Revision;
             if (_authority == _peerId && _pendingRequestId != null && frame.Header.correlation_id == _pendingRequestId)
             {
                 PlaybackBody pending = _pendingPlayback;
@@ -341,10 +333,11 @@ namespace YWTA.Link.Unity
 
         private bool MatchesCurrent(AuthorityHandoff value)
         {
-            return value != null && value.session_id == _sessionId && value.channel_id == LinkProtocol.ChannelId &&
-                   value.current_authority == _authority && value.expected_authority_revision == _authorityRevision &&
-                   !string.IsNullOrEmpty(value.next_authority) && !string.IsNullOrEmpty(value.change_id);
+            return CurrentAuthorityCore().Matches(value);
         }
+
+        private AuthorityChannelCore CurrentAuthorityCore() =>
+            new AuthorityChannelCore(_sessionId, LinkProtocol.ChannelId, _authority, _authorityRevision);
 
         private void PublishPlayback(PlaybackBody playback)
         {
@@ -472,7 +465,7 @@ namespace YWTA.Link.Unity
 
     internal static class JsonWire
     {
-        internal static string RuntimeHello(string sender, string messageId, string challenge)
+        internal static string RuntimeHello(string sender, string messageId, string challenge, string[] capabilities)
         {
             string json = "{\"protocol_version\":1,\"message_id\":" + Quote(messageId) +
                           ",\"type\":\"hello\",\"sender\":" + Quote(sender) +
@@ -481,7 +474,7 @@ namespace YWTA.Link.Unity
                           ",\"application\":\"Unity\",\"application_version\":" +
                           Quote(UnityEngine.Application.unityVersion) +
                           ",\"plugin_version\":\"0.1.0-preview.1\",\"protocol_versions\":[1]," +
-                          "\"capabilities\":[\"playback.apply.v1\",\"playback.read.v1\",\"sync.authority.v1\"]}";
+                          "\"capabilities\":[" + string.Join(",", Array.ConvertAll(capabilities, Quote)) + "]}";
             if (challenge != null)
             {
                 json += ",\"ywta_runtime_challenge\":" + Quote(challenge);
