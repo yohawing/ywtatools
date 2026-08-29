@@ -10,6 +10,9 @@ from .errors import ValidationError
 
 _VERSIONED_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*\.v[1-9][0-9]*$")
 
+SLOT_JOIN_SCHEMA = "ywta.session.slot.join.v1"
+SLOT_DESCRIPTOR_SCHEMA = "ywta.session.slot.descriptor.v1"
+
 COMMON_SCHEMAS = {
     "ywta.common.entity-ref.v1": {"entity_id", "kind", "display_name", "namespace"},
     "ywta.common.transform.v1": {
@@ -128,10 +131,8 @@ SCHEMA_FIELDS = MappingProxyType(
         ),
         "ywta.sync.authority.snapshot.request.v1": frozenset({"session_id", "channel_id"}),
         "ywta.sync.authority.snapshot.v1": frozenset({"session_id", "channel_id", "authority", "authority_revision"}),
-        "ywta.session.slot.join.v1": frozenset({"slot_id", "metadata"}),
-        "ywta.session.slot.descriptor.v1": frozenset(
-            {"slot_id", "session_id", "initial_authority", "metadata", "created", "state_peer"}
-        ),
+        SLOT_JOIN_SCHEMA: frozenset({"slot_id", "metadata"}),
+        SLOT_DESCRIPTOR_SCHEMA: frozenset({"slot_id", "session_id", "initial_authority", "metadata", "created", "state_peer"}),
     }
 )
 SCHEMA_IDS = frozenset(SCHEMA_FIELDS)

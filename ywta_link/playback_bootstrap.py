@@ -22,33 +22,20 @@ from .authority import (
 )
 from .client import LinkClient
 from .frame import Frame, FrameTimeout
+from .playback import PLAYBACK_SCHEMA
 from .playback_session import (
     PlaybackSession,
     PlaybackSessionConfig,
     compose_playback_session,
 )
 from .presence import PeerPresence
+from .registry import DEFAULT_REGISTRY, SLOT_DESCRIPTOR_SCHEMA, SLOT_JOIN_SCHEMA
 from .time import RationalRate
 
 
-SLOT_JOIN_SCHEMA = "ywta.session.slot.join.v1"
-SLOT_DESCRIPTOR_SCHEMA = "ywta.session.slot.descriptor.v1"
-PLAYBACK_SCHEMA = "ywta.common.playback.v1"
 BROKER_PEER_ID = "ywta-link:broker"
 PLAYBACK_SLOT_METADATA_FIELDS = frozenset({"contract_version", "channel_id", "playback_schema", "wire_timebase"})
-SLOT_JOIN_FIELDS = frozenset({"slot_id", "metadata"})
-SLOT_DESCRIPTOR_FIELDS = frozenset({"slot_id", "session_id", "initial_authority", "metadata", "created", "state_peer"})
-ACCEPTED_FIELDS = frozenset(
-    {
-        "session_id",
-        "channel_id",
-        "current_authority",
-        "next_authority",
-        "expected_authority_revision",
-        "new_authority_revision",
-        "change_id",
-    }
-)
+SLOT_DESCRIPTOR_FIELDS = DEFAULT_REGISTRY.require_schema(SLOT_DESCRIPTOR_SCHEMA)
 
 
 class PlaybackBootstrapError(RuntimeError):
@@ -340,20 +327,9 @@ def _reconcile_existing_slot(
         snapshot = _decode_snapshot_response(frame, config, peer_id, state_peer, snapshot_request_id, session_id)
 
     tracker = AuthorityHandoffTracker.from_snapshot(snapshot)
-    snapshot_revision_identity: tuple[AuthorityHandoffAccepted, str] | None = None
     try:
-        for accepted, correlation_id in buffered:
-            if accepted.new_authority_revision < snapshot.authority_revision:
-                raise PlaybackBootstrapError("buffered Accepted before the snapshot revision cannot be proven consistent")
-            if accepted.new_authority_revision == snapshot.authority_revision:
-                if accepted.next_authority != snapshot.authority:
-                    raise PlaybackBootstrapError("Accepted at snapshot revision conflicts with snapshot authority")
-                identity = (accepted, correlation_id)
-                if snapshot_revision_identity is None:
-                    snapshot_revision_identity = identity
-                elif identity != snapshot_revision_identity:
-                    raise PlaybackBootstrapError("Accepted at snapshot revision has conflicting identity")
-                continue
+        pending = _reconcile_buffered_prefix(buffered, snapshot)
+        for accepted, correlation_id in pending:
             tracker.apply_accepted(
                 accepted,
                 actor=accepted.current_authority,
@@ -364,6 +340,49 @@ def _reconcile_existing_slot(
     except Exception as error:
         raise PlaybackBootstrapError(f"buffered Authority reconciliation failed: {_error_text(error)}") from error
     return tracker, tracker.state_for(config.channel_id).authority
+
+
+def _reconcile_buffered_prefix(
+    buffered: list[tuple[AuthorityHandoffAccepted, str]],
+    snapshot: AuthoritySnapshot,
+) -> list[tuple[AuthorityHandoffAccepted, str]]:
+    """socket順のAccepted chainを検証し、snapshot後のsuffixだけ返す。"""
+
+    if not buffered:
+        return []
+
+    chain: list[tuple[AuthorityHandoffAccepted, str]] = []
+    for identity in buffered:
+        accepted = identity[0]
+        if chain:
+            previous = chain[-1][0]
+            if accepted.new_authority_revision == previous.new_authority_revision:
+                if identity != chain[-1]:
+                    raise PlaybackBootstrapError("Accepted at the same revision has conflicting identity")
+                continue
+            if (
+                accepted.expected_authority_revision != previous.new_authority_revision
+                or accepted.current_authority != previous.next_authority
+            ):
+                raise PlaybackBootstrapError("buffered Accepted chain has a revision or authority gap")
+        chain.append(identity)
+
+    first = chain[0][0]
+    last = chain[-1][0]
+    revision = snapshot.authority_revision
+    if not first.expected_authority_revision <= revision <= last.new_authority_revision:
+        raise PlaybackBootstrapError("snapshot revision is outside the buffered Accepted chain")
+
+    if revision == first.expected_authority_revision:
+        authority = first.current_authority
+    else:
+        authority = next(
+            accepted.next_authority for accepted, _correlation_id in chain if accepted.new_authority_revision == revision
+        )
+    if authority != snapshot.authority:
+        raise PlaybackBootstrapError("buffered Accepted chain conflicts with snapshot authority")
+
+    return [identity for identity in chain if identity[0].new_authority_revision > revision]
 
 
 def _decode_snapshot_response(
@@ -391,11 +410,7 @@ def _decode_snapshot_response(
     if frame.body:
         raise PlaybackBootstrapError("Authority snapshot response must not contain a raw binary body")
     try:
-        snapshot = AuthoritySnapshot.from_dict(
-            _strict_object(
-                envelope.body, frozenset({"session_id", "channel_id", "authority", "authority_revision"}), "Authority snapshot"
-            )
-        )
+        snapshot = AuthoritySnapshot.from_dict(envelope.body)
     except (AuthorityValidationError, TypeError, ValueError) as error:
         raise PlaybackBootstrapError(f"invalid Authority snapshot response: {_error_text(error)}") from error
     if snapshot.session_id != session_id or snapshot.channel_id != config.channel_id:
@@ -412,7 +427,7 @@ def _decode_accepted(frame: Frame) -> AuthorityHandoffAccepted:
     if not frame.envelope.correlation_id:
         raise PlaybackBootstrapError("Authority Accepted publish requires correlation_id")
     try:
-        return AuthorityHandoffAccepted.from_dict(_strict_object(frame.envelope.body, ACCEPTED_FIELDS, "Authority Accepted"))
+        return AuthorityHandoffAccepted.from_dict(frame.envelope.body)
     except (AuthorityValidationError, TypeError, ValueError) as error:
         raise PlaybackBootstrapError(f"invalid Authority Accepted publish: {_error_text(error)}") from error
 
@@ -564,14 +579,11 @@ def _error_text(error: BaseException | None) -> str:
 
 
 __all__ = (
-    "ACCEPTED_FIELDS",
     "BROKER_PEER_ID",
     "ConnectionFactory",
-    "PLAYBACK_SCHEMA",
     "PLAYBACK_SLOT_METADATA_FIELDS",
     "SLOT_DESCRIPTOR_FIELDS",
     "SLOT_DESCRIPTOR_SCHEMA",
-    "SLOT_JOIN_FIELDS",
     "SLOT_JOIN_SCHEMA",
     "PlaybackBootstrapConfig",
     "PlaybackBootstrapError",

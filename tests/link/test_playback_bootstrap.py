@@ -18,6 +18,8 @@ from ywta_link import (
     RationalRate,
     bootstrap_playback_session,
 )
+from ywta_link.playback_bootstrap import BROKER_PEER_ID
+from ywta_link.registry import SLOT_DESCRIPTOR_SCHEMA
 
 
 class _Client:
@@ -139,6 +141,72 @@ def _frame(
             body=body,
         )
     )
+
+
+def _existing_slot_client(
+    peer_id: str,
+    config: PlaybackBootstrapConfig,
+    session_id: str,
+    state_peer: str,
+    accepted: list[tuple[AuthorityHandoffAccepted, str]],
+    *,
+    snapshot_authority: str,
+    snapshot_revision: int,
+) -> _Client:
+    """既存slotのdescriptor、Accepted列、snapshotを順に返すClientを作る。"""
+
+    descriptor = {
+        "slot_id": config.slot_id,
+        "session_id": session_id,
+        "initial_authority": state_peer,
+        "metadata": config.slot_metadata,
+        "created": False,
+        "state_peer": state_peer,
+    }
+    frames = [
+        _frame(
+            message_id="descriptor",
+            message_type="response",
+            sender=BROKER_PEER_ID,
+            target=peer_id,
+            room=config.room,
+            correlation_id="slot",
+            schema=SLOT_DESCRIPTOR_SCHEMA,
+            body=descriptor,
+        )
+    ]
+    frames.extend(
+        _frame(
+            message_id=f"accepted-{index}",
+            message_type="publish",
+            sender=payload.current_authority,
+            target=None,
+            room=config.room,
+            correlation_id=correlation_id,
+            schema=AUTHORITY_ACCEPTED_SCHEMA,
+            topic=f"sync/{session_id}/control",
+            body=payload.to_dict(),
+        )
+        for index, (payload, correlation_id) in enumerate(accepted)
+    )
+    frames.append(
+        _frame(
+            message_id="snapshot",
+            message_type="response",
+            sender=state_peer,
+            target=peer_id,
+            room=config.room,
+            correlation_id="snapshot",
+            schema=AUTHORITY_SNAPSHOT_SCHEMA,
+            body={
+                "session_id": session_id,
+                "channel_id": config.channel_id,
+                "authority": snapshot_authority,
+                "authority_revision": snapshot_revision,
+            },
+        )
+    )
+    return _Client(peer_id, frames, ["slot", "snapshot"])
 
 
 class PlaybackBootstrapTest(unittest.TestCase):
@@ -442,56 +510,15 @@ class PlaybackBootstrapTest(unittest.TestCase):
         state_peer = "blender:peer"
 
         def connect(peer: str, _presence: object) -> _Client:
-            descriptor = {
-                "slot_id": config.slot_id,
-                "session_id": "session-stale",
-                "initial_authority": state_peer,
-                "metadata": config.slot_metadata,
-                "created": False,
-                "state_peer": state_peer,
-            }
             stale = AuthorityHandoffAccepted("session-stale", "playback", state_peer, "maya:other", 0, 1, "stale")
-            return _Client(
+            return _existing_slot_client(
                 peer,
-                [
-                    _frame(
-                        message_id="descriptor",
-                        message_type="response",
-                        sender="ywta-link:broker",
-                        target=peer,
-                        room=config.room,
-                        correlation_id="slot",
-                        schema="ywta.session.slot.descriptor.v1",
-                        body=descriptor,
-                    ),
-                    _frame(
-                        message_id="accepted",
-                        message_type="publish",
-                        sender=state_peer,
-                        target=None,
-                        room=config.room,
-                        correlation_id="handoff",
-                        schema=AUTHORITY_ACCEPTED_SCHEMA,
-                        topic="sync/session-stale/control",
-                        body=stale.to_dict(),
-                    ),
-                    _frame(
-                        message_id="snapshot",
-                        message_type="response",
-                        sender=state_peer,
-                        target=peer,
-                        room=config.room,
-                        correlation_id="snapshot",
-                        schema=AUTHORITY_SNAPSHOT_SCHEMA,
-                        body={
-                            "session_id": "session-stale",
-                            "channel_id": "playback",
-                            "authority": "maya:other",
-                            "authority_revision": 2,
-                        },
-                    ),
-                ],
-                ["slot", "snapshot"],
+                config,
+                "session-stale",
+                state_peer,
+                [(stale, "handoff")],
+                snapshot_authority="maya:other",
+                snapshot_revision=2,
             )
 
         with self.assertRaises(PlaybackBootstrapError):
@@ -503,79 +530,20 @@ class PlaybackBootstrapTest(unittest.TestCase):
         final_peer = "unity:final"
 
         def connect(peer: str, _presence: object) -> _Client:
-            descriptor = {
-                "slot_id": config.slot_id,
-                "session_id": "session-chain",
-                "initial_authority": state_peer,
-                "metadata": config.slot_metadata,
-                "created": False,
-                "state_peer": state_peer,
-            }
             equal = AuthorityHandoffAccepted("session-chain", "playback", "maya:old", state_peer, 0, 1, "equal")
             chained = AuthorityHandoffAccepted("session-chain", "playback", state_peer, final_peer, 1, 2, "chain")
-            return _Client(
+            return _existing_slot_client(
                 peer,
+                config,
+                "session-chain",
+                state_peer,
                 [
-                    _frame(
-                        message_id="descriptor",
-                        message_type="response",
-                        sender="ywta-link:broker",
-                        target=peer,
-                        room=config.room,
-                        correlation_id="slot",
-                        schema="ywta.session.slot.descriptor.v1",
-                        body=descriptor,
-                    ),
-                    _frame(
-                        message_id="equal",
-                        message_type="publish",
-                        sender="maya:old",
-                        target=None,
-                        room=config.room,
-                        correlation_id="equal-correlation",
-                        schema=AUTHORITY_ACCEPTED_SCHEMA,
-                        topic="sync/session-chain/control",
-                        body=equal.to_dict(),
-                    ),
-                    _frame(
-                        message_id="equal-duplicate",
-                        message_type="publish",
-                        sender="maya:old",
-                        target=None,
-                        room=config.room,
-                        correlation_id="equal-correlation",
-                        schema=AUTHORITY_ACCEPTED_SCHEMA,
-                        topic="sync/session-chain/control",
-                        body=equal.to_dict(),
-                    ),
-                    _frame(
-                        message_id="chain",
-                        message_type="publish",
-                        sender=state_peer,
-                        target=None,
-                        room=config.room,
-                        correlation_id="chain-correlation",
-                        schema=AUTHORITY_ACCEPTED_SCHEMA,
-                        topic="sync/session-chain/control",
-                        body=chained.to_dict(),
-                    ),
-                    _frame(
-                        message_id="snapshot",
-                        message_type="response",
-                        sender=state_peer,
-                        target=peer,
-                        room=config.room,
-                        correlation_id="snapshot",
-                        schema=AUTHORITY_SNAPSHOT_SCHEMA,
-                        body={
-                            "session_id": "session-chain",
-                            "channel_id": "playback",
-                            "authority": state_peer,
-                            "authority_revision": 1,
-                        },
-                    ),
+                    (equal, "equal-correlation"),
+                    (equal, "equal-correlation"),
+                    (chained, "chain-correlation"),
                 ],
-                ["slot", "snapshot"],
+                snapshot_authority=state_peer,
+                snapshot_revision=1,
             )
 
         session = bootstrap_playback_session(config, _Host, _Lifecycle, connect)
@@ -583,17 +551,53 @@ class PlaybackBootstrapTest(unittest.TestCase):
         self.assertEqual((state.authority, state.revision), (final_peer, 2))
         session.close()
 
+    def test_snapshot_subsumes_complete_buffered_prefix(self) -> None:
+        config = _config(max_attempts=1)
+        state_peer = "maya:a"
+        middle_peer = "blender:b"
+        final_peer = "unity:c"
+
+        def connect(peer: str, _presence: object) -> _Client:
+            first = AuthorityHandoffAccepted("session-prefix", "playback", state_peer, middle_peer, 0, 1, "first")
+            second = AuthorityHandoffAccepted("session-prefix", "playback", middle_peer, final_peer, 1, 2, "second")
+            return _existing_slot_client(
+                peer,
+                config,
+                "session-prefix",
+                state_peer,
+                [(first, "first-correlation"), (second, "second-correlation")],
+                snapshot_authority=final_peer,
+                snapshot_revision=2,
+            )
+
+        session = bootstrap_playback_session(config, _Host, _Lifecycle, connect)
+        state = session.authority_tracker.state_for("playback")
+        self.assertEqual((state.authority, state.revision), (final_peer, 2))
+        session.close()
+
+    def test_buffered_chain_authority_mismatch_is_rejected(self) -> None:
+        config = _config(max_attempts=1)
+        state_peer = "maya:a"
+
+        def connect(peer: str, _presence: object) -> _Client:
+            first = AuthorityHandoffAccepted("session-mismatch", "playback", state_peer, "blender:b", 0, 1, "first")
+            mismatched = AuthorityHandoffAccepted("session-mismatch", "playback", "maya:other", "unity:c", 1, 2, "second")
+            return _existing_slot_client(
+                peer,
+                config,
+                "session-mismatch",
+                state_peer,
+                [(first, "first-correlation"), (mismatched, "second-correlation")],
+                snapshot_authority="blender:b",
+                snapshot_revision=1,
+            )
+
+        with self.assertRaises(PlaybackBootstrapError):
+            bootstrap_playback_session(config, _Host, _Lifecycle, connect)
+
     def test_equal_revision_conflict_is_rejected(self) -> None:
         config = _config(max_attempts=1)
         state_peer = "blender:peer"
-        descriptor = {
-            "slot_id": config.slot_id,
-            "session_id": "session-conflict",
-            "initial_authority": state_peer,
-            "metadata": config.slot_metadata,
-            "created": False,
-            "state_peer": state_peer,
-        }
         variants = (
             (AuthorityHandoffAccepted("session-conflict", "playback", "maya:other", state_peer, 0, 1, "change"), "correlation"),
             (
@@ -610,58 +614,17 @@ class PlaybackBootstrapTest(unittest.TestCase):
             with self.subTest(conflict=conflict, correlation=correlation):
 
                 def connect(peer: str, _presence: object, conflict=conflict, correlation=correlation) -> _Client:
-                    return _Client(
+                    return _existing_slot_client(
                         peer,
+                        config,
+                        "session-conflict",
+                        state_peer,
                         [
-                            _frame(
-                                message_id="descriptor",
-                                message_type="response",
-                                sender="ywta-link:broker",
-                                target=peer,
-                                room=config.room,
-                                correlation_id="slot",
-                                schema="ywta.session.slot.descriptor.v1",
-                                body=descriptor,
-                            ),
-                            _frame(
-                                message_id="base",
-                                message_type="publish",
-                                sender="maya:old",
-                                target=None,
-                                room=config.room,
-                                correlation_id="correlation",
-                                schema=AUTHORITY_ACCEPTED_SCHEMA,
-                                topic="sync/session-conflict/control",
-                                body=base.to_dict(),
-                            ),
-                            _frame(
-                                message_id="conflict",
-                                message_type="publish",
-                                sender=conflict.current_authority,
-                                target=None,
-                                room=config.room,
-                                correlation_id=correlation,
-                                schema=AUTHORITY_ACCEPTED_SCHEMA,
-                                topic="sync/session-conflict/control",
-                                body=conflict.to_dict(),
-                            ),
-                            _frame(
-                                message_id="snapshot",
-                                message_type="response",
-                                sender=state_peer,
-                                target=peer,
-                                room=config.room,
-                                correlation_id="snapshot",
-                                schema=AUTHORITY_SNAPSHOT_SCHEMA,
-                                body={
-                                    "session_id": "session-conflict",
-                                    "channel_id": "playback",
-                                    "authority": state_peer,
-                                    "authority_revision": 1,
-                                },
-                            ),
+                            (base, "correlation"),
+                            (conflict, correlation),
                         ],
-                        ["slot", "snapshot"],
+                        snapshot_authority=state_peer,
+                        snapshot_revision=1,
                     )
 
                 with self.assertRaises(PlaybackBootstrapError):

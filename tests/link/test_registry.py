@@ -11,12 +11,14 @@ from ywta_link import (
     AUTHORITY_SNAPSHOT_SCHEMA,
     AuthoritySnapshot,
     AuthoritySnapshotRequest,
-    SLOT_DESCRIPTOR_FIELDS,
-    SLOT_DESCRIPTOR_SCHEMA,
-    SLOT_JOIN_FIELDS,
-    SLOT_JOIN_SCHEMA,
 )
-from ywta_link.registry import DEFAULT_REGISTRY, SCHEMA_FIELDS, SYNC_SCHEMAS
+from ywta_link.registry import (
+    DEFAULT_REGISTRY,
+    SCHEMA_FIELDS,
+    SLOT_DESCRIPTOR_SCHEMA,
+    SLOT_JOIN_SCHEMA,
+    SYNC_SCHEMAS,
+)
 
 
 class SchemaRegistryTest(unittest.TestCase):
@@ -64,8 +66,6 @@ class SchemaRegistryTest(unittest.TestCase):
         for schema, fields in expected.items():
             with self.subTest(schema=schema):
                 self.assertEqual(DEFAULT_REGISTRY.require_schema(schema), fields)
-        self.assertEqual(SLOT_JOIN_FIELDS, expected[SLOT_JOIN_SCHEMA])
-        self.assertEqual(SLOT_DESCRIPTOR_FIELDS, expected[SLOT_DESCRIPTOR_SCHEMA])
 
 
 if __name__ == "__main__":
