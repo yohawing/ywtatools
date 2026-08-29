@@ -24,6 +24,23 @@ class _FakeLayout:
         self.calls.append((owner, name))
 
 
+class _ControlledWindowManagerMeta(type):
+    """property作成・削除失敗を注入するmetaclass。"""
+
+    fail_set: set[str] = set()
+    fail_delete: set[str] = set()
+
+    def __setattr__(cls, name: str, value: object) -> None:
+        if name in cls.fail_set:
+            raise RuntimeError("property creation failed")
+        super().__setattr__(name, value)
+
+    def __delattr__(cls, name: str) -> None:
+        if name in cls.fail_delete:
+            raise RuntimeError("property deletion failed")
+        super().__delattr__(name)
+
+
 class _FakeSession:
     """Playback Session lifecycleの最小fake。"""
 
@@ -134,6 +151,7 @@ class LinkPlaybackUITests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         cls.module._ACTIVE_SESSION = None
+        cls.module._ACTIVE_CAMERA_SESSION = None
         sys.modules.pop(f"{_PACKAGE}.link_ui_test_instance", None)
 
     @staticmethod
@@ -145,32 +163,44 @@ class LinkPlaybackUITests(unittest.TestCase):
         LinkPlaybackUITests._registered_classes.remove(cls)
 
     def setUp(self) -> None:
+        self._fake_bpy.types.WindowManager = _ControlledWindowManagerMeta("WindowManager", (), {})
+        _ControlledWindowManagerMeta.fail_set.clear()
+        _ControlledWindowManagerMeta.fail_delete.clear()
         self.module._ACTIVE_SESSION = None
+        self.module._ACTIVE_CAMERA_SESSION = None
         self.module._PROPERTY_REGISTERED = False
+        self.module._OWNED_PROPERTIES.clear()
         self.module._PANEL_REGISTERED = False
         self._old_bootstrap = self.module._bootstrap_session
+        self._old_camera_bootstrap = self.module._bootstrap_camera_session
         self._register_ui()
 
     def tearDown(self) -> None:
         self.module._bootstrap_session = self._old_bootstrap
+        self.module._bootstrap_camera_session = self._old_camera_bootstrap
         self.module._ACTIVE_SESSION = None
-        if hasattr(self._fake_bpy.types.WindowManager, self.module.PLAYBACK_SYNC_PROPERTY):
-            delattr(self._fake_bpy.types.WindowManager, self.module.PLAYBACK_SYNC_PROPERTY)
+        self.module._ACTIVE_CAMERA_SESSION = None
+        for name in (self.module.PLAYBACK_SYNC_PROPERTY, self.module.CAMERA_SYNC_PROPERTY):
+            if hasattr(self._fake_bpy.types.WindowManager, name):
+                delattr(self._fake_bpy.types.WindowManager, name)
         self.module._PROPERTY_REGISTERED = False
+        self.module._OWNED_PROPERTIES.clear()
+        _ControlledWindowManagerMeta.fail_set.clear()
+        _ControlledWindowManagerMeta.fail_delete.clear()
         self.module._PANEL_REGISTERED = False
         self._registered_classes.clear()
 
     def _register_ui(self) -> None:
         self.module.register()
 
-    def test_panel_draws_exactly_one_playback_property_without_poll(self) -> None:
+    def test_panel_draws_one_property_for_each_sync_without_poll(self) -> None:
         panel = self.module.YWTA_PT_Link()
         panel.layout = _FakeLayout()
         window_manager = object()
         panel.draw(types.SimpleNamespace(window_manager=window_manager))
 
         self.assertFalse(hasattr(self.module.YWTA_PT_Link, "poll"))
-        self.assertEqual([(window_manager, "ywta_playback_sync")], panel.layout.calls)
+        self.assertEqual([(window_manager, "ywta_playback_sync"), (window_manager, "ywta_camera_sync")], panel.layout.calls)
 
     def test_property_has_skip_save_and_japanese_description(self) -> None:
         spec = getattr(self._fake_bpy.types.WindowManager, "ywta_playback_sync")
@@ -180,6 +210,109 @@ class LinkPlaybackUITests(unittest.TestCase):
         self.assertRegex(spec["description"], "[ぁ-んァ-ン一-龯]")
         self.assertIs(spec["get"], self.module._get_playback_sync)
         self.assertIs(spec["set"], self.module._set_playback_sync)
+
+        camera_spec = getattr(self._fake_bpy.types.WindowManager, "ywta_camera_sync")
+        self.assertEqual({"SKIP_SAVE"}, camera_spec["options"])
+        self.assertEqual("Camera Sync", camera_spec["name"])
+        self.assertRegex(camera_spec["description"], "[ぁ-んァ-ン一-龯]")
+        self.assertIs(camera_spec["get"], self.module._get_camera_sync)
+        self.assertIs(camera_spec["set"], self.module._set_camera_sync)
+
+    def test_second_property_creation_failure_rolls_back_only_first_property(self) -> None:
+        self.module.unregister()
+        _ControlledWindowManagerMeta.fail_set.add(self.module.CAMERA_SYNC_PROPERTY)
+
+        with self.assertRaises(self.module.LinkUIError):
+            self.module.register()
+
+        window_manager = self._fake_bpy.types.WindowManager
+        self.assertFalse(hasattr(window_manager, self.module.PLAYBACK_SYNC_PROPERTY))
+        self.assertFalse(hasattr(window_manager, self.module.CAMERA_SYNC_PROPERTY))
+        self.assertEqual(set(), self.module._OWNED_PROPERTIES)
+        self.assertFalse(self.module._PANEL_REGISTERED)
+
+    def test_preexisting_nonowned_property_is_never_adopted_or_deleted(self) -> None:
+        self.module.unregister()
+        window_manager = self._fake_bpy.types.WindowManager
+        foreign = object()
+        setattr(window_manager, self.module.PLAYBACK_SYNC_PROPERTY, foreign)
+
+        with self.assertRaisesRegex(self.module.LinkUIError, "not owned"):
+            self.module.register()
+        self.module.unregister()
+
+        self.assertIs(foreign, getattr(window_manager, self.module.PLAYBACK_SYNC_PROPERTY))
+        self.assertNotIn(self.module.PLAYBACK_SYNC_PROPERTY, self.module._OWNED_PROPERTIES)
+
+    def test_panel_failure_preserves_reload_owned_preexisting_properties(self) -> None:
+        window_manager = self._fake_bpy.types.WindowManager
+        original_register = self._fake_bpy.utils.register_class
+        self.module._PANEL_REGISTERED = False
+        self._registered_classes.clear()
+        self._fake_bpy.utils.register_class = lambda _class: (_ for _ in ()).throw(RuntimeError("panel failed"))
+        try:
+            with self.assertRaises(self.module.LinkUIError):
+                self.module.register()
+        finally:
+            self._fake_bpy.utils.register_class = original_register
+
+        self.assertTrue(hasattr(window_manager, self.module.PLAYBACK_SYNC_PROPERTY))
+        self.assertTrue(hasattr(window_manager, self.module.CAMERA_SYNC_PROPERTY))
+        self.assertEqual(
+            {self.module.PLAYBACK_SYNC_PROPERTY, self.module.CAMERA_SYNC_PROPERTY},
+            self.module._OWNED_PROPERTIES,
+        )
+
+    def test_property_delete_failure_retains_ownership_for_unregister_retry(self) -> None:
+        window_manager = self._fake_bpy.types.WindowManager
+        _ControlledWindowManagerMeta.fail_delete.add(self.module.CAMERA_SYNC_PROPERTY)
+
+        with self.assertRaises(self.module.LinkUIError):
+            self.module.unregister()
+        self.assertIn(self.module.CAMERA_SYNC_PROPERTY, self.module._OWNED_PROPERTIES)
+        self.assertTrue(hasattr(window_manager, self.module.CAMERA_SYNC_PROPERTY))
+
+        _ControlledWindowManagerMeta.fail_delete.clear()
+        self.module.unregister()
+        self.assertEqual(set(), self.module._OWNED_PROPERTIES)
+        self.assertFalse(hasattr(window_manager, self.module.CAMERA_SYNC_PROPERTY))
+        self.assertFalse(hasattr(window_manager, self.module.PLAYBACK_SYNC_PROPERTY))
+
+    def test_camera_enable_and_close_failure_keep_independent_session_for_retry(self) -> None:
+        playback = _FakeSession()
+        camera = _FakeSession()
+        camera.fail_close = True
+        self.module._ACTIVE_SESSION = playback
+        self.module._bootstrap_camera_session = lambda: camera
+
+        self.module._set_camera_sync(object(), True)
+        self.assertIs(camera, self.module.active_camera_session())
+        self.assertIs(playback, self.module.active_playback_session())
+        self.module._set_camera_sync(object(), False)
+        self.assertIs(camera, self.module.active_camera_session())
+
+        camera.fail_close = False
+        self.module._set_camera_sync(object(), False)
+        self.assertIsNone(self.module.active_camera_session())
+        self.assertIs(playback, self.module.active_playback_session())
+
+    def test_unregister_retains_camera_session_and_properties_until_close_retry_succeeds(self) -> None:
+        camera = _FakeSession()
+        camera.started = True
+        camera.fail_close = True
+        self.module._ACTIVE_CAMERA_SESSION = camera
+
+        with self.assertRaises(self.module.LinkUIError):
+            self.module.unregister()
+        self.assertIs(camera, self.module.active_camera_session())
+        self.assertTrue(hasattr(self._fake_bpy.types.WindowManager, self.module.CAMERA_SYNC_PROPERTY))
+        self.assertTrue(self.module._PANEL_REGISTERED)
+
+        camera.fail_close = False
+        self.module.unregister()
+        self.assertIsNone(self.module.active_camera_session())
+        self.assertFalse(hasattr(self._fake_bpy.types.WindowManager, self.module.CAMERA_SYNC_PROPERTY))
+        self.assertEqual(2, camera.close_calls)
 
     def test_enable_requires_successful_start_and_is_idempotent(self) -> None:
         session = _FakeSession()

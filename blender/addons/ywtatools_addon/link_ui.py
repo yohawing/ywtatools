@@ -1,4 +1,4 @@
-"""YWTA Linkの最小Playback Sync UI。"""
+"""YWTA Linkの最小Playback / Camera Sync UI。"""
 
 from __future__ import annotations
 
@@ -21,12 +21,17 @@ class LinkUIError(RuntimeError):
 
 
 PLAYBACK_SYNC_PROPERTY = "ywta_playback_sync"
+CAMERA_SYNC_PROPERTY = "ywta_camera_sync"
 
 # importlib.reload()時も旧Sessionと登録台帳を保持する。
 if "_ACTIVE_SESSION" not in globals():
     _ACTIVE_SESSION: object | None = None
+if "_ACTIVE_CAMERA_SESSION" not in globals():
+    _ACTIVE_CAMERA_SESSION: object | None = None
 if "_PROPERTY_REGISTERED" not in globals():
     _PROPERTY_REGISTERED = False
+if "_OWNED_PROPERTIES" not in globals():
+    _OWNED_PROPERTIES: set[str] = set()
 if "_PANEL_REGISTERED" not in globals():
     _PANEL_REGISTERED = False
 
@@ -45,10 +50,24 @@ def bootstrap_blender_playback_session() -> object:
     return bootstrap()
 
 
+def _bootstrap_camera_session() -> object:
+    """Blender向けCamera bootstrapを遅延importして実行する。"""
+
+    return bootstrap_blender_camera_session()
+
+
+def bootstrap_blender_camera_session() -> object:
+    """Blender向けdefault Camera bootstrapの遅延import境界。"""
+
+    from .link_camera_session import bootstrap_blender_camera_session as bootstrap
+
+    return bootstrap()
+
+
 if "YWTA_PT_Link" not in globals():
 
     class YWTA_PT_Link(_Panel):
-        """View3D sidebarへPlayback Syncだけを表示する。"""
+        """View3D sidebarへLink Sync checkboxだけを表示する。"""
 
         bl_idname = "YWTA_PT_link"
         bl_label = "Link"
@@ -57,9 +76,10 @@ if "YWTA_PT_Link" not in globals():
         bl_category = "YWTA"
 
         def draw(self, context: Any) -> None:
-            """Playback Syncの状態を一つのcheckboxで切り替える。"""
+            """PlaybackとCamera Syncを各一つのcheckboxで切り替える。"""
 
             self.layout.prop(context.window_manager, PLAYBACK_SYNC_PROPERTY)
+            self.layout.prop(context.window_manager, CAMERA_SYNC_PROPERTY)
 
 
 def _resolve_bpy() -> Any:
@@ -128,6 +148,12 @@ def _get_playback_sync(_window_manager: object) -> bool:
     return _ACTIVE_SESSION is not None and _session_is_active(_ACTIVE_SESSION)
 
 
+def _get_camera_sync(_window_manager: object) -> bool:
+    """module-owned Camera Sessionの実状態をcheckboxへ返す。"""
+
+    return _ACTIVE_CAMERA_SESSION is not None and _session_is_active(_ACTIVE_CAMERA_SESSION)
+
+
 def _report_setter_failure(operation: str, error: BaseException) -> None:
     """Blender property setterから例外を外へ漏らさず記録する。"""
 
@@ -146,44 +172,68 @@ def _set_playback_sync(_window_manager: object, enabled: bool) -> None:
         _report_setter_failure("enable" if enabled else "disable", error)
 
 
+def _set_camera_sync(_window_manager: object, enabled: bool) -> None:
+    """Camera checkbox操作をSession start/closeへ委譲する。"""
+
+    try:
+        set_camera_enabled(bool(enabled))
+    except BaseException as error:
+        _report_setter_failure("Camera enable" if enabled else "Camera disable", error)
+
+
 def is_enabled() -> bool:
     """現在Playback Syncが有効かをSession実状態から返す。"""
 
     return _get_playback_sync(None)
 
 
+def is_camera_enabled() -> bool:
+    """現在Camera Syncが有効かをSession実状態から返す。"""
+
+    return _get_camera_sync(None)
+
+
 def set_enabled(enabled: bool, *, bootstrap: Any = None) -> bool:
     """Playback Sync Sessionを開始または終了する。"""
 
-    global _ACTIVE_SESSION
+    return _set_enabled("Playback", enabled, bootstrap)
+
+
+def set_camera_enabled(enabled: bool, *, bootstrap: Any = None) -> bool:
+    """Camera Sync Sessionを開始または終了する。"""
+
+    return _set_enabled("Camera", enabled, bootstrap)
+
+
+def _set_enabled(kind: str, enabled: bool, bootstrap: Any) -> bool:
+    """指定Sync Sessionを開始または終了する。"""
 
     if not isinstance(enabled, bool):
         raise LinkUIError("enabled must be a bool")
+    session = _active_session(kind)
     if enabled:
-        if _ACTIVE_SESSION is not None:
-            if _session_is_active(_ACTIVE_SESSION):
+        if session is not None:
+            if _session_is_active(session):
                 return True
-            if _session_is_closed(_ACTIVE_SESSION):
-                _ACTIVE_SESSION = None
+            if _session_is_closed(session):
+                _store_session(kind, None)
             else:
                 # 開始失敗後などの非Active Sessionを先に確実に閉じる。
-                close()
-        return _enable(bootstrap)
-    if _ACTIVE_SESSION is None:
+                _close_session(kind)
+        return _enable(kind, bootstrap)
+    if session is None:
         return False
-    if _session_is_closed(_ACTIVE_SESSION):
-        _ACTIVE_SESSION = None
+    if _session_is_closed(session):
+        _store_session(kind, None)
         return False
-    close()
+    _close_session(kind)
     return False
 
 
-def _enable(bootstrap: Any) -> bool:
+def _enable(kind: str, bootstrap: Any) -> bool:
     """Sessionを開始し、成功後だけmodule-owned参照へ移す。"""
 
-    global _ACTIVE_SESSION
-
-    factory = _bootstrap_session if bootstrap is None else bootstrap
+    factory = (_bootstrap_session if kind == "Playback" else _bootstrap_camera_session) if bootstrap is None else bootstrap
     if not callable(factory):
         raise LinkUIError("bootstrap must be callable")
     session: object | None = None
@@ -191,7 +241,7 @@ def _enable(bootstrap: Any) -> bool:
         session = factory()
         start = getattr(session, "start", None)
         if not callable(start) or start() is not True:
-            raise LinkUIError("Playback Sync start did not complete")
+            raise LinkUIError(f"{kind} Sync start did not complete")
     except BaseException as error:
         cleanup_succeeded = False
         if session is not None:
@@ -202,39 +252,72 @@ def _enable(bootstrap: Any) -> bool:
             except BaseException as close_error:
                 _report_setter_failure("cleanup", close_error)
         if session is not None and not cleanup_succeeded:
-            _ACTIVE_SESSION = session
+            _store_session(kind, session)
         else:
-            _ACTIVE_SESSION = None
-        raise LinkUIError("Playback Sync start failed") from error
-    _ACTIVE_SESSION = session
+            _store_session(kind, None)
+        raise LinkUIError(f"{kind} Sync start failed") from error
+    _store_session(kind, session)
     return True
 
 
 def close() -> bool:
+    """所有中のPlayback Sessionを終了する。"""
+
+    return _close_session("Playback")
+
+
+def close_camera() -> bool:
+    """所有中のCamera Sessionを終了する。"""
+
+    return _close_session("Camera")
+
+
+def _close_session(kind: str) -> bool:
     """所有中のSessionを終了し、成功した場合だけ参照を解放する。"""
 
-    global _ACTIVE_SESSION
-
-    session = _ACTIVE_SESSION
+    session = _active_session(kind)
     if session is None:
         return True
     close_method = getattr(session, "close", None)
     if not callable(close_method):
-        raise LinkUIError("Playback Sync Session does not provide close()")
+        raise LinkUIError(f"{kind} Sync Session does not provide close()")
     try:
         result = close_method()
     except BaseException as error:
-        raise LinkUIError("Playback Sync close failed") from error
+        raise LinkUIError(f"{kind} Sync close failed") from error
     if result is not True:
-        raise LinkUIError("Playback Sync close did not complete")
-    _ACTIVE_SESSION = None
+        raise LinkUIError(f"{kind} Sync close did not complete")
+    _store_session(kind, None)
     return True
+
+
+def _active_session(kind: str) -> object | None:
+    """指定種別のmodule-owned Sessionを返す。"""
+
+    return _ACTIVE_SESSION if kind == "Playback" else _ACTIVE_CAMERA_SESSION
+
+
+def _store_session(kind: str, session: object | None) -> None:
+    """指定種別のmodule-owned Session参照を更新する。"""
+
+    global _ACTIVE_CAMERA_SESSION, _ACTIVE_SESSION
+
+    if kind == "Playback":
+        _ACTIVE_SESSION = session
+    else:
+        _ACTIVE_CAMERA_SESSION = session
 
 
 def active_playback_session() -> object | None:
     """現在moduleが所有するPlayback Sessionを返す。"""
 
     return _ACTIVE_SESSION
+
+
+def active_camera_session() -> object | None:
+    """現在moduleが所有するCamera Sessionを返す。"""
+
+    return _ACTIVE_CAMERA_SESSION
 
 
 def register() -> None:
@@ -253,20 +336,42 @@ def register() -> None:
     window_manager_type = getattr(getattr(bpy, "types", None), "WindowManager", None)
     if window_manager_type is None:
         raise LinkUIError("bpy.types.WindowManager is unavailable")
-    if not _PROPERTY_REGISTERED or not hasattr(window_manager_type, PLAYBACK_SYNC_PROPERTY):
-        setattr(
-            window_manager_type,
+    properties = (
+        (
             PLAYBACK_SYNC_PROPERTY,
-            bool_property(
-                name="Playback Sync",
-                description="Playback状態をYWTA Linkの他のDCCと同期する",
-                default=False,
-                options={"SKIP_SAVE"},
-                get=_get_playback_sync,
-                set=_set_playback_sync,
-            ),
-        )
-        _PROPERTY_REGISTERED = True
+            "Playback Sync",
+            "Playback状態をYWTA Linkの他のDCCと同期する",
+            _get_playback_sync,
+            _set_playback_sync,
+        ),
+        (CAMERA_SYNC_PROPERTY, "Camera Sync", "Camera状態をYWTA Linkの他のDCCと同期する", _get_camera_sync, _set_camera_sync),
+    )
+    created: list[str] = []
+    try:
+        for name, label, description, getter, setter in properties:
+            if hasattr(window_manager_type, name):
+                if name not in _OWNED_PROPERTIES:
+                    raise LinkUIError(f"WindowManager.{name} already exists and is not owned by YWTA Link")
+                continue
+            setattr(
+                window_manager_type,
+                name,
+                bool_property(
+                    name=label,
+                    description=description,
+                    default=False,
+                    options={"SKIP_SAVE"},
+                    get=getter,
+                    set=setter,
+                ),
+            )
+            _OWNED_PROPERTIES.add(name)
+            created.append(name)
+    except BaseException as error:
+        _rollback_properties(window_manager_type, created)
+        _PROPERTY_REGISTERED = bool(_OWNED_PROPERTIES)
+        raise LinkUIError(f"Link Sync property registration failed: {error}") from error
+    _PROPERTY_REGISTERED = bool(_OWNED_PROPERTIES)
 
     if _PANEL_REGISTERED:
         return
@@ -277,12 +382,8 @@ def register() -> None:
     try:
         register_class(YWTA_PT_Link)
     except BaseException as error:
-        if _PROPERTY_REGISTERED:
-            try:
-                delattr(window_manager_type, PLAYBACK_SYNC_PROPERTY)
-            except BaseException:
-                pass
-            _PROPERTY_REGISTERED = False
+        _rollback_properties(window_manager_type, created)
+        _PROPERTY_REGISTERED = bool(_OWNED_PROPERTIES)
         raise LinkUIError("Link panel registration failed") from error
     _PANEL_REGISTERED = True
 
@@ -290,23 +391,25 @@ def register() -> None:
 def unregister() -> None:
     """Sessionを終了し、成功後にPanelとWindowManager propertyを削除する。"""
 
-    global _ACTIVE_SESSION, _PANEL_REGISTERED, _PROPERTY_REGISTERED
+    global _PANEL_REGISTERED, _PROPERTY_REGISTERED
 
     bpy = _resolve_bpy()
     window_manager_type = getattr(getattr(bpy, "types", None), "WindowManager", None)
     if window_manager_type is None:
         raise LinkUIError("bpy.types.WindowManager is unavailable")
 
-    session = _ACTIVE_SESSION
-    if session is not None:
+    for kind in ("Camera", "Playback"):
+        session = _active_session(kind)
+        if session is None:
+            continue
         if _session_is_closed(session):
-            _ACTIVE_SESSION = None
-        else:
-            try:
-                close()
-            except BaseException as error:
-                # propertyは残し、moduleをunload可能な状態へ進めない。
-                raise LinkUIError("active Playback Session close failed") from error
+            _store_session(kind, None)
+            continue
+        try:
+            _close_session(kind)
+        except BaseException as error:
+            # propertyは残し、moduleをunload可能な状態へ進めない。
+            raise LinkUIError(f"active {kind} Session close failed") from error
 
     if _PANEL_REGISTERED:
         unregister_class = getattr(getattr(bpy, "utils", None), "unregister_class", None)
@@ -318,23 +421,50 @@ def unregister() -> None:
             raise LinkUIError("Link panel unregistration failed") from error
         _PANEL_REGISTERED = False
 
-    if _PROPERTY_REGISTERED or hasattr(window_manager_type, PLAYBACK_SYNC_PROPERTY):
+    for name in (CAMERA_SYNC_PROPERTY, PLAYBACK_SYNC_PROPERTY):
+        if name not in _OWNED_PROPERTIES:
+            continue
+        if not hasattr(window_manager_type, name):
+            _OWNED_PROPERTIES.remove(name)
+            continue
         try:
-            delattr(window_manager_type, PLAYBACK_SYNC_PROPERTY)
+            delattr(window_manager_type, name)
         except BaseException as error:
-            raise LinkUIError("Playback Sync property removal failed") from error
-        _PROPERTY_REGISTERED = False
+            _PROPERTY_REGISTERED = bool(_OWNED_PROPERTIES)
+            raise LinkUIError("Link Sync property removal failed") from error
+        _OWNED_PROPERTIES.remove(name)
+    _PROPERTY_REGISTERED = bool(_OWNED_PROPERTIES)
+
+
+def _rollback_properties(window_manager_type: type, created: list[str]) -> None:
+    """今回作成したpropertyだけを逆順で戻し、失敗ownershipは保持する。"""
+
+    for name in reversed(created):
+        if not hasattr(window_manager_type, name):
+            _OWNED_PROPERTIES.discard(name)
+            continue
+        try:
+            delattr(window_manager_type, name)
+        except BaseException:
+            continue
+        _OWNED_PROPERTIES.discard(name)
 
 
 __all__ = (
     "LinkUIError",
+    "CAMERA_SYNC_PROPERTY",
     "PLAYBACK_SYNC_PROPERTY",
     "YWTA_PT_Link",
+    "active_camera_session",
     "active_playback_session",
+    "bootstrap_blender_camera_session",
     "bootstrap_blender_playback_session",
     "close",
+    "close_camera",
+    "is_camera_enabled",
     "is_enabled",
     "register",
+    "set_camera_enabled",
     "set_enabled",
     "unregister",
 )

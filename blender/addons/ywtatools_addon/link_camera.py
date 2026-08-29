@@ -195,6 +195,8 @@ class BlenderCameraHost:
                 self._record_error("flush", exc)
             raise BlenderCameraHostError("Blender camera flush failed") from exc
 
+    tick = flush
+
     def apply(self, camera: Camera) -> None:
         """Common Cameraを固定CameraへMain Thread上で適用する。"""
 
