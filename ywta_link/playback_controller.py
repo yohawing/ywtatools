@@ -7,7 +7,7 @@ import weakref
 from dataclasses import dataclass
 from typing import Callable
 
-from .errors import AuthorityViolation
+from .errors import AuthorityViolation, _bounded_error_details
 from .playback import Playback, PlaybackEchoGuard
 from .playback_host import PlaybackHostEvent, PlaybackHostSnapshot
 from .playback_mapping import PlaybackTimeMapper
@@ -222,16 +222,10 @@ class PlaybackController:
     def _mark_failed(self, error: Exception) -> None:
         """例外本体を保持せず、軽量原因だけを記録してFailedへ遷移する。"""
 
-        try:
-            message = str(error)
-        except Exception:
-            message = "<unprintable exception>"
-        if len(message) > 1024:
-            message = message[:1024]
         with self._status_lock:
             if not self._closed:
                 self._failed = True
-                self._error = PlaybackControllerErrorInfo(type(error).__name__, message)
+                self._error = PlaybackControllerErrorInfo(*_bounded_error_details(error))
 
     def _require_owner(self) -> None:
         """操作threadをController生成元に限定する。"""

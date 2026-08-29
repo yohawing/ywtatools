@@ -8,6 +8,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Callable
 
+from .errors import _bounded_error_details
 from .frame import Frame
 
 
@@ -174,7 +175,7 @@ class AdapterDispatch:
                     self._reserved -= 1
                     if not self._closed:
                         self._failed.append(frame)
-                        self._handler_error = _dispatch_error_info(exc)
+                        self._handler_error = DispatchErrorInfo(*_bounded_error_details(exc))
                 raise
             else:
                 with self._lock:
@@ -233,12 +234,14 @@ class AdapterDispatch:
                 except Exception as exc:
                     with self._lock:
                         if not self._stop_event.is_set():
-                            self._receiver_error = _dispatch_error_info(exc)
+                            self._receiver_error = DispatchErrorInfo(*_bounded_error_details(exc))
                             self._running = False
                     return
                 if not isinstance(frame, Frame):
                     with self._lock:
-                        self._receiver_error = _dispatch_error_info(AdapterDispatchError("client.receive must return a Frame"))
+                        self._receiver_error = DispatchErrorInfo(
+                            *_bounded_error_details(AdapterDispatchError("client.receive must return a Frame"))
+                        )
                         self._running = False
                     return
                 with self._lock:
@@ -246,7 +249,9 @@ class AdapterDispatch:
                         return
                     if len(self._queue) + len(self._failed) + self._reserved >= self._queue_capacity:
                         self._overflowed = True
-                        self._receiver_error = _dispatch_error_info(DispatchOverflowError("receive queue capacity exceeded"))
+                        self._receiver_error = DispatchErrorInfo(
+                            *_bounded_error_details(DispatchOverflowError("receive queue capacity exceeded"))
+                        )
                         self._running = False
                         self._stop_event.set()
                         return
@@ -269,18 +274,6 @@ class AdapterDispatch:
             except Exception:
                 # 停止処理中のclose失敗は、receiverの主エラーを隠さない。
                 pass
-
-
-def _dispatch_error_info(error: BaseException) -> DispatchErrorInfo:
-    """例外本体を保持せず、型名と上限付きmessageだけをsnapshot化する。"""
-
-    try:
-        message = str(error)
-    except Exception:
-        message = "<unprintable exception>"
-    if len(message) > 1024:
-        message = message[:1024]
-    return DispatchErrorInfo(type(error).__name__, message)
 
 
 def _non_negative_finite(value: object, field_name: str) -> None:

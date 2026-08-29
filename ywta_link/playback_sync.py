@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from .adapter import AdapterDispatch
 from .authority_transport import AuthorityHandoffTransport
+from .errors import _bounded_error_details
 from .frame import Frame
 from .playback_handoff import PlaybackHandoffCoordinator
 from .playback_controller import PlaybackController
@@ -311,16 +312,15 @@ class PlaybackSyncRuntime:
     def _mark_failed(self, error: BaseException) -> None:
         """失敗原因を型名と上限付きmessageだけで保存する。"""
 
-        info = _error_info(error)
         with self._status_lock:
             self._failed = True
-            self._error = info
+            self._error = PlaybackSyncRuntimeErrorInfo(*_bounded_error_details(error))
 
     @staticmethod
     def _runtime_error(prefix: str, error: BaseException) -> PlaybackSyncRuntimeError:
         """内部例外から公開境界用の型付き例外を作る。"""
 
-        return PlaybackSyncRuntimeError(f"{prefix}: {_error_message(error)}")
+        return PlaybackSyncRuntimeError(f"{prefix}: {_bounded_error_details(error)[1]}")
 
     def _require_owner(self) -> None:
         """Runtime操作を生成元threadに限定する。"""
@@ -339,12 +339,6 @@ class PlaybackSyncRuntime:
         """現在の同期operationを終了する。"""
 
         self._active_operation = None
-
-
-def _error_info(error: BaseException) -> PlaybackSyncRuntimeErrorInfo:
-    """例外をstatus用のbounded情報へ変換する。"""
-
-    return PlaybackSyncRuntimeErrorInfo(type(error).__name__, _error_message(error))
 
 
 def _claim_components(*components: object) -> None:
@@ -384,16 +378,6 @@ def _validate_coordinator_identity(
         raise PlaybackSyncRuntimeError("coordinator Authority transport room does not match Runtime")
     if transport.topic == authority_transport.topic:
         raise PlaybackSyncRuntimeError("playback topic must differ from Authority control topic")
-
-
-def _error_message(error: BaseException) -> str:
-    """例外messageを安全に1024文字へ制限する。"""
-
-    try:
-        message = str(error)
-    except Exception:
-        message = "<unprintable exception>"
-    return message[:1024]
 
 
 __all__ = (

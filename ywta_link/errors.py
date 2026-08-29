@@ -34,3 +34,13 @@ class RevisionError(ProtocolError):
 
 class StaleRevision(RevisionError):
     """古い、または重複したrevision。"""
+
+
+def _bounded_error_details(error: BaseException) -> tuple[str, str]:
+    """例外を型名と1024文字以内の安全なmessageへ変換する。"""
+
+    try:
+        message = str(error)
+    except Exception:
+        message = "<unprintable exception>"
+    return type(error).__name__, message[:1024]

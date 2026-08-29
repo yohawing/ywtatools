@@ -16,6 +16,7 @@ from .authority import (
     AuthorityHandoffTracker,
 )
 from .authority_transport import AuthorityHandoffTransport
+from .errors import _bounded_error_details
 from .frame import Frame
 from .playback_controller import PlaybackController
 from .playback_host import PlaybackHostEvent, PlaybackHostSnapshot
@@ -93,7 +94,7 @@ class PlaybackHandoffCoordinator:
         try:
             tracker.state_for(self._channel_id)
         except Exception as error:
-            raise PlaybackHandoffError(f"invalid channel_id: {_error_message(error)}") from error
+            raise PlaybackHandoffError(f"invalid channel_id: {_bounded_error_details(error)[1]}") from error
 
         self._tracker = tracker
         self._authority_transport = authority_transport
@@ -342,13 +343,13 @@ class PlaybackHandoffCoordinator:
         with self._status_lock:
             if not self._failed:
                 self._failed = True
-                self._error = PlaybackHandoffErrorInfo(type(error).__name__, _error_message(error))
+                self._error = PlaybackHandoffErrorInfo(*_bounded_error_details(error))
 
     @staticmethod
     def _public_error(prefix: str, error: BaseException) -> PlaybackHandoffError:
         """内部例外をCoordinator境界の型付き例外へ変換する。"""
 
-        return PlaybackHandoffError(f"{prefix}: {_error_message(error)}")
+        return PlaybackHandoffError(f"{prefix}: {_bounded_error_details(error)[1]}")
 
 
 def _identifier(value: object, field_name: str) -> str:
@@ -367,15 +368,6 @@ def _positive_finite(value: object) -> bool:
     """boolを除く正の有限数を検証する。"""
 
     return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(float(value)) and float(value) > 0
-
-
-def _error_message(error: BaseException) -> str:
-    """例外messageを安全に1024文字へ制限する。"""
-
-    try:
-        return str(error)[:1024]
-    except Exception:
-        return "<unprintable exception>"
 
 
 __all__ = (
