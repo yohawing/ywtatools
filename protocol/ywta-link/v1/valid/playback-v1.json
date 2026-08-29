@@ -1,0 +1,27 @@
+{
+  "state": "playing",
+  "position": {
+    "time": 1001,
+    "start": null,
+    "end_exclusive": null,
+    "timebase": {
+      "rate_num": 24000,
+      "rate_den": 1001
+    },
+    "sample_rate": null
+  },
+  "playback_range": {
+    "time": null,
+    "start": 0,
+    "end_exclusive": 24000,
+    "timebase": {
+      "rate_num": 24000,
+      "rate_den": 1001
+    },
+    "sample_rate": null
+  },
+  "speed": 1.0,
+  "direction": "forward",
+  "loop_mode": "loop",
+  "change_id": "playback-change-001"
+}

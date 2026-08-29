@@ -1,0 +1,287 @@
+"""DCC非依存なPlayback同期Sessionの最小構成。"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable
+
+from .adapter import AdapterDispatch
+from ._snapshot_sync import OwnedSyncSession
+from .authority import AuthorityHandoffTracker
+from .authority_transport import AuthorityHandoffTransport
+from .client import LinkClient
+from .errors import _bounded_error_details, _non_negative_finite, _positive_finite, _validate_identifier
+from .playback_handoff import PlaybackHandoffCoordinator
+from .playback_controller import PlaybackController
+from .playback_host import PlaybackHostEvent, PlaybackHostSnapshot
+from .playback_mapping import PlaybackTimeMapper
+from .playback_sync import PlaybackSyncRuntime
+from .playback_transport import PlaybackTopicTransport
+
+
+class PlaybackSessionError(RuntimeError):
+    """Playback Sessionの構成または終了に失敗したことを表す。"""
+
+
+@dataclass(frozen=True)
+class PlaybackSessionConfig:
+    """DCC Adapterが明示して渡すPlayback Session設定。"""
+
+    peer_id: str
+    session_id: str
+    room: str
+    topic: str
+    channel_id: str
+    initial_authority: str
+    ticks_per_host_unit: int
+    host_unit_rate: object
+    time_unit: str
+    queue_capacity: int = 256
+    stop_timeout: float = 1.0
+    handoff_timeout: float = 1.0
+
+    def __post_init__(self) -> None:
+        """暗黙のRoom、Authority、timebaseを許可しない。"""
+
+        for name in ("peer_id", "session_id", "room", "topic", "channel_id", "initial_authority", "time_unit"):
+            _identifier(getattr(self, name), name)
+        if self.topic == f"sync/{self.session_id}/control":
+            raise PlaybackSessionError("topic must differ from the Session control topic")
+        if isinstance(self.queue_capacity, bool) or not isinstance(self.queue_capacity, int) or self.queue_capacity <= 0:
+            raise PlaybackSessionError("queue_capacity must be a positive integer")
+        if not _non_negative_finite(self.stop_timeout):
+            raise PlaybackSessionError("stop_timeout must be a non-negative finite number")
+        if not _positive_finite(self.handoff_timeout):
+            raise PlaybackSessionError("handoff_timeout must be a positive finite number")
+        try:
+            PlaybackTimeMapper(
+                ticks_per_host_unit=self.ticks_per_host_unit,
+                host_unit_rate=self.host_unit_rate,
+                time_unit=self.time_unit,
+            )
+        except (TypeError, ValueError) as error:
+            raise PlaybackSessionError(f"invalid playback timebase: {error}") from error
+
+
+class PlaybackSession(OwnedSyncSession):
+    """専用Clientを所有し、DCC Lifecycleへ開始と終了を委譲する。"""
+
+    error_type = PlaybackSessionError
+    session_name = "PlaybackSession"
+    runtime_name = "PlaybackSyncRuntime"
+
+
+def compose_playback_session(
+    config: PlaybackSessionConfig,
+    host_factory: Callable[[Callable[[PlaybackHostEvent], bool]], object],
+    lifecycle_factory: Callable[[object, PlaybackSyncRuntime], object],
+    client_factory: Callable[[PlaybackSessionConfig], LinkClient] | None = None,
+    *,
+    authority_tracker: AuthorityHandoffTracker | None = None,
+) -> PlaybackSession:
+    """専用Client、Host、Runtime、Lifecycleを未開始Sessionとして構成する。
+
+    ``authority_tracker`` を指定した場合は、bootstrapでsnapshot照合済みの
+    trackerをそのままRuntimeへ引き渡す。
+    """
+
+    if not isinstance(config, PlaybackSessionConfig):
+        raise PlaybackSessionError("config must be a PlaybackSessionConfig")
+    if not callable(host_factory) or not callable(lifecycle_factory):
+        raise PlaybackSessionError("host_factory and lifecycle_factory must be callable")
+    if authority_tracker is not None:
+        _validate_prebuilt_tracker(authority_tracker, config)
+    factory = _default_client_factory if client_factory is None else client_factory
+    if not callable(factory):
+        raise PlaybackSessionError("client_factory must be callable")
+
+    client: object | None = None
+    authority_transport: AuthorityHandoffTransport | None = None
+    transport: PlaybackTopicTransport | None = None
+    controller: PlaybackController | None = None
+    coordinator: PlaybackHandoffCoordinator | None = None
+    runtime: PlaybackSyncRuntime | None = None
+    try:
+        client = factory(config)
+        _validate_client_identity(client, config.peer_id)
+        _require_methods(
+            client,
+            ("join", "close", "receive", "publish", "subscribe", "unsubscribe", "request", "response"),
+            "client",
+        )
+        client.join(config.room)
+        mapper = PlaybackTimeMapper(
+            ticks_per_host_unit=config.ticks_per_host_unit,
+            host_unit_rate=config.host_unit_rate,
+            time_unit=config.time_unit,
+        )
+        tracker = (
+            authority_tracker
+            if authority_tracker is not None
+            else AuthorityHandoffTracker({config.channel_id: config.initial_authority}, config.session_id)
+        )
+        authority_transport = AuthorityHandoffTransport(client, config.room, tracker)
+        relay = _HostRelay()
+        host = host_factory(relay)
+        _require_methods(host, ("apply", "snapshot"), "host")
+        initial_snapshot = host.snapshot()
+        if not isinstance(initial_snapshot, PlaybackHostSnapshot):
+            raise PlaybackSessionError("host.snapshot() must return a PlaybackHostSnapshot")
+        transport = PlaybackTopicTransport(client, config.room, config.topic)
+
+        def apply_authoritative_snapshot(snapshot: PlaybackHostSnapshot) -> None:
+            """remote snapshotをHostへ適用し、成功後だけrollback基準を更新する。"""
+
+            host.apply(snapshot)
+            if coordinator is None:
+                raise PlaybackSessionError("PlaybackHandoffCoordinator is not bound")
+            coordinator.observe_authoritative_snapshot(snapshot)
+
+        controller = PlaybackController(
+            config.peer_id,
+            config.channel_id,
+            mapper,
+            lambda channel_id: tracker.state_for(channel_id).authority,
+            transport.publish,
+            apply_authoritative_snapshot,
+        )
+        coordinator = PlaybackHandoffCoordinator(
+            config.peer_id,
+            config.channel_id,
+            tracker,
+            authority_transport,
+            controller,
+            initial_snapshot,
+            host.apply,
+            config.handoff_timeout,
+        )
+        relay.bind(coordinator.handle_host_event)
+        dispatch = AdapterDispatch(client, queue_capacity=config.queue_capacity, stop_timeout=config.stop_timeout)
+        runtime = PlaybackSyncRuntime(dispatch, authority_transport, transport, controller, coordinator)
+        lifecycle = lifecycle_factory(host, runtime)
+        return PlaybackSession(lifecycle, tracker, runtime, client)
+    except BaseException as error:
+        rollback_errors = _rollback_construction(runtime, coordinator, authority_transport, transport, controller, client)
+        if rollback_errors:
+            detail = "; ".join(_error_text(rollback_error) for rollback_error in rollback_errors)
+            raise PlaybackSessionError(f"PlaybackSession construction rollback failed: {detail}") from error
+        raise
+
+
+def _default_client_factory(config: PlaybackSessionConfig) -> LinkClient:
+    """設定済みPeer IDでBrokerへ接続または起動する。"""
+
+    return LinkClient.connect_or_start(config.peer_id)
+
+
+class _HostRelay:
+    """Host生成時のcallbackと後続Controllerを一度だけ接続する。"""
+
+    def __init__(self) -> None:
+        self._handler: Callable[[PlaybackHostEvent], bool] | None = None
+
+    def __call__(self, event: PlaybackHostEvent) -> bool:
+        """bind済みControllerへHost eventを渡す。"""
+
+        if self._handler is None:
+            raise PlaybackSessionError("host callback arrived before PlaybackController binding")
+        return self._handler(event)
+
+    def bind(self, handler: Callable[[PlaybackHostEvent], bool]) -> None:
+        """ControllerのHost event handlerを一度だけ登録する。"""
+
+        if self._handler is not None:
+            raise PlaybackSessionError("host callback relay is already bound")
+        self._handler = handler
+
+
+def _identifier(value: object, name: str) -> None:
+    _validate_identifier(value, name, PlaybackSessionError)
+
+
+def _validate_client_identity(client: object, expected_peer_id: str) -> None:
+    """Client生成直後にPeer identityをConfigと照合する。"""
+
+    client_peer_id = getattr(client, "peer_id", None)
+    _identifier(client_peer_id, "client.peer_id")
+    if client_peer_id != expected_peer_id:
+        raise PlaybackSessionError("client.peer_id must match config.peer_id")
+
+
+def _validate_prebuilt_tracker(
+    tracker: AuthorityHandoffTracker,
+    config: PlaybackSessionConfig,
+) -> None:
+    """既存TrackerのSession、Channel、現在AuthorityをConfigと照合する。"""
+
+    if not isinstance(tracker, AuthorityHandoffTracker):
+        raise PlaybackSessionError("authority_tracker must be exactly an AuthorityHandoffTracker")
+    if tracker.session_id != config.session_id:
+        raise PlaybackSessionError("authority_tracker session does not match config.session_id")
+    try:
+        state = tracker.state_for(config.channel_id)
+    except Exception as error:
+        raise PlaybackSessionError(f"authority_tracker channel is invalid: {_error_text(error)}") from error
+    if state.authority != config.initial_authority:
+        raise PlaybackSessionError("authority_tracker authority does not match config.initial_authority")
+
+
+def _require_methods(value: object, names: tuple[str, ...], name: str) -> None:
+    """依存objectが必要最小限の操作を持つことを検証する。"""
+
+    if any(not callable(getattr(value, method, None)) for method in names):
+        raise PlaybackSessionError(f"{name} does not provide required methods")
+
+
+def _rollback_construction(
+    runtime: PlaybackSyncRuntime | None,
+    coordinator: PlaybackHandoffCoordinator | None,
+    authority_transport: AuthorityHandoffTransport | None,
+    transport: PlaybackTopicTransport | None,
+    controller: PlaybackController | None,
+    client: object | None,
+) -> list[BaseException]:
+    """構成途中のleaseと専用Clientをbest effortで解放する。"""
+
+    errors: list[BaseException] = []
+    if runtime is not None:
+        try:
+            runtime.close()
+        except BaseException as error:
+            errors.append(error)
+    else:
+        if coordinator is not None:
+            try:
+                coordinator.close()
+            except BaseException as error:
+                errors.append(error)
+        if authority_transport is not None:
+            try:
+                authority_transport.close()
+            except BaseException as error:
+                errors.append(error)
+        if transport is not None:
+            try:
+                transport.close()
+            except BaseException as error:
+                errors.append(error)
+        if controller is not None:
+            try:
+                controller.close()
+            except BaseException as error:
+                errors.append(error)
+    if client is not None:
+        try:
+            client.close()
+        except BaseException as error:
+            errors.append(error)
+    return errors
+
+
+def _error_text(error: BaseException) -> str:
+    """cleanup例外を公開例外message向けの短い文字列へ変換する。"""
+
+    return ": ".join(_bounded_error_details(error))
+
+
+__all__ = ("PlaybackSessionConfig", "PlaybackSession", "PlaybackSessionError", "compose_playback_session")

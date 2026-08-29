@@ -1,0 +1,52 @@
+{
+  "entity_ref": {
+    "entity_id": "camera:shot-010-main",
+    "kind": "camera",
+    "display_name": "Shot010_Main",
+    "namespace": "shot-010"
+  },
+  "transform": {
+    "entity_ref": {
+      "entity_id": "camera:shot-010-main",
+      "kind": "camera",
+      "display_name": "Shot010_Main",
+      "namespace": "shot-010"
+    },
+    "translation": [0.0, 1200.0, 3500.0],
+    "rotation": [0.0, 0.0, 0.0, 1.0],
+    "scale": [1.0, 1.0, 1.0],
+    "coordinate_system": {
+      "space": "world",
+      "handedness": "right",
+      "up_axis": "+y",
+      "forward_axis": "-z",
+      "parent_entity_id": null
+    },
+    "unit": "millimeter",
+    "rotation_order": null
+  },
+  "time": {
+    "time": 1001,
+    "start": null,
+    "end_exclusive": null,
+    "timebase": {
+      "rate_num": 24000,
+      "rate_den": 1001
+    },
+    "sample_rate": null
+  },
+  "projection": "perspective",
+  "focal_length": 50.0,
+  "horizontal_aperture": 36.0,
+  "vertical_aperture": 24.0,
+  "aperture_offset": [0.0, 0.0],
+  "clipping_range": [1.0, 100000.0],
+  "focus_distance": 3510.0,
+  "f_stop": 2.8,
+  "exposure": 0.0,
+  "orthographic_size": null,
+  "film_fit": "horizontal",
+  "gate_fit": null,
+  "aspect_ratio": 1.5,
+  "change_id": "camera-change-001"
+}

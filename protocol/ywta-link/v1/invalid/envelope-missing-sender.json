@@ -1,0 +1,10 @@
+{
+  "protocol_version": 1,
+  "message_id": "msg-invalid-001",
+  "type": "publish",
+  "room": "shot-010",
+  "schema": "ywta.sync.preview.v1",
+  "body": {
+    "revision": 1
+  }
+}

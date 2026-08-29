@@ -1,0 +1,8 @@
+{
+  "session_id": "session-camera-001",
+  "channel_id": "main-camera",
+  "current_authority": "blender:peer-001",
+  "next_authority": "maya:peer-001",
+  "expected_authority_revision": 0,
+  "change_id": "authority-change-001"
+}

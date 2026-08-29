@@ -1,0 +1,10 @@
+{
+  "name": "com.ywta.link",
+  "version": "0.1.0-preview.1",
+  "displayName": "YWTA Link",
+  "description": "Local YWTA Link playback synchronization for Unity PlayableDirector.",
+  "unity": "6000.0",
+  "author": {
+    "name": "YWTA"
+  }
+}

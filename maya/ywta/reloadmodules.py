@@ -5,6 +5,16 @@ import ywta
 DEFAULT_RELOAD_PACKAGES = ["ywta"]
 
 
+def _close_link_ui_before_reload():
+    """既存Link Sessionをreload前に解放し、失敗時はreloadを止める。"""
+
+    for module_name in ("ywta.link.playback_ui", "ywta.link.camera_ui"):
+        link_ui = sys.modules.get(module_name)
+        close = getattr(link_ui, "close", None) if link_ui is not None else None
+        if callable(close):
+            close()
+
+
 class RollbackImporter(object):
     """Used to remove imported modules from the module list.
 
@@ -35,6 +45,7 @@ class RollbackImporter(object):
             None
         """
 
+        _close_link_ui_before_reload()
         for modname in sys.modules.keys():
             if modname not in self.previous_modules:
                 # Force reload when modname next imported
@@ -42,7 +53,7 @@ class RollbackImporter(object):
                     # del(sys.modules[modname])
                     importlib.reload(sys.modules[modname])
                     print(f"Unloaded: {modname}")
-                except:
+                except Exception:
                     pass
 
     def unload_packages(self, packages=None):
@@ -60,6 +71,8 @@ class RollbackImporter(object):
         if packages is None:
             packages = DEFAULT_RELOAD_PACKAGES
 
+        _close_link_ui_before_reload()
+
         # construct reload list
         reloadList = []
         for i in sys.modules.keys():
@@ -73,7 +86,7 @@ class RollbackImporter(object):
                 if sys.modules[modname] is not None:
                     importlib.reload(sys.modules[modname])
                     print(f"Unloaded: {modname}")
-            except:
+            except Exception:
                 print(f"Failed to unload: {modname}")
 
         ywta.initialize()

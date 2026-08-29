@@ -1,0 +1,39 @@
+{
+  "contract_version": 1,
+  "session_id": "session-duplicate-channel",
+  "room": "shot-010",
+  "owner": "blender:peer-001",
+  "close_policy": "keep-committed",
+  "channels": [
+    {
+      "channel_id": "main-camera",
+      "schema": "ywta.common.camera.v1",
+      "authority": "blender:peer-001",
+      "targets": [
+        "maya:peer-001"
+      ],
+      "field_subset": [
+        "transform"
+      ],
+      "mode": "preview-commit",
+      "conflict_policy": "single-writer",
+      "mapping_profile": "camera-default.v1",
+      "required": true
+    },
+    {
+      "channel_id": "main-camera",
+      "schema": "ywta.common.camera.v1",
+      "authority": "blender:peer-001",
+      "targets": [
+        "unity:peer-001"
+      ],
+      "field_subset": [
+        "focal_length"
+      ],
+      "mode": "preview-commit",
+      "conflict_policy": "single-writer",
+      "mapping_profile": "camera-default.v1",
+      "required": true
+    }
+  ]
+}
