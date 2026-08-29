@@ -669,12 +669,15 @@ v1は少なくとも次の論理Messageを持つ。
 - `leave`: Room退出
 - `subscribe`: Topic購読
 - `unsubscribe`: Topic購読解除
-- `publish`: RoomまたはTopicへのEvent配信
+- `publish`: Room、Topic、または特定PeerへのEvent配信
 - `request`: 特定Peerへの処理要求
 - `response`: Request成功応答
 - `error`: Request失敗またはProtocol error
 - `ping` / `pong`: 接続生存確認
 - `binary.begin` / `binary.chunk` / `binary.end`: chunked binary転送
+
+現在のBroker MVPで未実装の `ping`、`pong`、`binary.begin`、`binary.chunk`、`binary.end` を
+受信した場合は、成功として破棄せずunsupported errorでfail closedにする。
 
 ### 7.2 共通Envelope
 
@@ -718,6 +721,9 @@ Brokerは次のRoutingを提供する。
 4. Request/Response: `correlation_id` により依頼元へ応答する。
 
 Binary bodyを含むMessageでも同じRouting規則を使用する。
+`publish`は `target` のみを指定した場合は同一Roomに接続中の対象Peerだけへ送り、`topic` のみを
+指定した場合は購読者へ送る。両方を同時に指定したMessageは曖昧なためfail closedで拒否する。
+どちらも指定しない場合はRoom broadcastとする。いずれも送信元自身には配送しない。
 
 ## 8. TransportとWire framing
 

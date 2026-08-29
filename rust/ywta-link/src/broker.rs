@@ -6,7 +6,7 @@ use std::fmt;
 use std::io;
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -26,6 +26,10 @@ const SESSION_SLOT_DESCRIPTOR_SCHEMA: &str = "ywta.session.slot.descriptor.v1";
 const MAX_SESSION_SLOT_TEXT_BYTES: usize = 256;
 const MAX_SESSION_SLOT_METADATA_BYTES: usize = 32 * 1024;
 const MAX_SESSION_SLOTS: usize = 256;
+const MAX_PENDING_REQUESTS: usize = 1024;
+const PENDING_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const OUTGOING_QUEUE_CAPACITY: usize = 8;
+const NETWORK_EVENT_QUEUE_CAPACITY: usize = 8;
 
 static BROKER_INSTANCE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -79,7 +83,10 @@ pub enum BrokerError {
     ReservedPeerId(String),
     NotInRoom(String),
     TargetNotConnected(String),
+    AmbiguousPublishRouting,
+    UnsupportedMessageType(MessageType),
     DuplicatePendingRequest(String),
+    PendingRequestCapacityExceeded,
     UnknownCorrelationId(String),
     ResponseSenderMismatch(String),
     ResponseTargetMismatch(String),
@@ -112,11 +119,23 @@ impl fmt::Display for BrokerError {
             Self::TargetNotConnected(peer_id) => {
                 write!(formatter, "target is not connected: {peer_id}")
             }
+            Self::AmbiguousPublishRouting => {
+                formatter.write_str("publish cannot specify both target and topic")
+            }
+            Self::UnsupportedMessageType(message_type) => {
+                write!(
+                    formatter,
+                    "message type is not implemented: {message_type:?}"
+                )
+            }
             Self::DuplicatePendingRequest(message_id) => {
                 write!(
                     formatter,
                     "request message_id is already pending: {message_id}"
                 )
+            }
+            Self::PendingRequestCapacityExceeded => {
+                formatter.write_str("pending request limit exceeded")
             }
             Self::UnknownCorrelationId(correlation_id) => {
                 write!(
@@ -209,6 +228,7 @@ struct PendingRequest {
     requester: String,
     target: String,
     room: String,
+    created_at: Instant,
 }
 
 #[derive(Clone, Debug)]
@@ -267,6 +287,7 @@ impl BrokerCore {
         monitor_authorized: bool,
     ) -> Result<Vec<Delivery>, BrokerError> {
         frame.envelope.validate().map_err(FrameError::from)?;
+        self.close_expired_requests_at(Instant::now());
         let peer_id = match self.connection_peers.get(&connection_id) {
             Some(peer_id) => peer_id.clone(),
             None => return self.register_hello(connection_id, frame, monitor_authorized),
@@ -317,11 +338,11 @@ impl BrokerCore {
             MessageType::Publish => self.route_publish(&peer_id, frame),
             MessageType::Request => self.route_request(&peer_id, frame),
             MessageType::Response | MessageType::Error => self.route_response(&peer_id, frame),
-            MessageType::Ping
+            message_type @ (MessageType::Ping
             | MessageType::Pong
             | MessageType::BinaryBegin
             | MessageType::BinaryChunk
-            | MessageType::BinaryEnd => Ok(Vec::new()),
+            | MessageType::BinaryEnd) => Err(BrokerError::UnsupportedMessageType(message_type)),
             MessageType::MonitorSnapshotRequest => {
                 if !self.monitor_connections.contains(&connection_id) {
                     return Err(BrokerError::MonitorNotAllowed);
@@ -501,13 +522,26 @@ impl BrokerCore {
     fn route_publish(&self, sender: &str, frame: Frame) -> Result<Vec<Delivery>, BrokerError> {
         let room = required_room(&frame)?;
         self.require_room_member(sender, &room)?;
+        if frame.envelope.target.is_some() && frame.envelope.topic.is_some() {
+            return Err(BrokerError::AmbiguousPublishRouting);
+        }
+        if let Some(target) = frame.envelope.target.clone() {
+            self.require_routable_target(&target, &room)?;
+            if target == sender {
+                return Ok(Vec::new());
+            }
+            return Ok(vec![Delivery {
+                peer_id: target,
+                frame,
+            }]);
+        }
         let peers = match &frame.envelope.topic {
             Some(topic) => self.subscriptions.get(&(room, topic.clone())),
             None => self.rooms.get(&room),
         };
         Ok(peers
             .into_iter()
-            .flat_map(|peers| peers.iter())
+            .flat_map(|members| members.iter())
             .filter(|peer_id| peer_id.as_str() != sender)
             .map(|peer_id| Delivery {
                 peer_id: peer_id.clone(),
@@ -523,10 +557,7 @@ impl BrokerCore {
         if target == RUNTIME_BROKER_SENDER {
             return self.join_session_slot(sender, room, frame);
         }
-        if !self.peer_connections.contains_key(&target) {
-            return Err(BrokerError::TargetNotConnected(target));
-        }
-        self.require_room_member(&target, &room)?;
+        self.require_routable_target(&target, &room)?;
         if self
             .pending_requests
             .contains_key(&frame.envelope.message_id)
@@ -535,12 +566,16 @@ impl BrokerCore {
                 frame.envelope.message_id.clone(),
             ));
         }
+        if self.pending_requests.len() >= MAX_PENDING_REQUESTS {
+            return Err(BrokerError::PendingRequestCapacityExceeded);
+        }
         self.pending_requests.insert(
             frame.envelope.message_id.clone(),
             PendingRequest {
                 requester: sender.to_owned(),
                 target: target.clone(),
                 room,
+                created_at: Instant::now(),
             },
         );
         Ok(vec![Delivery {
@@ -596,6 +631,19 @@ impl BrokerCore {
         } else {
             Err(BrokerError::NotInRoom(room.to_owned()))
         }
+    }
+
+    fn close_expired_requests_at(&mut self, now: Instant) {
+        self.pending_requests.retain(|_, pending| {
+            now.saturating_duration_since(pending.created_at) < PENDING_REQUEST_TIMEOUT
+        });
+    }
+
+    fn require_routable_target(&self, peer_id: &str, room: &str) -> Result<(), BrokerError> {
+        if !self.peer_connections.contains_key(peer_id) {
+            return Err(BrokerError::TargetNotConnected(peer_id.to_owned()));
+        }
+        self.require_room_member(peer_id, room)
     }
 
     fn remove_from_room(&mut self, peer_id: &str, room: &str) {
@@ -955,13 +1003,12 @@ pub struct BrokerServer {
     listener: TcpListener,
     config: BrokerConfig,
     core: BrokerCore,
-    event_sender: Sender<NetworkEvent>,
+    event_sender: SyncSender<NetworkEvent>,
     event_receiver: Receiver<NetworkEvent>,
     connections: HashMap<ConnectionId, NetworkConnection>,
     next_connection_id: ConnectionId,
     idle_since: Option<Instant>,
     runtime_token: Option<String>,
-    monitor_connections: HashSet<ConnectionId>,
 }
 
 impl BrokerServer {
@@ -970,7 +1017,7 @@ impl BrokerServer {
         validate_bind_address(config.bind_addr)?;
         let listener = TcpListener::bind(config.bind_addr).map_err(BrokerError::Io)?;
         listener.set_nonblocking(true).map_err(BrokerError::Io)?;
-        let (event_sender, event_receiver) = mpsc::channel();
+        let (event_sender, event_receiver) = mpsc::sync_channel(NETWORK_EVENT_QUEUE_CAPACITY);
         Ok(Self {
             listener,
             config,
@@ -982,7 +1029,6 @@ impl BrokerServer {
             // 0秒は、接続がない状態で直ちに終了するという従来の意味を保つ。
             idle_since: Some(Instant::now()),
             runtime_token: None,
-            monitor_connections: HashSet::new(),
         })
     }
 
@@ -1001,7 +1047,9 @@ impl BrokerServer {
         loop {
             self.accept_pending_connections()?;
             self.process_network_events();
-            self.close_expired_handshakes_at(Instant::now());
+            let now = Instant::now();
+            self.close_expired_handshakes_at(now);
+            self.core.close_expired_requests_at(now);
             if self.should_shutdown() {
                 return Ok(());
             }
@@ -1025,7 +1073,7 @@ impl BrokerServer {
         self.next_connection_id += 1;
         let reader_stream = stream.try_clone().map_err(BrokerError::Io)?;
         let closer = stream.try_clone().map_err(BrokerError::Io)?;
-        let (outgoing, outgoing_receiver) = mpsc::channel();
+        let (outgoing, outgoing_receiver) = mpsc::sync_channel(OUTGOING_QUEUE_CAPACITY);
         let event_sender = self.event_sender.clone();
         let limits = self.config.frame_limits;
         spawn_writer(
@@ -1035,7 +1083,7 @@ impl BrokerServer {
             event_sender.clone(),
             limits,
         );
-        spawn_reader(connection_id, reader_stream, event_sender, limits);
+        let _reader_thread = spawn_reader(connection_id, reader_stream, event_sender, limits);
         self.connections.insert(
             connection_id,
             NetworkConnection {
@@ -1074,9 +1122,6 @@ impl BrokerServer {
                         monitor_hello_authorized,
                     ) {
                         Ok(deliveries) => {
-                            if monitor_hello_authorized {
-                                self.monitor_connections.insert(connection_id);
-                            }
                             if let Some(ack) = runtime_ack {
                                 self.send_to_connection(connection_id, ack);
                             }
@@ -1114,7 +1159,7 @@ impl BrokerServer {
             let Some(connection) = self.connections.get(&connection_id) else {
                 continue;
             };
-            if connection.outgoing.send(delivery.frame).is_err() {
+            if connection.outgoing.try_send(delivery.frame).is_err() {
                 failed_connections.push(connection_id);
             }
         }
@@ -1127,7 +1172,7 @@ impl BrokerServer {
         let failed = self
             .connections
             .get(&connection_id)
-            .is_none_or(|connection| connection.outgoing.send(frame).is_err());
+            .is_none_or(|connection| connection.outgoing.try_send(frame).is_err());
         if failed {
             self.close_connection(connection_id);
         }
@@ -1139,9 +1184,7 @@ impl BrokerServer {
         request_id: &str,
         include_presence: bool,
     ) -> Result<Frame, BrokerError> {
-        if !self.monitor_connections.contains(&connection_id)
-            || !self.core.is_monitor_connection(connection_id)
-        {
+        if !self.core.is_monitor_connection(connection_id) {
             return Err(BrokerError::MonitorNotAllowed);
         }
         let peer_id = self
@@ -1189,7 +1232,6 @@ impl BrokerServer {
             return;
         };
         let _ = connection.closer.shutdown(Shutdown::Both);
-        self.monitor_connections.remove(&connection_id);
         self.core.disconnect(connection_id);
         if self.connections.is_empty() {
             self.idle_since = Some(Instant::now());
@@ -1265,7 +1307,7 @@ impl BrokerServer {
 }
 
 struct NetworkConnection {
-    outgoing: Sender<Frame>,
+    outgoing: SyncSender<Frame>,
     closer: TcpStream,
     accepted_at: Instant,
 }
@@ -1283,9 +1325,9 @@ enum NetworkEvent {
 fn spawn_reader(
     connection_id: ConnectionId,
     mut stream: TcpStream,
-    event_sender: Sender<NetworkEvent>,
+    event_sender: SyncSender<NetworkEvent>,
     limits: FrameLimits,
-) {
+) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         while let Ok(frame) = Frame::read_from(&mut stream, limits) {
             if event_sender
@@ -1299,14 +1341,14 @@ fn spawn_reader(
             }
         }
         let _ = event_sender.send(NetworkEvent::Disconnected { connection_id });
-    });
+    })
 }
 
 fn spawn_writer(
     connection_id: ConnectionId,
     stream: TcpStream,
     receiver: Receiver<Frame>,
-    event_sender: Sender<NetworkEvent>,
+    event_sender: SyncSender<NetworkEvent>,
     limits: FrameLimits,
 ) {
     thread::spawn(move || {
@@ -1319,7 +1361,7 @@ fn writer_loop(
     connection_id: ConnectionId,
     writer: &mut impl io::Write,
     receiver: Receiver<Frame>,
-    event_sender: Sender<NetworkEvent>,
+    event_sender: SyncSender<NetworkEvent>,
     limits: FrameLimits,
 ) {
     while let Ok(frame) = receiver.recv() {
@@ -1725,7 +1767,6 @@ mod tests {
                 true,
             )
             .expect("monitor hello must register");
-        server.monitor_connections.insert(1);
         server
             .core
             .receive(2, presence_hello("blender:peer-001"))
@@ -1857,6 +1898,111 @@ mod tests {
 
         assert_eq!(deliveries.len(), 1);
         assert_eq!(deliveries[0].peer_id, "maya:two");
+    }
+
+    #[test]
+    fn targeted_publish_reaches_only_same_room_target_and_keeps_binary_bytes() {
+        let mut core = BrokerCore::default();
+        for (connection_id, peer_id, room) in [
+            (1, "blender:one", "room-a"),
+            (2, "maya:two", "room-a"),
+            (3, "unity:three", "room-a"),
+        ] {
+            connect(&mut core, connection_id, peer_id);
+            core.receive(connection_id, join(peer_id, room))
+                .expect("join must succeed");
+        }
+
+        let binary_body = [0, 1, 2, 255];
+        let deliveries = core
+            .receive(
+                1,
+                frame(
+                    "blender:one",
+                    MessageType::Publish,
+                    Some("room-a"),
+                    None,
+                    Some("maya:two"),
+                    &binary_body,
+                ),
+            )
+            .expect("targeted publish must route");
+
+        assert_eq!(deliveries.len(), 1);
+        assert_eq!(deliveries[0].peer_id, "maya:two");
+        assert_eq!(deliveries[0].frame.body, binary_body);
+    }
+
+    #[test]
+    fn targeted_publish_rejects_cross_room_target() {
+        let mut core = BrokerCore::default();
+        connect(&mut core, 1, "blender:one");
+        connect(&mut core, 2, "maya:two");
+        core.receive(1, join("blender:one", "room-a"))
+            .expect("join must succeed");
+        core.receive(2, join("maya:two", "room-b"))
+            .expect("join must succeed");
+
+        assert!(matches!(
+            core.receive(
+                1,
+                frame(
+                    "blender:one",
+                    MessageType::Publish,
+                    Some("room-a"),
+                    None,
+                    Some("maya:two"),
+                    &[],
+                )
+            ),
+            Err(BrokerError::NotInRoom(room)) if room == "room-a"
+        ));
+    }
+
+    #[test]
+    fn publish_rejects_target_and_topic_together() {
+        let mut core = BrokerCore::default();
+        connect(&mut core, 1, "blender:one");
+        core.receive(1, join("blender:one", "room-a"))
+            .expect("join must succeed");
+
+        assert!(matches!(
+            core.receive(
+                1,
+                frame(
+                    "blender:one",
+                    MessageType::Publish,
+                    Some("room-a"),
+                    Some("camera"),
+                    Some("maya:two"),
+                    &[],
+                )
+            ),
+            Err(BrokerError::AmbiguousPublishRouting)
+        ));
+    }
+
+    #[test]
+    fn unsupported_message_types_fail_closed() {
+        let mut core = BrokerCore::default();
+        connect(&mut core, 1, "blender:one");
+
+        for message_type in [
+            MessageType::Ping,
+            MessageType::Pong,
+            MessageType::BinaryBegin,
+            MessageType::BinaryChunk,
+            MessageType::BinaryEnd,
+        ] {
+            let result = core.receive(
+                1,
+                frame("blender:one", message_type.clone(), None, None, None, &[]),
+            );
+            assert!(matches!(
+                result,
+                Err(BrokerError::UnsupportedMessageType(actual)) if actual == message_type
+            ));
+        }
     }
 
     #[test]
@@ -2485,6 +2631,61 @@ mod tests {
     }
 
     #[test]
+    fn pending_requests_are_bounded_and_expire() {
+        let mut core = BrokerCore::default();
+        connect(&mut core, 1, "blender:one");
+        connect(&mut core, 2, "maya:two");
+        for (connection_id, peer_id) in [(1, "blender:one"), (2, "maya:two")] {
+            core.receive(connection_id, join(peer_id, "room-a"))
+                .expect("join must succeed");
+        }
+        for index in 0..MAX_PENDING_REQUESTS {
+            core.receive(
+                1,
+                request(
+                    "blender:one",
+                    &format!("request-{index}"),
+                    "room-a",
+                    "maya:two",
+                ),
+            )
+            .expect("request below the limit must route");
+        }
+
+        assert!(matches!(
+            core.receive(
+                1,
+                request("blender:one", "request-overflow", "room-a", "maya:two")
+            ),
+            Err(BrokerError::PendingRequestCapacityExceeded)
+        ));
+        assert_eq!(core.pending_request_count(), MAX_PENDING_REQUESTS);
+
+        let now = Instant::now();
+        for pending in core.pending_requests.values_mut() {
+            pending.created_at = now
+                .checked_sub(PENDING_REQUEST_TIMEOUT)
+                .expect("instant must support test offset");
+        }
+        core.close_expired_requests_at(now);
+
+        assert_eq!(core.pending_request_count(), 0);
+        assert!(matches!(
+            core.receive(
+                2,
+                response(
+                    "maya:two",
+                    "late-response",
+                    "room-a",
+                    "blender:one",
+                    "request-0",
+                )
+            ),
+            Err(BrokerError::UnknownCorrelationId(correlation_id)) if correlation_id == "request-0"
+        ));
+    }
+
+    #[test]
     fn response_rejects_forged_or_unknown_correlation() {
         let mut core = BrokerCore::default();
         for (connection_id, peer_id) in [(1, "blender:one"), (2, "maya:two"), (3, "unity:three")] {
@@ -2632,7 +2833,7 @@ mod tests {
             .send(hello("blender:one"))
             .expect("send must succeed");
         drop(sender);
-        let (event_sender, event_receiver) = mpsc::channel();
+        let (event_sender, event_receiver) = mpsc::sync_channel(1);
         let mut writer = FailingWriter;
 
         writer_loop(
@@ -2647,6 +2848,74 @@ mod tests {
             event_receiver.recv_timeout(Duration::from_secs(1)),
             Ok(NetworkEvent::Disconnected { connection_id: 42 })
         ));
+    }
+
+    #[test]
+    fn bounded_event_queue_backpressures_reader_and_reports_disconnect() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("listener must bind");
+        let mut client = TcpStream::connect(listener.local_addr().expect("address must resolve"))
+            .expect("client must connect");
+        let (reader_stream, _) = listener.accept().expect("server stream must connect");
+        let (event_sender, event_receiver) = mpsc::sync_channel(1);
+        let limits = FrameLimits::default();
+        let reader = spawn_reader(7, reader_stream, event_sender, limits);
+
+        hello("blender:one")
+            .write_to(&mut client, limits)
+            .expect("first frame must write");
+        hello("maya:two")
+            .write_to(&mut client, limits)
+            .expect("second frame must write");
+        for expected_sender in ["blender:one", "maya:two"] {
+            let NetworkEvent::Received { frame, .. } = event_receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("reader must retain each frame while the queue is full")
+            else {
+                panic!("reader must report a received frame");
+            };
+            assert_eq!(frame.envelope.sender, expected_sender);
+        }
+
+        drop(client);
+        assert!(matches!(
+            event_receiver.recv_timeout(Duration::from_secs(1)),
+            Ok(NetworkEvent::Disconnected { connection_id: 7 })
+        ));
+        reader.join().expect("reader must stop after disconnect");
+    }
+
+    #[test]
+    fn outgoing_queue_overflow_closes_the_slow_connection() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("listener must bind");
+        let client = TcpStream::connect(listener.local_addr().expect("address must resolve"))
+            .expect("client must connect");
+        let (closer, _) = listener.accept().expect("server stream must connect");
+        let (outgoing, receiver) = mpsc::sync_channel(OUTGOING_QUEUE_CAPACITY);
+        for _ in 0..OUTGOING_QUEUE_CAPACITY {
+            outgoing
+                .try_send(hello("queued:peer"))
+                .expect("queue must accept frames up to its capacity");
+        }
+        let mut server = BrokerServer::bind(BrokerConfig::default()).expect("server must bind");
+        connect(&mut server.core, 1, "maya:slow");
+        server.connections.insert(
+            1,
+            NetworkConnection {
+                outgoing,
+                closer,
+                accepted_at: Instant::now(),
+            },
+        );
+
+        server.dispatch(vec![Delivery {
+            peer_id: "maya:slow".to_owned(),
+            frame: hello("blender:one"),
+        }]);
+
+        assert!(!server.connections.contains_key(&1));
+        assert!(!server.core.is_registered(1));
+        assert_eq!(receiver.try_iter().count(), OUTGOING_QUEUE_CAPACITY);
+        drop(client);
     }
 
     #[test]
