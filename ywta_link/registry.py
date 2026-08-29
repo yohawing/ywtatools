@@ -68,6 +68,8 @@ SCHEMA_FIELD_ORDER = MappingProxyType(
             "orthographic_size",
             "film_fit",
             "gate_fit",
+            "aspect_ratio",
+            "change_id",
         ),
         "ywta.common.morph-weights.v1": (
             "entity_ref",

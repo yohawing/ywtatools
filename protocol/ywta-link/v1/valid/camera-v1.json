@@ -46,5 +46,7 @@
   "exposure": 0.0,
   "orthographic_size": null,
   "film_fit": "horizontal",
-  "gate_fit": null
+  "gate_fit": null,
+  "aspect_ratio": 1.5,
+  "change_id": "camera-change-001"
 }

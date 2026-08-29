@@ -1035,12 +1035,14 @@ tickはJavaScript Clientでも丸めず扱える±(2^53-1)のJSON safe integer�
 
 #### v1 wire contract
 
-Camera payloadのtop-level Fieldは次の15個に固定する。全Fieldを必須キーとし、projectionで適用しない
+Camera payloadのtop-level Fieldは次の17個に固定する。全Fieldを必須キーとし、projectionで適用しない
 値だけを`null`にする。`schema` discriminatorはpayloadへ含めず、EnvelopeまたはSync Contractのschema ID
 （`ywta.common.camera.v1`）で識別する。`entity_ref`と`time`は、それぞれ確定済みの
 `ywta.common.entity-ref.v1`と`ywta.common.time.v1`に適合しなければならない。`transform`は
 `ywta.common.transform.v1`に適合するobjectとして保持し、Camera内の`entity_ref`と`transform.entity_ref`は
 4 Fieldすべてが一致しなければならない。Cameraの全長さFieldはmm、Transformのunitとは独立して扱う。
+Camera v1は先行する実装・release済みAdapterがないDeveloper Preview中にこの17 Fieldへ確定したため、
+旧説明用の15 Field payloadはfreeze前の非互換fixtureとして受理しない。
 
 Transform型の定義とCamera Golden fixtureへのcompositionをCamera v1のcanonical
 Transform contractとする。先行するrelease済みAdapterはなく、以前のopaqueな説明用objectはfreeze前に置き換えた。
@@ -1056,8 +1058,10 @@ Transform contractとする。先行するrelease済みAdapterはなく、以前
 | `focus_distance` | number または `null` | 長さはmm、正数。nullは未提供 |
 | `f_stop` | number または `null` | 正数、nullは未提供 |
 | `exposure` | number または `null` | EV（unitless）のscalar、nullは未提供 |
-| `orthographic_size` | number または `null` | Orthographic必須。長さはmm、正数 |
+| `orthographic_size` | number または `null` | Orthographic必須。撮像面の垂直全高、単位はmm、正数 |
 | `film_fit`、`gate_fit` | string または `null` | `horizontal`、`vertical`、`fill`、`overscan` のいずれか |
+| `aspect_ratio` | number | Pixel aspectを含む出力表示幅 / 出力表示高、正数 |
+| `change_id` | string | 同一origin、同一Session内で再利用しないlogical change ID |
 
 Orthographicでは`orthographic_size`を必須とし、`focal_length`、`horizontal_aperture`、
 `vertical_aperture`、`aperture_offset`は`null`にする。Perspectiveでは逆にそれらのLens Fieldを必須とし、
@@ -1065,6 +1069,11 @@ Orthographicでは`orthographic_size`を必須とし、`focal_length`、`horizon
 利用可能だが、未提供なら`null`にできる。Camera固有の全長さ値をmmへ統一することで、OpenUSD Cameraの
 focal/aperture語彙とclip/focus/orthographic sizeを同じwire unitで扱い、Transformのunitとは独立に
 AdapterがHostのscene unitへ変換する。
+
+`aspect_ratio`はCamera lensのsensor aspectではなく、同期時の出力framingを表す。Camera Adapterは
+Render resolutionなどHost全体の設定を受信だけで変更してはならない。Binding時の出力aspectと受信値が
+一致する場合だけCameraを適用し、不一致は`unsupported`または型付き失敗としてfail closedにする。
+`change_id`はEnvelopeの`message_id`や`time`で代用せず、`origin_peer_id`との組で遅延callbackのecho抑止に使う。
 
 Python codecは入力objectを再帰的に検証・immutable copyし、出力は未知Fieldを追加せず、UTF-8の
 deterministic compact JSON（sort keys、allow_nan=false）とする。

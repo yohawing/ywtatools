@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import threading
 from dataclasses import dataclass
 from typing import Callable
 
 from .adapter import AdapterDispatch
+from ._snapshot_sync import OwnedSyncSession
 from .authority import AuthorityHandoffTracker
 from .authority_transport import AuthorityHandoffTransport
 from .client import LinkClient
@@ -63,101 +63,12 @@ class PlaybackSessionConfig:
             raise PlaybackSessionError(f"invalid playback timebase: {error}") from error
 
 
-class PlaybackSession:
+class PlaybackSession(OwnedSyncSession):
     """専用Clientを所有し、DCC Lifecycleへ開始と終了を委譲する。"""
 
-    def __init__(
-        self,
-        lifecycle: object,
-        authority_tracker: AuthorityHandoffTracker,
-        runtime: PlaybackSyncRuntime,
-        client: object,
-    ) -> None:
-        """構成済みで未開始のSessionを初期化する。"""
-
-        if not callable(getattr(lifecycle, "start", None)) or not callable(getattr(lifecycle, "close", None)):
-            raise PlaybackSessionError("lifecycle must provide start() and close()")
-        self.lifecycle = lifecycle
-        self.authority_tracker = authority_tracker
-        self._runtime = runtime
-        self._client = client
-        self._owner_thread_id = threading.get_ident()
-        self._started = False
-        self._start_attempted = False
-        self._cleanup_completed = False
-        self._closed = False
-
-    @property
-    def authority_transport(self) -> AuthorityHandoffTransport:
-        """SessionのAuthority transportを観測する。"""
-
-        return self._runtime.authority_transport
-
-    def start(self) -> bool:
-        """Lifecycleを一度だけ開始する。"""
-
-        self._require_owner()
-        if self._closed:
-            raise PlaybackSessionError("PlaybackSession is closed")
-        if self._started:
-            return False
-        self._start_attempted = True
-        result = self.lifecycle.start()
-        if result is not True:
-            raise PlaybackSessionError("lifecycle.start() must return True")
-        self._started = True
-        return True
-
-    def close(self) -> bool:
-        """Lifecycle成功後だけClientを閉じ、失敗時は終了を再試行可能にする。"""
-
-        self._require_owner()
-        if self._closed:
-            return False
-        if not self._cleanup_completed:
-            if self._start_attempted:
-                self._close_lifecycle()
-            else:
-                self._close_runtime()
-            self._cleanup_completed = True
-        self._close_client()
-        self._closed = True
-        return True
-
-    def _close_runtime(self) -> None:
-        """未開始または開始rollback済みRuntimeを直接終了する。"""
-
-        try:
-            self._runtime.close()
-        except BaseException as error:
-            raise PlaybackSessionError("PlaybackSyncRuntime.close() failed") from error
-
-    def _close_lifecycle(self) -> None:
-        """開始試行済みLifecycleを閉じ、rollback済み状態だけFalseを許可する。"""
-
-        try:
-            result = self.lifecycle.close()
-        except BaseException as error:
-            raise PlaybackSessionError("lifecycle.close() failed") from error
-        if result is True:
-            return
-        status = getattr(self.lifecycle, "status", None)
-        if getattr(status, "closed", False) is not True:
-            raise PlaybackSessionError("lifecycle.close() must return True unless lifecycle is already closed")
-
-    def _close_client(self) -> None:
-        """専用Clientを明示的に終了する。"""
-
-        try:
-            self._client.close()
-        except BaseException as error:
-            raise PlaybackSessionError("client.close() failed") from error
-
-    def _require_owner(self) -> None:
-        """DCC Main Thread以外からのlifecycle操作を拒否する。"""
-
-        if threading.get_ident() != self._owner_thread_id:
-            raise PlaybackSessionError("PlaybackSession operation must run on its owner thread")
+    error_type = PlaybackSessionError
+    session_name = "PlaybackSession"
+    runtime_name = "PlaybackSyncRuntime"
 
 
 def compose_playback_session(

@@ -15,6 +15,16 @@ from .authority import (
 )
 from .authority_transport import AuthorityHandoffTransport, AuthorityTransportError, AuthorityTransportThreadError
 from .camera import Camera, CameraValidationError
+from .camera_session import CameraSession, CameraSessionConfig, CameraSessionError, compose_camera_session
+from .camera_sync import (
+    CameraController,
+    CameraEchoGuard,
+    CameraHandoffCoordinator,
+    CameraSyncError,
+    CameraSyncRuntime,
+    CameraSyncThreadError,
+    CameraTopicTransport,
+)
 from .client import LinkClient, LinkClientError
 from .contract import NegotiationResult, SyncChannel, SyncContract
 from .entity_ref import EntityReference, EntityReferenceValidationError
@@ -58,6 +68,16 @@ __all__ = (
     "AuthorityTransportThreadError",
     "AuthorityValidationError",
     "Camera",
+    "CameraController",
+    "CameraEchoGuard",
+    "CameraHandoffCoordinator",
+    "CameraSession",
+    "CameraSessionConfig",
+    "CameraSessionError",
+    "CameraSyncError",
+    "CameraSyncRuntime",
+    "CameraSyncThreadError",
+    "CameraTopicTransport",
     "CameraValidationError",
     "ChannelRevisionTracker",
     "CoordinateSystem",
@@ -108,6 +128,7 @@ __all__ = (
     "Transform",
     "TransformValidationError",
     "bootstrap_playback_session",
+    "compose_camera_session",
     "compose_playback_session",
     "resolve_broker_executable",
 )

@@ -106,6 +106,7 @@ class Camera:
 
     `entity_ref`、`transform`、`time`は確定済みCommon型へ変換する。
     構築時にimmutable化するため、元入力やencode結果の変更でCameraは変化しない。
+    `orthographic_size`は撮像面の垂直全高をmillimeterで表す。
     """
 
     entity_ref: EntityReference | Mapping[str, Any]
@@ -123,6 +124,8 @@ class Camera:
     orthographic_size: float | None
     film_fit: str | None
     gate_fit: str | None
+    aspect_ratio: float
+    change_id: str
 
     def __post_init__(self) -> None:
         """直接構築でもwire contractの不変条件を適用する。"""
@@ -175,6 +178,13 @@ class Camera:
         )
         object.__setattr__(self, "film_fit", _optional_enum(self.film_fit, FILM_FIT_VALUES, "film_fit"))
         object.__setattr__(self, "gate_fit", _optional_enum(self.gate_fit, GATE_FIT_VALUES, "gate_fit"))
+        object.__setattr__(self, "aspect_ratio", _number(self.aspect_ratio, "aspect_ratio", positive=True))
+        if not isinstance(self.change_id, str) or not self.change_id or not self.change_id.strip():
+            raise CameraValidationError("change_id must be a non-whitespace string")
+        try:
+            self.change_id.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise CameraValidationError("change_id must be valid UTF-8") from exc
 
         if self.projection == "perspective":
             for field_name in ("focal_length", "horizontal_aperture", "vertical_aperture"):
@@ -232,6 +242,8 @@ class Camera:
             "orthographic_size": self.orthographic_size,
             "film_fit": self.film_fit,
             "gate_fit": self.gate_fit,
+            "aspect_ratio": self.aspect_ratio,
+            "change_id": self.change_id,
         }
 
     def encode(self) -> str:
