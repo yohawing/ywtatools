@@ -651,9 +651,11 @@ class PlaybackSyncRuntimeTest(unittest.TestCase):
         """Playback topicとAuthority control topicの衝突をRuntime構成時に拒否する。"""
 
         runtime, client, dispatch, authority, _transport, controller = self._runtime()
-        control_topic_transport = PlaybackTopicTransport(client, "room", authority.topic)
+        control_topic_transport = PlaybackTopicTransport(client, "room", "temporary-topic")
         self.addCleanup(runtime.close)
         self.addCleanup(control_topic_transport.close)
+        self.addCleanup(setattr, control_topic_transport, "_topic", "temporary-topic")
+        control_topic_transport._topic = authority.topic
         with self.assertRaisesRegex(PlaybackSyncRuntimeError, "must differ"):
             PlaybackSyncRuntime(
                 dispatch,

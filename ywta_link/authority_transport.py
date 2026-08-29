@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import threading
 import uuid
-import weakref
 from collections.abc import Mapping
 from typing import Any
 
@@ -23,10 +22,7 @@ from .authority import (
     AuthorityValidationError,
 )
 from .frame import Frame
-
-
-_LEASES: weakref.WeakKeyDictionary[object, dict[tuple[str, str], weakref.ReferenceType[object]]] = weakref.WeakKeyDictionary()
-_LEASES_LOCK = threading.Lock()
+from ._topic_lease import claim_topic, release_topic
 
 
 class AuthorityTransportError(RuntimeError):
@@ -65,7 +61,7 @@ class AuthorityHandoffTransport:
         self._active = False
         self._closed = False
         self._failed = False
-        _claim_lease(client, self._room, self._topic, self)
+        claim_topic(client, self._room, self._topic, self, AuthorityTransportError)
 
     @property
     def client(self) -> object:
@@ -307,7 +303,7 @@ class AuthorityHandoffTransport:
             self._call_client("unsubscribe", self._client.unsubscribe, self._room, self._topic)
             self._active = False
         self._closed = True
-        _release_lease(self._client, self._room, self._topic, self)
+        release_topic(self._client, self._room, self._topic, self)
         return True
 
     def _handle_request(self, frame: Frame) -> bool:
@@ -553,36 +549,6 @@ def _require_message_id(value: object, operation: str) -> str:
     if not isinstance(value, str) or not value:
         raise AuthorityTransportError(f"{operation} must return a non-empty string message ID")
     return value
-
-
-def _claim_lease(client: object, room: str, topic: str, owner: object) -> None:
-    """同じClient内のRoom/Topicを一つのAuthority transportへ貸し出す。"""
-
-    key = (room, topic)
-    try:
-        with _LEASES_LOCK:
-            leases = _LEASES.setdefault(client, {})
-            existing = leases.get(key)
-            if existing is not None and existing() is not None:
-                raise AuthorityTransportError("Room/Topic is already owned by another Authority transport")
-            leases[key] = weakref.ref(owner)
-    except TypeError as exc:
-        raise AuthorityTransportError("client must support identity-based weak references") from exc
-
-
-def _release_lease(client: object, room: str, topic: str, owner: object) -> None:
-    """close成功後に自身が所有するRoom/Topic leaseだけを解放する。"""
-
-    key = (room, topic)
-    with _LEASES_LOCK:
-        leases = _LEASES.get(client)
-        if leases is None:
-            return
-        existing = leases.get(key)
-        if existing is not None and existing() is owner:
-            del leases[key]
-        if not leases:
-            del _LEASES[client]
 
 
 def _error_text(error: Exception) -> str:

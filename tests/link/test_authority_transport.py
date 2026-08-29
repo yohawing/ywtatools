@@ -23,6 +23,7 @@ from ywta_link import (
     Envelope,
     Frame,
     PlaybackTopicTransport,
+    PlaybackTransportError,
 )
 
 
@@ -37,6 +38,7 @@ class _FakeClient:
         self.fail_request = False
         self.fail_response = False
         self.fail_publish = False
+        self.fail_unsubscribe = False
 
     def subscribe(self, room: str, topic: str) -> str:
         """購読を記録する。"""
@@ -47,6 +49,8 @@ class _FakeClient:
     def unsubscribe(self, room: str, topic: str) -> str:
         """購読解除を記録する。"""
 
+        if self.fail_unsubscribe:
+            raise RuntimeError("unsubscribe failed")
         self.calls.append(("unsubscribe", (room, topic)))
         return "unsubscribe-001"
 
@@ -159,6 +163,34 @@ class AuthorityHandoffTransportTest(unittest.TestCase):
         self.addCleanup(playback.close)
         self.assertTrue(playback.subscribe())
         self.assertTrue(self.authority.active)
+
+    def test_topic_lease_is_exclusive_across_transport_types(self) -> None:
+        """同一Clientの同一Room/Topicを異種transport間でも排他にする。"""
+
+        topic = self.authority.topic
+        with self.assertRaisesRegex(PlaybackTransportError, "already owned"):
+            PlaybackTopicTransport(self.authority_client, "room-001", topic)
+
+        self.authority.close()
+        playback = PlaybackTopicTransport(self.authority_client, "room-001", topic)
+        with self.assertRaisesRegex(AuthorityTransportError, "already owned"):
+            AuthorityHandoffTransport(self.authority_client, "room-001", self.authority_tracker)
+
+        playback.close()
+        replacement = AuthorityHandoffTransport(self.authority_client, "room-001", self.authority_tracker)
+        replacement.close()
+
+    def test_failed_close_keeps_cross_transport_topic_lease(self) -> None:
+        """unsubscribe失敗時は異種transportにleaseを明け渡さない。"""
+
+        self.authority_client.fail_unsubscribe = True
+        with self.assertRaisesRegex(AuthorityTransportError, "unsubscribe failed"):
+            self.authority.close()
+        with self.assertRaisesRegex(PlaybackTransportError, "already owned"):
+            PlaybackTopicTransport(self.authority_client, "room-001", self.authority.topic)
+
+        self.authority_client.fail_unsubscribe = False
+        self.authority.close()
 
     def test_request_registers_pending_before_client_send(self) -> None:
         """Request送信時はClient呼出しより先にlocal pendingを登録する。"""

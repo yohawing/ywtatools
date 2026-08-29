@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import gc
 import threading
 import unittest
+import weakref
 
 from ywta_link import (
     Envelope,
@@ -335,6 +337,33 @@ class PlaybackTopicTransportTest(unittest.TestCase):
         self.client.fail_unsubscribe = False
         self.transport.close()
         replacement = PlaybackTopicTransport(self.client, "shot-010", "sync/timeline/playback")
+        replacement.close()
+
+    def test_topic_lease_uses_client_identity_and_reclaims_dead_owner(self) -> None:
+        """値が等しい別Clientを分離し、GC済みownerのleaseを再利用する。"""
+
+        class EqualClient(_FakeClient):
+            """全instanceが値として等しいClient代替。"""
+
+            def __eq__(self, other: object) -> bool:
+                return isinstance(other, EqualClient)
+
+            def __hash__(self) -> int:
+                return 1
+
+        first_client = EqualClient()
+        second_client = EqualClient()
+        first = PlaybackTopicTransport(first_client, "room", "topic")
+        second = PlaybackTopicTransport(second_client, "room", "topic")
+        first.close()
+        second.close()
+
+        abandoned = PlaybackTopicTransport(self.client, "room", "gc-topic")
+        abandoned_ref = weakref.ref(abandoned)
+        del abandoned
+        gc.collect()
+        self.assertIsNone(abandoned_ref())
+        replacement = PlaybackTopicTransport(self.client, "room", "gc-topic")
         replacement.close()
 
     def test_closed_transport_rejects_operations(self) -> None:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import threading
-import weakref
 from collections.abc import Mapping
 from typing import Any
 
@@ -11,10 +10,7 @@ from .client import LinkClient
 from .frame import Frame
 from .playback import PLAYBACK_SCHEMA, Playback, PlaybackValidationError
 from .playback_controller import PlaybackController
-
-
-_LEASES: weakref.WeakKeyDictionary[object, dict[tuple[str, str], weakref.ReferenceType[object]]] = weakref.WeakKeyDictionary()
-_LEASES_LOCK = threading.Lock()
+from ._topic_lease import claim_topic, release_topic
 
 
 class PlaybackTransportError(RuntimeError):
@@ -40,7 +36,7 @@ class PlaybackTopicTransport:
         self._owner_thread_id = threading.get_ident()
         self._active = False
         self._closed = False
-        _claim_lease(client, self._room, self._topic, self)
+        claim_topic(client, self._room, self._topic, self, PlaybackTransportError)
 
     @property
     def room(self) -> str:
@@ -144,7 +140,7 @@ class PlaybackTopicTransport:
             self._call_client("unsubscribe", self._client.unsubscribe, self._room, self._topic)
             self._active = False
         self._closed = True
-        _release_lease(self._client, self._room, self._topic, self)
+        release_topic(self._client, self._room, self._topic, self)
         return True
 
     def _require_owner(self) -> None:
@@ -187,36 +183,6 @@ def _identifier(value: object, field_name: str) -> str:
     except UnicodeEncodeError as exc:
         raise PlaybackTransportError(f"{field_name} must be valid UTF-8") from exc
     return value
-
-
-def _claim_lease(client: object, room: str, topic: str, owner: object) -> None:
-    """同じClient内のRoom/Topicを一つのTransportへ排他的に貸し出す。"""
-
-    key = (room, topic)
-    try:
-        with _LEASES_LOCK:
-            leases = _LEASES.setdefault(client, {})
-            existing = leases.get(key)
-            if existing is not None and existing() is not None:
-                raise PlaybackTransportError("Room/Topic is already owned by another Playback transport")
-            leases[key] = weakref.ref(owner)
-    except TypeError as exc:
-        raise PlaybackTransportError("client must support identity-based weak references") from exc
-
-
-def _release_lease(client: object, room: str, topic: str, owner: object) -> None:
-    """close成功後に自身が所有するRoom/Topic leaseだけを解放する。"""
-
-    key = (room, topic)
-    with _LEASES_LOCK:
-        leases = _LEASES.get(client)
-        if leases is None:
-            return
-        existing = leases.get(key)
-        if existing is not None and existing() is owner:
-            del leases[key]
-        if not leases:
-            del _LEASES[client]
 
 
 def _error_text(error: Exception) -> str:
