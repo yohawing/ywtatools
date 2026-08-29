@@ -37,11 +37,12 @@ Maya ツールの一部は [chadmv/cmt](https://github.com/chadmv/cmt) をベー
 
 ### YWTA Link Developer Preview
 
-YWTA Linkは、同じWindowsユーザーセッションのMayaとBlenderをローカルBroker経由で接続する開発中の基盤です。
-現在はRaw TCP Broker、CLI Monitor、Python Client、再生同期を実装しています。配布用インストーラーと
-Unity、Photoshop、Substance Painter Adapterは未実装です。
+YWTA Linkは、同じWindowsユーザーセッションのMaya、Blender、UnityをローカルBroker経由で接続する
+開発中の基盤です。Raw TCP Broker、CLI Monitor、Python/C# Client、Maya/Blenderの再生同期、
+Unity Timeline同期、3アプリのCamera同期を実装しています。配布用インストーラーと
+Photoshop、Substance Painter Adapterは未実装です。
 
-開発版を試す場合はBrokerをビルドし、MayaまたはBlenderを起動するシェルで実行ファイルを指定します。
+開発版を試す場合はBrokerをビルドし、Maya、Blender、Unity Editorを起動するシェルで実行ファイルを指定します。
 
 ```powershell
 cargo build --manifest-path rust/ywta-link/Cargo.toml
@@ -50,7 +51,8 @@ $env:YWTA_LINK_EXE = (Resolve-Path .\target\debug\ywta-link.exe).Path
 ```
 
 `usage: ywta-link <serve|status|peers|rooms> [options]`が表示されれば準備完了です。詳しい実装境界、
-Playback Syncの開始方法、Protocol契約は[YWTA Link v1 仕様](./specs/ywta-link-v1.md)を参照してください。
+Playback/Timeline/Camera Syncの開始方法、Protocol契約は[YWTA Link v1 仕様](./specs/ywta-link-v1.md)を
+参照してください。
 
 ## 開発に参加する場合
 

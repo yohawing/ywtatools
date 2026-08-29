@@ -11,9 +11,9 @@
 
 | 状態 | 対象 |
 | --- | --- |
-| 実装済み | Raw TCP Broker、Room/Topic/Target routing、CLI Monitor（`status`/`peers`/`rooms`）、Python Client、Maya/BlenderのPlayback Sync |
-| Developer Preview | `cargo build`したBrokerを`YWTA_LINK_EXE`で指定する導入方法。Maya/Blenderの実Host smokeは`not_run` |
-| 未実装 | ユーザー単位Install/Update/Uninstall CLI、Session CLI、WebSocket、Unity/Photoshop/Substance Painter Adapter、chunked binary転送 |
+| 実装済み | Raw TCP Broker、Room/Topic/Target routing、CLI Monitor（`status`/`peers`/`rooms`）、Python/C# Client、Maya/BlenderのPlayback Sync、Unity Timeline Sync、Maya/Blender/UnityのCamera Sync |
+| Developer Preview | `cargo build`したBrokerを`YWTA_LINK_EXE`で指定する導入方法。Maya 2024のhost-native test、Blender 5.2のUI smoke、Unity 6000.0のEditMode testと単独Broker smokeを実施済み。同一Brokerを使う3 Host同時往復は`not_run` |
+| 未実装 | ユーザー単位Install/Update/Uninstall CLI、Session CLI、WebSocket、Photoshop/Substance Painter Adapter、chunked binary転送 |
 
 本文書では要件の強さを次の語で表す。
 
@@ -502,7 +502,7 @@ User environment variableを暗黙に変更してはならない。
 
 ### 4.6 Developer Previewを導入する
 
-現在のBrokerはリポジトリからbuildし、Process単位の`YWTA_LINK_EXE`でPython Clientへ指定する。
+現在のBrokerはリポジトリからbuildし、Process単位の`YWTA_LINK_EXE`でPython/C# Clientへ指定する。
 管理者権限、PATH変更、ユーザー環境変数の永続変更は不要である。
 
 1. リポジトリrootでBrokerをbuildする。
@@ -511,7 +511,7 @@ User environment variableを暗黙に変更してはならない。
    cargo build --manifest-path rust/ywta-link/Cargo.toml
    ```
 
-2. MayaまたはBlenderを起動するShellでBrokerの絶対Pathを指定する。
+2. Maya、Blender、Unity Editorを起動するShellでBrokerの絶対Pathを指定する。
 
    ```powershell
    $env:YWTA_LINK_EXE = (Resolve-Path .\target\debug\ywta-link.exe).Path
@@ -521,7 +521,8 @@ User environment variableを暗黙に変更してはならない。
    `usage: ywta-link <serve|status|peers|rooms> [options]`が表示されればBrokerを起動できる状態である。
 
 3. 同じShellからDCCを起動する。MayaではAnimation menu、Blenderでは3D Viewportの`YWTA` sidebarにある
-   `Playback Sync`を有効にする。ClientがBrokerを自動起動した後、別のShellから次を実行する。
+   `Playback Sync`または`Camera Sync`を有効にする。Unityでは`Tools > YWTA`の`Timeline Sync`または
+   `Camera Sync`を有効にする。ClientがBrokerを自動起動した後、別のShellから次を実行する。
 
    ```powershell
    .\target\debug\ywta-link.exe status
@@ -778,12 +779,11 @@ Binary bodyを含むMessageでも同じRouting規則を使用する。
 
 ### 8.2 v1のTransport
 
-Application protocolはTransportから独立させる。現在のBrokerとPython ClientはRaw localhost TCPを実装する。
-WebSocketとUnity C# Clientは未実装である。
+Application protocolはTransportから独立させる。現在のBroker、Python Client、Unity C# Clientは
+Raw localhost TCPを実装する。WebSocketは未実装である。
 
-- Raw localhost TCP: Rust Brokerと純Python Clientで実装済み
+- Raw localhost TCP: Rust Broker、純Python Client、Unity C# Clientで実装済み
 - WebSocket: Photoshop UXP向けの将来Transport
-- Raw TCPまたはWebSocket: Unity C# Clientの実装時に決定する
 
 Brokerが複数Transportを提供する場合も、すべて同じRoom RouterとMessage modelへ接続する。
 
@@ -1081,6 +1081,28 @@ deterministic compact JSON（sort keys、allow_nan=false）とする。
 DCCがFieldを直接表現できない場合は`approximated`または`unsupported`を返す。FOVだけを持つHostでは、
 ApertureとFocal lengthのどちらをAuthorityとしたかをAdapterのmapping profileで固定する。
 
+#### 実装済みCamera Adapter
+
+- Maya: active viewport Cameraを固定Bindingとし、Maya API 2.0でMain Thread applyする。Mayaの右手Y-up/-Z、
+  inch aperture、API内部のcentimeter、水平`orthoWidth`をCommonのmmと垂直全高へ変換する。
+- Blender: active scene Cameraを固定Bindingとし、depsgraph callbackをMain Threadで処理する。
+  Blenderの右手Z-up/-Z、meter、sensor fitをCommonへ変換する。
+- Unity: 選択中の有効なroot Cameraを優先し、未選択時は読み込み済みSceneに一つだけ存在するCameraへBindingする。
+  Unityの左手Y-up/+ZとmeterをCommonの右手Y-up/-Zとmmへ変換する。PerspectiveはPhysical Cameraのみ対応する。
+
+3 Adapterはいずれも`Camera Sync`を一つのtoggleとして公開し、remote apply後のechoを抑止する。
+Python AdapterはControllerの`origin_peer_id`/`change_id` guardとHost signatureを使い、Unityは
+`change_id`と正規化したobservation fingerprintを使う。Mayaはcanonical transform、aspect、対応fieldと
+Maya API availabilityを事前検証し、Blenderはcanonical transform、render aspect、scale、fit、exposureの
+表現可否を事前検証する。Unityはrootかつidentity scaleを必須とし、float変換とclip rangeを事前検証する。
+各Hostで表現できない値はCameraを変更せずfail closedにする。ただしHost API setter自体が適用途中で失敗した場合の
+transaction rollbackはv1 Adapterの対象外であり、Sessionをterminal failureとして隔離する。
+
+Unityではtransform、physical lens、clip、orthographic vertical full height、focus distance、apertureの
+Camera propertyを同期する。Depth of Fieldの描画用Volume/Post Processing、exposure、film fit、
+非Physical FOV Cameraは同期対象外であり、現在のSession APIは`exact`/`approximated`/`unsupported`結果を
+Peerへ通知しない。
+
 ### 10.6 Playback
 
 `ywta.common.playback.v1`は、DCCの再生ボタン操作、停止位置、再生範囲、速度、方向、Loop意図を表す。
@@ -1111,6 +1133,14 @@ objectへ変換し、出力は未知Fieldを追加せず、UTF-8のdeterministic
 `change_id`はpayload必須のcontrol metadataであり、Contractの`field_subset`から除外されても全Adapterが消費して
 echo判定に使う。`field_subset`はDCCへ適用する意味Fieldだけを列挙する。Local operationが新たに発行した
 logical `change_id`は、同一origin／同一Session内で同じ値を再利用してはならない。
+
+#### Unity Timeline Adapter
+
+Unityは`Tools > YWTA > Timeline Sync`の一つのtoggleで、選択中の`PlayableDirector`を優先し、未選択時は
+読み込み済みSceneに一つだけ存在するDirectorをCommon PlaybackへBindingする。play、pause、seek、duration、
+`once`/`loop`は`exact`として扱う。reverse、1倍以外のspeed、`ping-pong`はHost状態を変更せず
+`unsupported`とする。Editor callbackとremote applyはMain Threadに限定し、Domain ReloadとEditor終了時には
+Session closeを試行する。
 
 ### 10.7 Morph Weight
 
@@ -1630,7 +1660,8 @@ Pure unit testやmockだけで完了扱いにしない。少なくとも次の�
 
 - MayaとBlenderの自動Broker起動、相互Presence、再接続
 - Photoshop UXPのlocalhost接続、Binary送受信、manifest permission
-- Unity Editorの接続、Main Thread dispatch、Domain Reload後の再接続
+- Unity Editorの接続とMain Thread dispatch（Unity 6000.0のEditMode testと単独Broker smokeで確認済み）
+- Unity Domain Reload前の有界Session cleanup（確認済み）。Reload後の自動再接続は`not_run`かつ未実装
 - Substance Painter Plugin環境の接続とMain Thread dispatch
 - BlenderをCamera Authority、MayaまたはUnityをTargetとしたPreview、Commit、Cancel、Close
 - Morph Weightの明示Bindingと、非対応Channelの`unsupported`報告
@@ -1647,8 +1678,9 @@ Pure unit testやmockだけで完了扱いにしない。少なくとも次の�
 2. Binary経路を完成させる。chunk、backpressure、途中切断を実装し、MayaとBlender間のfixtureをbyte一致で検証する。
 3. Sync Contractを完成させる。Negotiation、Preview、Commit、Cancel、CloseとSession CLIを実装し、競合と
    Broker再起動をfail closedで処理する。
-4. Camera、Morph Weight、Texture、Material、Motionの順にProduction Adapterを追加する。各Hostで
-   `exact`、`approximated`、`unsupported`とUndo/Cancelを記録する。
+4. 実装済みCamera Adapterを同一Broker上のMaya、Blender、Unityで往復検証する。その後、Morph Weight、
+   Texture、Material、Motionの順にProduction Adapterを追加し、各Hostで`exact`、`approximated`、
+   `unsupported`とUndo/Cancelを記録する。
 5. 代表Assetでsize、latency、allocation、Broker memoryを測定する。Inline Binaryが要求を満たさない場合だけ
    Shared Memory拡張を設計する。
 
@@ -1661,9 +1693,8 @@ Pure unit testやmockだけで完了扱いにしない。少なくとも次の�
 3. Substance Painter Plugin環境で使用するTransportとMain Thread dispatch方法
 4. Material Specを既存Projectから共有するか、YWTA Link用schemaとして新設するか
 5. Broker artifact署名をv1必須にするか、同梱manifestのSHA-256検証をv1要件とするか
-6. Cameraの既定Length unit、座標系、Film fit mapping profile
-7. Sync SessionのContract保存場所と、CLIから開始する際のOwner identity
-8. Preview rate limit、coalesce、Baseline保持量、Commit timeoutの既定上限
-9. Session異常終了後にTarget AdapterがBaselineを保持する期限
+6. Sync SessionのContract保存場所と、CLIから開始する際のOwner identity
+7. Preview rate limit、coalesce、Baseline保持量、Commit timeoutの既定上限
+8. Session異常終了後にTarget AdapterがBaselineを保持する期限
 
 未確定事項を暗黙の実装判断で固定せず、Protocol fixtureまたは本文書の改訂として記録する。
