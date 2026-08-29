@@ -2,10 +2,18 @@
 
 ## 文書情報
 
-- 状態: Draft
+- 状態: Developer Preview
 - 対象: YWTA Link protocol version 1
 - 対応環境: Windows 11上で動作するMaya、Blender、Unity、Photoshop、Substance Painter
 - 本文書の役割: Broker、Client、DCC Adapter間の責務と互換性契約の正本
+
+現在の実装境界は次のとおり。未実装の項目は互換性設計またはRoadmapであり、現在のCLIとしては利用できない。
+
+| 状態 | 対象 |
+| --- | --- |
+| 実装済み | Raw TCP Broker、Room/Topic/Target routing、CLI Monitor（`status`/`peers`/`rooms`）、Python Client、Maya/BlenderのPlayback Sync |
+| Developer Preview | `cargo build`したBrokerを`YWTA_LINK_EXE`で指定する導入方法。Maya/Blenderの実Host smokeは`not_run` |
+| 未実装 | ユーザー単位Install/Update/Uninstall CLI、Session CLI、WebSocket、Unity/Photoshop/Substance Painter Adapter、chunked binary転送 |
 
 本文書では要件の強さを次の語で表す。
 
@@ -168,12 +176,15 @@ ywta-link rooms  [--json] [--runtime-file <absolute-path>]
 ```
 
 `--runtime-file`を省略した場合は、`%LOCALAPPDATA%\YWTA\Link\runtime\v1\broker.json`を読む。
-Monitorはruntime manifestのloopback endpointへ外向きTCP接続し、manifest tokenを含む一回限りの
-hello challengeを検証した後、versionedな`monitor.snapshot.request`を送る。Brokerは
+Monitorはruntime manifestのloopback endpointへ外向きTCP接続し、manifest tokenと一回限りのchallengeだけを
+`hello`の拡張Fieldとして送る。Brokerは両方の完全一致とHelloの厳密な形を検証した後、
+versionedな`monitor.snapshot.request`を受け付ける。Brokerは
 `monitor.snapshot.response`で、Broker endpoint、PID、protocol version、接続中Peer ID、Roomのmember、
 Topic Subscription、Presenceを広告したPeerの実装情報を返す。既存の`peers`はPresenceの有無にかかわらず
 接続中Peer ID全件を含み、追加の`presence`配列は広告済みPeerだけをPeer ID順で含む。Monitor自身のPeer IDは
 snapshotから除外する。Binary bodyやMessage履歴は返さない。
+Monitor専用のHello、ack、request、responseはraw Binary bodyを常に0 byteとし、Monitorは受信前からこの上限を適用する。
+合法な最大状態のsnapshotを収めるためMonitor専用Header上限は16 MiBとし、通常Messageの64 KiB上限とは分離する。
 
 Presenceの返却は後方互換のためrequest opt-inとする。Presenceを取得するMonitorはrequestの`extra`へ
 `{"ywta_include_presence": true}`を指定し、新Brokerはその場合だけresponse bodyへ`presence`を含める。
@@ -195,22 +206,8 @@ v1の小さなprotocol拡張であり、通常のRoom/Topic/Target routingへ流
 Monitor接続はsnapshot request以外のrouting操作を行えず、通常Peerはsnapshot requestを送信できない。
 Brokerはruntime manifestを有効にした場合だけresponseを返す。
 
-想定Commandは次のとおり。
-
-```powershell
-ywta-link serve --background --idle-timeout 30
-ywta-link status
-ywta-link rooms
-ywta-link peers
-ywta-link tail --room character-a
-ywta-link session start contract.json
-ywta-link session list --room character-a
-ywta-link session inspect 01J...
-ywta-link session close 01J... --policy keep-committed
-```
-
-正確なCommand名とOptionはCLI実装時に確定する。CLI出力は人間が読める形式を既定とし、
-Automation用JSON出力を任意Optionとして提供する。
+現在のCLIは`serve`と3つのsnapshot commandだけを提供する。`tail`とSession管理Commandは未実装である。
+CLI出力は人間が読める形式を既定とし、snapshot commandはAutomation用の`--json`を提供する。
 
 ### 4.3 Client SDK
 
@@ -385,6 +382,9 @@ Material変換、Camera適用、Morph Weight更新、Texture出力、Node生成�
 
 ### 4.4 配布とインストール
 
+この節は完成版の配布契約を定める。現在のDeveloper Previewはユーザー単位Install、Update、Uninstallを
+実装していないため、4.4.1以降のCommandや自動更新を利用できない。
+
 Brokerは管理者権限を要求せず、Windows user単位で次の場所へ配置する。
 
 ```text
@@ -451,14 +451,14 @@ Process起動または安全な展開を行えないClientはInstallを試みず
 
 #### 4.4.2 Standalone setup
 
-Broker実行File自身がユーザー単位Installを行える構成を推奨する。
+次のユーザー単位Install Commandは計画中であり、Developer Previewでは未実装である。
 
 ```powershell
 .\ywta-link.exe install --user
 .\ywta-link.exe install --user --add-to-path
 ```
 
-既定の `install --user` はPATHを変更しない。`--add-to-path` は明示指定時だけUser PATHを変更する。
+完成版では、既定の`install --user`はPATHを変更しない。`--add-to-path`は明示指定時だけUser PATHを変更する。
 環境変数変更の反映に新しいShellが必要な場合は、その旨を出力する。
 
 #### 4.4.3 Update
@@ -473,7 +473,7 @@ Broker実行File自身がユーザー単位Installを行える構成を推奨す
 #### 4.4.4 Uninstallとcleanup
 
 YWTA Linkは複数DCCで共有されるため、個別DCC Pluginの削除に連動してBrokerを削除してはならない。
-Uninstallは明示的な共通Commandで行う。
+完成版のUninstallは明示的な共通Commandで行う。次のCommandはDeveloper Previewでは未実装である。
 
 ```powershell
 ywta-link uninstall --user
@@ -500,6 +500,38 @@ YWTA_LINK_LOG_LEVEL
 これらは通常利用の必須設定ではない。Clientは現在Processの環境を読むだけとし、起動時にsystemまたは
 User environment variableを暗黙に変更してはならない。
 
+### 4.6 Developer Previewを導入する
+
+現在のBrokerはリポジトリからbuildし、Process単位の`YWTA_LINK_EXE`でPython Clientへ指定する。
+管理者権限、PATH変更、ユーザー環境変数の永続変更は不要である。
+
+1. リポジトリrootでBrokerをbuildする。
+
+   ```powershell
+   cargo build --manifest-path rust/ywta-link/Cargo.toml
+   ```
+
+2. MayaまたはBlenderを起動するShellでBrokerの絶対Pathを指定する。
+
+   ```powershell
+   $env:YWTA_LINK_EXE = (Resolve-Path .\target\debug\ywta-link.exe).Path
+   & $env:YWTA_LINK_EXE --help
+   ```
+
+   `usage: ywta-link <serve|status|peers|rooms> [options]`が表示されればBrokerを起動できる状態である。
+
+3. 同じShellからDCCを起動する。MayaではAnimation menu、Blenderでは3D Viewportの`YWTA` sidebarにある
+   `Playback Sync`を有効にする。ClientがBrokerを自動起動した後、別のShellから次を実行する。
+
+   ```powershell
+   .\target\debug\ywta-link.exe status
+   .\target\debug\ywta-link.exe peers
+   .\target\debug\ywta-link.exe rooms
+   ```
+
+   `status`でBroker情報、`peers`で接続中Peer、`rooms`で参加Roomを確認する。現在の導入手順は
+   Debug artifactを使う開発者向けであり、配布用Installの代替ではない。
+
 ## 5. Broker lifecycle
 
 ### 5.1 自動起動
@@ -513,6 +545,7 @@ User environment variableを暗黙に変更してはならない。
    instance tokenをManifestと照合してから接続成功とする。
 
 Runtime manifestは短命な接続先情報だけを持つ。
+読み込みは4 KiBを上限とし、tokenは空でない256 byte以下の英数字、`-`、`_`だけの文字列とする。
 
 ```json
 {
@@ -624,6 +657,13 @@ texture/clothes
 
 Topic名の階層表現は分類用であり、wildcard subscriptionの対応はv1必須ではない。
 
+Brokerのv1実装は、同時接続64件、PeerごとのRoom参加64件、PeerごとのSubscription 256件、
+Peerごとの未解決Request 64件、Broker全体の未解決Request 1024件を上限とする。
+Peer ID、Room、Topic、Message IDなどroutingへ使うidentifierは空白だけではなく、Unicode control文字を含まない
+256 UTF-8 byte以下の文字列とする。
+上限済みmembershipへの同じJoinまたはSubscribeは冪等に成功し、新しいmembershipだけを拒否する。
+各接続の送信待ちqueueは8 Frameかつwire size合計32 MiBを上限とし、どちらかを超えた接続を閉じる。
+
 ### 6.4 Capability
 
 CapabilityはPeerが処理できるversioned operationまたはtransportである。
@@ -734,23 +774,37 @@ Binary bodyを含むMessageでも同じRouting規則を使用する。
 - Clientは外向き接続だけを使用する。
 - TransportはControl MessageとBinary Messageの両方を運べなければならない。
 - Brokerは受信Message size、chunk size、未完了転送数、queue sizeに上限を持たなければならない。
-- 上限値は実装時にbenchmarkと実DCC smokeを基に確定する。
+- 上限値を変更する場合は、benchmark、実DCC smoke、v1 Clientとの互換性を評価する。
 
-### 8.2 v1のTransport候補
+### 8.2 v1のTransport
 
-Application protocolはTransportから独立させる。v1実装前のHost feasibility spikeで、次の組み合わせを
-確定する。
+Application protocolはTransportから独立させる。現在のBrokerとPython ClientはRaw localhost TCPを実装する。
+WebSocketとUnity C# Clientは未実装である。
 
-- Raw localhost TCP: 純Python Clientの第一候補
-- WebSocket: Photoshop UXP Clientの第一候補
-- Raw TCPまたはWebSocket: Unity C# Client
+- Raw localhost TCP: Rust Brokerと純Python Clientで実装済み
+- WebSocket: Photoshop UXP向けの将来Transport
+- Raw TCPまたはWebSocket: Unity C# Clientの実装時に決定する
 
 Brokerが複数Transportを提供する場合も、すべて同じRoom RouterとMessage modelへ接続する。
 
 ### 8.3 Wire framingの制約
 
-正確なbyte layoutはTransport spike後にprotocol fixtureとともに確定する。ただし、v1 framingは
-次の条件を満たさなければならない。
+Raw TCPのv1 Frameは次のbyte layoutに固定する。すべての整数は符号なしbig-endianである。
+
+| Offset | 長さ | 内容 |
+| --- | --- | --- |
+| `0..4` | 4 byte | Magic ASCII `YWTL` |
+| `4..6` | 2 byte | Protocol version `1`（`u16`） |
+| `6..8` | 2 byte | Flags `0`（`u16`） |
+| `8..12` | 4 byte | UTF-8 JSON Header長（`u32`） |
+| `12..20` | 8 byte | Raw Binary Body長（`u64`） |
+| `20..` | 可変 | JSON Header、続けてRaw Binary Body |
+
+通常Frameの上限はJSON Header 64 KiB、Binary Body 16 MiBである。受信側は可変長領域を読む前に
+固定HeaderのMagic、Version、Flags、長さ、overflowを検証しなければならない。Golden byte fixtureは
+`protocol/ywta-link/v1/valid/frame-publish.hex`を正本とする。
+
+v1 framingは次の条件も満たさなければならない。
 
 - Header lengthとBinary body lengthを送信前に宣言する。
 - HeaderはUTF-8 JSONとする。
@@ -760,8 +814,7 @@ Brokerが複数Transportを提供する場合も、すべて同じRoom Routerと
 - 不正長、overflow、途中切断を検出して転送を破棄する。
 - Client実装に汎用RPC frameworkやFFI bindingを要求しない。
 
-Raw TCP用framingは、小さい固定Header、JSON Header、任意Binary bodyの順とする案を第一候補とする。
-WebSocketでは同じ論理FrameをBinary Messageとして運べることを推奨する。
+将来WebSocketを追加する場合は、同じ論理Frameを1つのBinary Messageとして運ぶことを推奨する。
 
 ## 9. Binary payload
 
@@ -964,7 +1017,7 @@ tickはJavaScript Clientでも丸めず扱える±(2^53-1)のJSON safe integer�
 `timebase`へ一度だけ置く。`sample_rate`はtimebaseとは独立したsampling cadenceを明示する場合に指定し、
 省略時は`null`とする。同じrateを明示することも許可する。
 
-本文書はDraftであり、このtyped codecとGolden fixtureを`ywta.common.time.v1`の最初のcanonical wire contractとする。
+このtyped codecとGolden fixtureを`ywta.common.time.v1`のcanonical wire contractとする。
 先行する実装・release済みAdapterはなく、以前の説明用point objectはfreeze前にこの形式へ置き換えた。
 
 ### 10.5 Camera
@@ -989,7 +1042,7 @@ Camera payloadのtop-level Fieldは次の15個に固定する。全Fieldを必�
 `ywta.common.transform.v1`に適合するobjectとして保持し、Camera内の`entity_ref`と`transform.entity_ref`は
 4 Fieldすべてが一致しなければならない。Cameraの全長さFieldはmm、Transformのunitとは独立して扱う。
 
-本文書はDraftであり、Transform型の確定とCamera Golden fixtureへのcompositionをCamera v1の最初のcanonical
+Transform型の定義とCamera Golden fixtureへのcompositionをCamera v1のcanonical
 Transform contractとする。先行するrelease済みAdapterはなく、以前のopaqueな説明用objectはfreeze前に置き換えた。
 
 | Field | wire type | 意味・制約 |
@@ -1139,8 +1192,8 @@ Activeへ遷移させない。
 Default Playback bootstrap consumerはこのslot joinと、既存slotに対するAuthority snapshot照会、
 Accepted control publishの有界buffer/reconcile、同一ClientのRuntimeへの受信ownership移譲までを実装する。
 作成されたSessionはreconcile後に未開始の`PlaybackSession`として返し、Host rateを提供するDCC Adapterが
-後続のLifecycleを開始する。DCCのPlayback checkboxとActive化の既定値は、Host rate adapterとUI wiringが
-完了するまで未実装である。このRequestは通常の未完了Request表へ積まない。
+後続のLifecycleを開始する。MayaとBlenderは`Playback Sync`チェックボックスを1つだけ表示し、有効化時に
+Host rate adapterを構成してLifecycleを開始する。このRequestは通常の未完了Request表へ積まない。
 
 Peerは同じRoomの複数slotへ参加できる。RoomからのleaveまたはdisconnectでそのPeerを各該当slotから除外し、
 参加者が0になったslotは即座に破棄する。0参加者からの再作成では過去と異なるfreshな`session_id`を生成する。
@@ -1406,7 +1459,7 @@ Session制御は通常の`publish`、`request`、`response`を使い、Payload s
 - `ywta.sync.cancel.v1`
 - `ywta.sync.close.v1`
 
-CLIはSessionの開始、一覧、検査、終了を提供する。v1のContract形式はJSONに限定し、YAML parserなどの
+Sessionの開始、一覧、検査、終了を行うCLIは未実装である。実装時のContract形式はJSONに限定し、YAML parserなどの
 追加依存を要求しない。頻用Contractのpreset化は任意機能とする。
 
 ## 12. MaterialとTextureの同期境界
@@ -1575,92 +1628,33 @@ Pure unit testやmockだけで完了扱いにしない。少なくとも次の�
 
 未実行Hostは `not_run` として明示し、他Hostの成功で代替しない。
 
-## 18. 実装Phase
+## 18. 実装Roadmap
 
-### Phase 0: Transport feasibility
+現在の実装範囲は冒頭の表を正本とする。次の段階は依存順に進め、各段階をPure unit testだけで
+完了扱いにしない。
 
-- Raw TCPとWebSocketの最小echoを各Hostで確認する。
-- Photoshop UXP permission、Unity Domain Reload、Maya/Blender Main Thread dispatchを確認する。
-- v1 Wire framingとGolden byte fixtureを確定する。
-- ユーザー単位Install layout、artifact manifest、探索順序のfixtureを確定する。
-
-完了条件: 各Hostの利用可能Transport表と、少なくともMaya、Blender、Photoshopで共通Messageを
-往復できる根拠がある。
-
-### Phase 1: Broker、CLI、Python Client
-
-- Rust Brokerの自動起動、自動終了、Room、Peer、Topic、Target routingを実装する。
-- CLI Monitorを実装する。
-- 共通Python ClientでMayaとBlenderを接続する。
-- `install --user`、side-by-side Update、探索、concurrent bootstrapを実装する。
-
-完了条件: PATH設定のない新規User profileでMayaとBlenderがBrokerをbootstrapし、同じRoomへ自動参加して、
-Presence、Publish、Target requestを実Hostで往復する。
-
-### Phase 2: Inline Binary
-
-- Raw binary body、chunk、backpressure、上限、schema検証を実装する。
-- MayaとBlender間で標準形式のBinary fixtureを往復する。
-
-完了条件: Binary fixtureがbyte一致し、途中切断、欠落chunk、遅いConsumerの回帰Testが通る。
-
-### Phase 3: CommonとSync Contract基盤
-
-- Entity Reference、Transform、Time、Camera、Morph WeightのSchemaとGolden fixtureを確定する。
-- PlaybackのSchema、Golden fixture、single-writerの再生Sync Loop規則を確定する。
-- Contract validation、Negotiation、状態遷移、Authority、Preview、Commit、Cancel、Closeを実装する。
-- CLIへSessionの開始、一覧、検査、終了を追加する。
-
-完了条件: PythonとRustで同じContract fixtureを解釈でき、Broker単体TestでSession lifecycle、競合拒否、
-Broker再起動時のfail closedが成立し、Playbackのchange ID/echo抑止規則をAdapter契約として検証できる。
-
-### Phase 4: Camera実証
-
-- BlenderをAuthority、MayaとUnityをTargetとするCamera Adapterを実装する。
-- Transform、Focal length、Aperture、Clipping rangeをPreview、Commit、Cancelする。
-- DCC差を`exact`、`approximated`、`unsupported`で記録する。
-
-完了条件: 同じContractからMayaとUnityへCameraを適用し、Previewの間引き、1回のUndo Commit、Cancel、
-Session解体を実Hostで確認する。
-
-### Phase 5: Morph Weight
-
-- Blender Shape Key、Maya Blend Shape、Unity BlendShapeのChannel bindingを実装する。
-- 現在Weightの一方向同期から開始し、名前不一致と非対応範囲を明示する。
-
-完了条件: 明示BindingしたChannelだけが更新され、未Binding Channelを変更せず、CancelでBaselineへ戻る。
-
-### Phase 6: Production Adapter拡張
-
-- Photoshop Texture GeneratorとBlenderのTexture Set更新を接続する。
-- Unity、Maya、Blender、Substance PainterのMaterial Spec Adapterを段階導入する。
-- Skeleton bindingと補間の契約が固まった後にMotion Clip Adapterを導入する。
-
-完了条件: Adapterごとの実Host smokeと、対応Fieldの`exact`、`approximated`、`unsupported`が記録される。
-
-### Phase 7: Performance review
-
-- 代表的なTexture、GLB、Material更新のsize、latency、allocation、Broker memoryを測定する。
-- Camera PreviewとMorph Weight更新のlatency、coalesce数、Main Thread適用時間を測定する。
-- Inline Binaryが要求を満たさない場合だけShared Memory拡張を設計する。
-
-完了条件: Shared Memoryを追加するか、不要として据え置くかを実測値で判断できる。
+1. 配布を完成させる。ユーザー単位Install、side-by-side Update、探索、concurrent bootstrap、Uninstallを実装し、
+   PATH設定のない新規User profileでMayaとBlenderの実Host往復を確認する。
+2. Binary経路を完成させる。chunk、backpressure、途中切断を実装し、MayaとBlender間のfixtureをbyte一致で検証する。
+3. Sync Contractを完成させる。Negotiation、Preview、Commit、Cancel、CloseとSession CLIを実装し、競合と
+   Broker再起動をfail closedで処理する。
+4. Camera、Morph Weight、Texture、Material、Motionの順にProduction Adapterを追加する。各Hostで
+   `exact`、`approximated`、`unsupported`とUndo/Cancelを記録する。
+5. 代表Assetでsize、latency、allocation、Broker memoryを測定する。Inline Binaryが要求を満たさない場合だけ
+   Shared Memory拡張を設計する。
 
 ## 19. 未確定事項
 
-実装開始前またはPhase 0で次を確定する。
+次の項目は対応する実装へ着手する前に確定する。
 
-1. Raw TCPの固定Header byte layoutとWebSocket framingの対応
-2. Message、chunk、queue、timeout、Event ring bufferの既定上限
-3. Room IDを保存するProject manifestのFile名と配置
-4. Rust crateの外部依存追加方針
-5. Photoshop UXPでlocalhost WebSocketへ許可する正確なmanifest設定
-6. Substance Painter Plugin環境で使用するTransportとMain Thread dispatch方法
-7. Material Specを既存Projectから共有するか、YWTA Link用schemaとして新設するか
-8. Broker artifact署名をv1必須にするか、同梱manifestのSHA-256検証をv1要件とするか
-9. Cameraの既定Length unit、座標系、Film fit mapping profile
-10. Sync SessionのContract保存場所と、CLIから開始する際のOwner identity
-11. Preview rate limit、coalesce、Baseline保持量、Commit timeoutの既定上限
-12. Session異常終了後にTarget AdapterがBaselineを保持する期限
+1. Room IDを保存するProject manifestのFile名と配置
+2. Photoshop UXPでlocalhost WebSocketへ許可する正確なmanifest設定
+3. Substance Painter Plugin環境で使用するTransportとMain Thread dispatch方法
+4. Material Specを既存Projectから共有するか、YWTA Link用schemaとして新設するか
+5. Broker artifact署名をv1必須にするか、同梱manifestのSHA-256検証をv1要件とするか
+6. Cameraの既定Length unit、座標系、Film fit mapping profile
+7. Sync SessionのContract保存場所と、CLIから開始する際のOwner identity
+8. Preview rate limit、coalesce、Baseline保持量、Commit timeoutの既定上限
+9. Session異常終了後にTarget AdapterがBaselineを保持する期限
 
 未確定事項を暗黙の実装判断で固定せず、Protocol fixtureまたは本文書の改訂として記録する。

@@ -32,11 +32,25 @@ Photoshop 24.4 以降向けの UXP プラグインです。PSD のレイヤー�
 - [C++ Components](./cpp/README.md) — AutoRemesher
 - [Rust Components](./rust/README.md) — ボリューム保持メッシュスムージング
 
-DCC間のローカル連携基盤については、[YWTA Link v1 仕様](./specs/ywta-link-v1.md)を
-参照してください。
-
 Maya ツールの一部は [chadmv/cmt](https://github.com/chadmv/cmt) をベースに、個人制作で
 使いやすいよう機能追加と変更を行っています。
+
+### YWTA Link Developer Preview
+
+YWTA Linkは、同じWindowsユーザーセッションのMayaとBlenderをローカルBroker経由で接続する開発中の基盤です。
+現在はRaw TCP Broker、CLI Monitor、Python Client、再生同期を実装しています。配布用インストーラーと
+Unity、Photoshop、Substance Painter Adapterは未実装です。
+
+開発版を試す場合はBrokerをビルドし、MayaまたはBlenderを起動するシェルで実行ファイルを指定します。
+
+```powershell
+cargo build --manifest-path rust/ywta-link/Cargo.toml
+$env:YWTA_LINK_EXE = (Resolve-Path .\target\debug\ywta-link.exe).Path
+& $env:YWTA_LINK_EXE --help
+```
+
+`usage: ywta-link <serve|status|peers|rooms> [options]`が表示されれば準備完了です。詳しい実装境界、
+Playback Syncの開始方法、Protocol契約は[YWTA Link v1 仕様](./specs/ywta-link-v1.md)を参照してください。
 
 ## 開発に参加する場合
 
