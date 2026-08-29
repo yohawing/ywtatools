@@ -13,69 +13,6 @@ _VERSIONED_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*\.v[1-9
 SLOT_JOIN_SCHEMA = "ywta.session.slot.join.v1"
 SLOT_DESCRIPTOR_SCHEMA = "ywta.session.slot.descriptor.v1"
 
-COMMON_SCHEMAS = {
-    "ywta.common.entity-ref.v1": {"entity_id", "kind", "display_name", "namespace"},
-    "ywta.common.transform.v1": {
-        "entity_ref",
-        "translation",
-        "rotation",
-        "scale",
-        "coordinate_system",
-        "unit",
-        "rotation_order",
-    },
-    "ywta.common.time.v1": {"time", "start", "end_exclusive", "timebase", "sample_rate"},
-    "ywta.common.playback.v1": {
-        "state",
-        "position",
-        "playback_range",
-        "speed",
-        "direction",
-        "loop_mode",
-        "change_id",
-    },
-    "ywta.common.camera.v1": {
-        "entity_ref",
-        "transform",
-        "time",
-        "projection",
-        "focal_length",
-        "horizontal_aperture",
-        "vertical_aperture",
-        "aperture_offset",
-        "clipping_range",
-        "focus_distance",
-        "f_stop",
-        "exposure",
-        "orthographic_size",
-        "film_fit",
-        "gate_fit",
-    },
-    "ywta.common.morph-weights.v1": {
-        "entity_ref",
-        "channels",
-        "channel_id",
-        "display_name",
-        "weight",
-        "neutral",
-        "min",
-        "max",
-        "group",
-        "revision",
-        "change_id",
-    },
-    "ywta.common.motion-clip.v1": {
-        "clip_id",
-        "time_range",
-        "timebase",
-        "channels",
-        "interpolation",
-        "loop_intent",
-        "skeleton_binding",
-        "rest_pose",
-    },
-}
-
 SYNC_SCHEMAS = frozenset(
     {
         "ywta.sync.contract.proposed.v1",
@@ -93,48 +30,102 @@ SYNC_SCHEMAS = frozenset(
     }
 )
 
-SCHEMA_FIELDS = MappingProxyType(
+SCHEMA_FIELD_ORDER = MappingProxyType(
     {
-        **{key: frozenset(value) for key, value in COMMON_SCHEMAS.items()},
-        **{key: frozenset() for key in SYNC_SCHEMAS if not key.startswith("ywta.sync.authority.")},
-        "ywta.sync.authority.request.v1": frozenset(
-            {
-                "session_id",
-                "channel_id",
-                "current_authority",
-                "next_authority",
-                "expected_authority_revision",
-                "change_id",
-            }
+        "ywta.common.entity-ref.v1": ("entity_id", "kind", "display_name", "namespace"),
+        "ywta.common.transform.v1": (
+            "entity_ref",
+            "translation",
+            "rotation",
+            "scale",
+            "coordinate_system",
+            "unit",
+            "rotation_order",
         ),
-        "ywta.sync.authority.accepted.v1": frozenset(
-            {
-                "session_id",
-                "channel_id",
-                "current_authority",
-                "next_authority",
-                "expected_authority_revision",
-                "new_authority_revision",
-                "change_id",
-            }
+        "ywta.common.time.v1": ("time", "start", "end_exclusive", "timebase", "sample_rate"),
+        "ywta.common.playback.v1": (
+            "state",
+            "position",
+            "playback_range",
+            "speed",
+            "direction",
+            "loop_mode",
+            "change_id",
         ),
-        "ywta.sync.authority.rejected.v1": frozenset(
-            {
-                "session_id",
-                "channel_id",
-                "current_authority",
-                "next_authority",
-                "expected_authority_revision",
-                "change_id",
-                "reason",
-            }
+        "ywta.common.camera.v1": (
+            "entity_ref",
+            "transform",
+            "time",
+            "projection",
+            "focal_length",
+            "horizontal_aperture",
+            "vertical_aperture",
+            "aperture_offset",
+            "clipping_range",
+            "focus_distance",
+            "f_stop",
+            "exposure",
+            "orthographic_size",
+            "film_fit",
+            "gate_fit",
         ),
-        "ywta.sync.authority.snapshot.request.v1": frozenset({"session_id", "channel_id"}),
-        "ywta.sync.authority.snapshot.v1": frozenset({"session_id", "channel_id", "authority", "authority_revision"}),
-        SLOT_JOIN_SCHEMA: frozenset({"slot_id", "metadata"}),
-        SLOT_DESCRIPTOR_SCHEMA: frozenset({"slot_id", "session_id", "initial_authority", "metadata", "created", "state_peer"}),
+        "ywta.common.morph-weights.v1": (
+            "entity_ref",
+            "channels",
+            "channel_id",
+            "display_name",
+            "weight",
+            "neutral",
+            "min",
+            "max",
+            "group",
+            "revision",
+            "change_id",
+        ),
+        "ywta.common.motion-clip.v1": (
+            "clip_id",
+            "time_range",
+            "timebase",
+            "channels",
+            "interpolation",
+            "loop_intent",
+            "skeleton_binding",
+            "rest_pose",
+        ),
+        **{key: () for key in SYNC_SCHEMAS if not key.startswith("ywta.sync.authority.")},
+        "ywta.sync.authority.request.v1": (
+            "session_id",
+            "channel_id",
+            "current_authority",
+            "next_authority",
+            "expected_authority_revision",
+            "change_id",
+        ),
+        "ywta.sync.authority.accepted.v1": (
+            "session_id",
+            "channel_id",
+            "current_authority",
+            "next_authority",
+            "expected_authority_revision",
+            "new_authority_revision",
+            "change_id",
+        ),
+        "ywta.sync.authority.rejected.v1": (
+            "session_id",
+            "channel_id",
+            "current_authority",
+            "next_authority",
+            "expected_authority_revision",
+            "change_id",
+            "reason",
+        ),
+        "ywta.sync.authority.snapshot.request.v1": ("session_id", "channel_id"),
+        "ywta.sync.authority.snapshot.v1": ("session_id", "channel_id", "authority", "authority_revision"),
+        SLOT_JOIN_SCHEMA: ("slot_id", "metadata"),
+        SLOT_DESCRIPTOR_SCHEMA: ("slot_id", "session_id", "initial_authority", "metadata", "created", "state_peer"),
     }
 )
+SCHEMA_FIELDS = MappingProxyType({schema_id: frozenset(fields) for schema_id, fields in SCHEMA_FIELD_ORDER.items()})
 SCHEMA_IDS = frozenset(SCHEMA_FIELDS)
 
 CAPABILITY_IDS = frozenset(

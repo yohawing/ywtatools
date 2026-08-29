@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import math
 from dataclasses import dataclass
 from typing import Any, Mapping
 
 from .entity_ref import EntityReference
-from .errors import ValidationError
-from .registry import DEFAULT_REGISTRY
+from .errors import ValidationError, _decode_json, _encode_json
+from .registry import DEFAULT_REGISTRY, SCHEMA_FIELD_ORDER
 
 TRANSFORM_SCHEMA = "ywta.common.transform.v1"
 TRANSFORM_FIELDS = frozenset(DEFAULT_REGISTRY.require_schema(TRANSFORM_SCHEMA))
@@ -19,15 +18,7 @@ SPACE_VALUES = frozenset({"world", "parent"})
 HANDEDNESS_VALUES = frozenset({"right", "left"})
 AXIS_VALUES = frozenset({"+x", "-x", "+y", "-y", "+z", "-z"})
 
-_TRANSFORM_FIELDS_IN_ORDER = (
-    "entity_ref",
-    "translation",
-    "rotation",
-    "scale",
-    "coordinate_system",
-    "unit",
-    "rotation_order",
-)
+_TRANSFORM_FIELDS_IN_ORDER = SCHEMA_FIELD_ORDER[TRANSFORM_SCHEMA]
 
 
 class TransformValidationError(ValidationError):
@@ -230,11 +221,7 @@ class Transform:
     def decode(cls, payload: str | bytes | bytearray) -> "Transform":
         """UTF-8 JSONからTransformを復元する。"""
 
-        try:
-            value = json.loads(payload)
-        except (TypeError, ValueError, UnicodeDecodeError) as exc:
-            raise TransformValidationError(f"invalid transform JSON: {exc}") from exc
-        return cls.from_dict(value)
+        return _decode_json(payload, cls.from_dict, "transform", TransformValidationError)
 
     def to_dict(self) -> dict[str, Any]:
         """Transformを新しいJSON-compatible dictへ変換する。"""
@@ -252,16 +239,7 @@ class Transform:
     def encode(self) -> str:
         """決定的なcompact UTF-8 JSON文字列へ変換する。"""
 
-        try:
-            return json.dumps(
-                self.to_dict(),
-                ensure_ascii=False,
-                separators=(",", ":"),
-                sort_keys=True,
-                allow_nan=False,
-            )
-        except (TypeError, ValueError, UnicodeEncodeError) as exc:
-            raise TransformValidationError(f"cannot encode transform: {exc}") from exc
+        return _encode_json(self.to_dict(), "transform", TransformValidationError)
 
 
 __all__ = (

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any, Mapping
 
 from .contract import SyncContract
-from .errors import AuthorityViolation, StaleRevision, ValidationError, _validate_identifier
-from .registry import DEFAULT_REGISTRY
+from .errors import AuthorityViolation, StaleRevision, ValidationError, _decode_json, _encode_json, _validate_identifier
+from .registry import DEFAULT_REGISTRY, SCHEMA_FIELD_ORDER
 from .session import ChannelRevisionTracker
 
 
@@ -24,32 +23,9 @@ AUTHORITY_REJECTED_FIELDS = frozenset(DEFAULT_REGISTRY.require_schema(AUTHORITY_
 AUTHORITY_SNAPSHOT_REQUEST_FIELDS = frozenset(DEFAULT_REGISTRY.require_schema(AUTHORITY_SNAPSHOT_REQUEST_SCHEMA))
 AUTHORITY_SNAPSHOT_FIELDS = frozenset(DEFAULT_REGISTRY.require_schema(AUTHORITY_SNAPSHOT_SCHEMA))
 
-_REQUEST_FIELDS_IN_ORDER = (
-    "session_id",
-    "channel_id",
-    "current_authority",
-    "next_authority",
-    "expected_authority_revision",
-    "change_id",
-)
-_ACCEPTED_FIELDS_IN_ORDER = (
-    "session_id",
-    "channel_id",
-    "current_authority",
-    "next_authority",
-    "expected_authority_revision",
-    "new_authority_revision",
-    "change_id",
-)
-_REJECTED_FIELDS_IN_ORDER = (
-    "session_id",
-    "channel_id",
-    "current_authority",
-    "next_authority",
-    "expected_authority_revision",
-    "change_id",
-    "reason",
-)
+_REQUEST_FIELDS_IN_ORDER = SCHEMA_FIELD_ORDER[AUTHORITY_REQUEST_SCHEMA]
+_ACCEPTED_FIELDS_IN_ORDER = SCHEMA_FIELD_ORDER[AUTHORITY_ACCEPTED_SCHEMA]
+_REJECTED_FIELDS_IN_ORDER = SCHEMA_FIELD_ORDER[AUTHORITY_REJECTED_SCHEMA]
 
 
 class AuthorityValidationError(ValidationError):
@@ -92,16 +68,6 @@ def _strict_fields(value: object, fields: frozenset[str], field_name: str) -> Ma
     if unknown or missing:
         raise AuthorityValidationError(f"{field_name} has unknown or missing fields: {sorted(unknown | missing)}")
     return data
-
-
-def _decode(payload: str | bytes | bytearray, cls: type[Any], field_name: str) -> Any:
-    """UTF-8 JSONをtyped payloadへ変換する。"""
-
-    try:
-        value = json.loads(payload)
-    except (TypeError, ValueError, UnicodeDecodeError) as exc:
-        raise AuthorityValidationError(f"invalid {field_name} JSON: {exc}") from exc
-    return cls.from_dict(value)
 
 
 class _AuthorityPayload:
@@ -174,7 +140,7 @@ class AuthorityHandoffRequest(_AuthorityPayload):
     def decode(cls, payload: str | bytes | bytearray) -> "AuthorityHandoffRequest":
         """UTF-8 JSONからrequestを復元する。"""
 
-        return _decode(payload, cls, "authority request")
+        return _decode_json(payload, cls.from_dict, "authority request", AuthorityValidationError)
 
     def to_dict(self) -> dict[str, Any]:
         """requestを新しいJSON-compatible dictへ変換する。"""
@@ -184,10 +150,7 @@ class AuthorityHandoffRequest(_AuthorityPayload):
     def encode(self) -> str:
         """requestを決定的なcompact JSONへ変換する。"""
 
-        try:
-            return json.dumps(self.to_dict(), ensure_ascii=False, separators=(",", ":"), sort_keys=True, allow_nan=False)
-        except (TypeError, ValueError, UnicodeEncodeError) as exc:
-            raise AuthorityValidationError(f"cannot encode authority request: {exc}") from exc
+        return _encode_json(self.to_dict(), "authority request", AuthorityValidationError)
 
 
 @dataclass(frozen=True)
@@ -222,7 +185,7 @@ class AuthorityHandoffAccepted(_AuthorityPayload):
     def decode(cls, payload: str | bytes | bytearray) -> "AuthorityHandoffAccepted":
         """UTF-8 JSONからacceptedを復元する。"""
 
-        return _decode(payload, cls, "authority accepted")
+        return _decode_json(payload, cls.from_dict, "authority accepted", AuthorityValidationError)
 
     def to_dict(self) -> dict[str, Any]:
         """acceptedを新しいJSON-compatible dictへ変換する。"""
@@ -234,10 +197,7 @@ class AuthorityHandoffAccepted(_AuthorityPayload):
     def encode(self) -> str:
         """acceptedを決定的なcompact JSONへ変換する。"""
 
-        try:
-            return json.dumps(self.to_dict(), ensure_ascii=False, separators=(",", ":"), sort_keys=True, allow_nan=False)
-        except (TypeError, ValueError, UnicodeEncodeError) as exc:
-            raise AuthorityValidationError(f"cannot encode authority accepted: {exc}") from exc
+        return _encode_json(self.to_dict(), "authority accepted", AuthorityValidationError)
 
 
 @dataclass(frozen=True)
@@ -269,7 +229,7 @@ class AuthorityHandoffRejected(_AuthorityPayload):
     def decode(cls, payload: str | bytes | bytearray) -> "AuthorityHandoffRejected":
         """UTF-8 JSONからrejectedを復元する。"""
 
-        return _decode(payload, cls, "authority rejected")
+        return _decode_json(payload, cls.from_dict, "authority rejected", AuthorityValidationError)
 
     def to_dict(self) -> dict[str, Any]:
         """rejectedを新しいJSON-compatible dictへ変換する。"""
@@ -281,10 +241,7 @@ class AuthorityHandoffRejected(_AuthorityPayload):
     def encode(self) -> str:
         """rejectedを決定的なcompact JSONへ変換する。"""
 
-        try:
-            return json.dumps(self.to_dict(), ensure_ascii=False, separators=(",", ":"), sort_keys=True, allow_nan=False)
-        except (TypeError, ValueError, UnicodeEncodeError) as exc:
-            raise AuthorityValidationError(f"cannot encode authority rejected: {exc}") from exc
+        return _encode_json(self.to_dict(), "authority rejected", AuthorityValidationError)
 
 
 @dataclass(frozen=True)

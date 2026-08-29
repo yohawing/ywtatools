@@ -2,22 +2,16 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from .errors import ValidationError
-from .registry import DEFAULT_REGISTRY
+from .errors import ValidationError, _decode_json, _encode_json
+from .registry import DEFAULT_REGISTRY, SCHEMA_FIELD_ORDER
 
 ENTITY_REFERENCE_SCHEMA = "ywta.common.entity-ref.v1"
 ENTITY_REFERENCE_FIELDS = frozenset(DEFAULT_REGISTRY.require_schema(ENTITY_REFERENCE_SCHEMA))
 
-_ENTITY_REFERENCE_FIELDS_IN_ORDER = (
-    "entity_id",
-    "kind",
-    "display_name",
-    "namespace",
-)
+_ENTITY_REFERENCE_FIELDS_IN_ORDER = SCHEMA_FIELD_ORDER[ENTITY_REFERENCE_SCHEMA]
 
 
 class EntityReferenceValidationError(ValidationError):
@@ -85,11 +79,7 @@ class EntityReference:
     def decode(cls, payload: str | bytes | bytearray) -> "EntityReference":
         """UTF-8 JSONからEntity Referenceを復元する。"""
 
-        try:
-            value = json.loads(payload)
-        except (TypeError, ValueError, UnicodeDecodeError) as exc:
-            raise EntityReferenceValidationError(f"invalid entity reference JSON: {exc}") from exc
-        return cls.from_dict(value)
+        return _decode_json(payload, cls.from_dict, "entity reference", EntityReferenceValidationError)
 
     def to_dict(self) -> dict[str, Any]:
         """Entity Referenceを新しいJSON-compatible dictへ変換する。"""
@@ -104,16 +94,7 @@ class EntityReference:
     def encode(self) -> str:
         """決定的なcompact UTF-8 JSON文字列へ変換する。"""
 
-        try:
-            return json.dumps(
-                self.to_dict(),
-                ensure_ascii=False,
-                separators=(",", ":"),
-                sort_keys=True,
-                allow_nan=False,
-            )
-        except (TypeError, ValueError, UnicodeEncodeError) as exc:
-            raise EntityReferenceValidationError(f"cannot encode entity reference: {exc}") from exc
+        return _encode_json(self.to_dict(), "entity reference", EntityReferenceValidationError)
 
 
 __all__ = (

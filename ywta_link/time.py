@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-import json
 import math
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from .errors import ValidationError
-from .registry import DEFAULT_REGISTRY
+from .errors import ValidationError, _decode_json, _encode_json
+from .registry import DEFAULT_REGISTRY, SCHEMA_FIELD_ORDER
 
 TIME_SCHEMA = "ywta.common.time.v1"
 TIME_FIELDS = frozenset(DEFAULT_REGISTRY.require_schema(TIME_SCHEMA))
 RATE_FIELDS = frozenset({"rate_num", "rate_den"})
 
-_TIME_FIELDS_IN_ORDER = ("time", "start", "end_exclusive", "timebase", "sample_rate")
+_TIME_FIELDS_IN_ORDER = SCHEMA_FIELD_ORDER[TIME_SCHEMA]
 _TICK_MIN = -(2**53 - 1)
 _TICK_MAX = 2**53 - 1
 _RATE_MIN = 1
@@ -155,11 +154,7 @@ class Time:
     def decode(cls, payload: str | bytes | bytearray) -> "Time":
         """UTF-8 JSONからTimeを復元する。"""
 
-        try:
-            value = json.loads(payload)
-        except (TypeError, ValueError, UnicodeDecodeError) as exc:
-            raise TimeValidationError(f"invalid time JSON: {exc}") from exc
-        return cls.from_dict(value)
+        return _decode_json(payload, cls.from_dict, "time", TimeValidationError)
 
     def to_dict(self) -> dict[str, Any]:
         """Timeを新しいJSON-compatible dictへ変換する。"""
@@ -175,10 +170,7 @@ class Time:
     def encode(self) -> str:
         """決定的なcompact JSON文字列へ変換する。"""
 
-        try:
-            return json.dumps(self.to_dict(), ensure_ascii=False, separators=(",", ":"), sort_keys=True, allow_nan=False)
-        except (TypeError, ValueError, UnicodeEncodeError) as exc:
-            raise TimeValidationError(f"cannot encode time: {exc}") from exc
+        return _encode_json(self.to_dict(), "time", TimeValidationError)
 
 
 __all__ = (

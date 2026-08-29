@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import math
 from dataclasses import dataclass
 from typing import Any, Mapping
 
 from .entity_ref import EntityReference
-from .errors import ValidationError
-from .registry import DEFAULT_REGISTRY
+from .errors import ValidationError, _decode_json, _encode_json
+from .registry import DEFAULT_REGISTRY, SCHEMA_FIELD_ORDER
 from .time import Time
 from .transform import Transform
 
@@ -18,23 +17,7 @@ CAMERA_FIELDS = frozenset(DEFAULT_REGISTRY.require_schema(CAMERA_SCHEMA))
 FILM_FIT_VALUES = frozenset({"horizontal", "vertical", "fill", "overscan"})
 GATE_FIT_VALUES = FILM_FIT_VALUES
 
-_CAMERA_FIELDS_IN_ORDER = (
-    "entity_ref",
-    "transform",
-    "time",
-    "projection",
-    "focal_length",
-    "horizontal_aperture",
-    "vertical_aperture",
-    "aperture_offset",
-    "clipping_range",
-    "focus_distance",
-    "f_stop",
-    "exposure",
-    "orthographic_size",
-    "film_fit",
-    "gate_fit",
-)
+_CAMERA_FIELDS_IN_ORDER = SCHEMA_FIELD_ORDER[CAMERA_SCHEMA]
 
 
 class CameraValidationError(ValidationError):
@@ -228,11 +211,7 @@ class Camera:
     def decode(cls, payload: str | bytes | bytearray) -> "Camera":
         """UTF-8 JSONからCameraを復元する。"""
 
-        try:
-            value = json.loads(payload)
-        except (TypeError, ValueError, UnicodeDecodeError) as exc:
-            raise CameraValidationError(f"invalid camera JSON: {exc}") from exc
-        return cls.from_dict(value)
+        return _decode_json(payload, cls.from_dict, "camera", CameraValidationError)
 
     def to_dict(self) -> dict[str, Any]:
         """Cameraを新しいJSON-compatible dictへ変換する。"""
@@ -258,10 +237,7 @@ class Camera:
     def encode(self) -> str:
         """決定的なcompact UTF-8 JSON文字列へ変換する。"""
 
-        try:
-            return json.dumps(self.to_dict(), ensure_ascii=False, separators=(",", ":"), sort_keys=True, allow_nan=False)
-        except (TypeError, ValueError, UnicodeEncodeError) as exc:
-            raise CameraValidationError(f"cannot encode camera: {exc}") from exc
+        return _encode_json(self.to_dict(), "camera", CameraValidationError)
 
 
 __all__ = (

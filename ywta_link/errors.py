@@ -1,6 +1,8 @@
-"""YWTA Link の例外型。"""
+"""YWTA Link の例外型と共通validation helper。"""
 
+import json
 import math
+from typing import Any, Callable, Mapping
 
 
 class ProtocolError(ValueError):
@@ -52,6 +54,30 @@ def _bounded_error_message(error: BaseException) -> str:
     """例外messageを1024文字以内の安全な文字列へ変換する。"""
 
     return _bounded_error_details(error)[1]
+
+
+def _decode_json(
+    payload: str | bytes | bytearray,
+    factory: Callable[[object], Any],
+    label: str,
+    error_type: type[Exception],
+) -> Any:
+    """UTF-8 JSONを復元し、domain固有のvalidationへ渡す。"""
+
+    try:
+        value = json.loads(payload)
+    except (TypeError, ValueError, UnicodeDecodeError) as error:
+        raise error_type(f"invalid {label} JSON: {error}") from error
+    return factory(value)
+
+
+def _encode_json(value: Mapping[str, object], label: str, error_type: type[Exception]) -> str:
+    """JSON objectを決定的なcompact JSONへ変換する。"""
+
+    try:
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True, allow_nan=False)
+    except (TypeError, ValueError, UnicodeEncodeError) as error:
+        raise error_type(f"cannot encode {label}: {error}") from error
 
 
 def _validate_identifier(value: object, field_name: str, error_type: type[Exception]) -> str:

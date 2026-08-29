@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import math
 from collections import deque
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from .errors import ValidationError
-from .registry import DEFAULT_REGISTRY
+from .errors import ValidationError, _decode_json, _encode_json
+from .registry import DEFAULT_REGISTRY, SCHEMA_FIELD_ORDER
 from .time import Time
 
 PLAYBACK_SCHEMA = "ywta.common.playback.v1"
@@ -18,15 +17,7 @@ PLAYBACK_STATE_VALUES = frozenset({"playing", "paused"})
 PLAYBACK_DIRECTION_VALUES = frozenset({"forward", "reverse"})
 PLAYBACK_LOOP_MODE_VALUES = frozenset({"once", "loop", "ping-pong"})
 
-_PLAYBACK_FIELDS_IN_ORDER = (
-    "state",
-    "position",
-    "playback_range",
-    "speed",
-    "direction",
-    "loop_mode",
-    "change_id",
-)
+_PLAYBACK_FIELDS_IN_ORDER = SCHEMA_FIELD_ORDER[PLAYBACK_SCHEMA]
 
 
 class PlaybackValidationError(ValidationError):
@@ -186,11 +177,7 @@ class Playback:
     def decode(cls, payload: str | bytes | bytearray) -> "Playback":
         """UTF-8 JSONからPlaybackを復元する。"""
 
-        try:
-            value = json.loads(payload)
-        except (TypeError, ValueError, UnicodeDecodeError) as exc:
-            raise PlaybackValidationError(f"invalid playback JSON: {exc}") from exc
-        return cls.from_dict(value)
+        return _decode_json(payload, cls.from_dict, "playback", PlaybackValidationError)
 
     def to_dict(self) -> dict[str, Any]:
         """Playbackを新しいJSON-compatible dictへ変換する。"""
@@ -208,10 +195,7 @@ class Playback:
     def encode(self) -> str:
         """決定的なcompact UTF-8 JSON文字列へ変換する。"""
 
-        try:
-            return json.dumps(self.to_dict(), ensure_ascii=False, separators=(",", ":"), sort_keys=True, allow_nan=False)
-        except (TypeError, ValueError, UnicodeEncodeError) as exc:
-            raise PlaybackValidationError(f"cannot encode playback: {exc}") from exc
+        return _encode_json(self.to_dict(), "playback", PlaybackValidationError)
 
 
 __all__ = (
