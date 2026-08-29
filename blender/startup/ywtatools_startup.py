@@ -6,7 +6,9 @@ import sys
 from pathlib import Path
 
 
-_owned_project_root: str | None = None
+# importlib.reload()後も追加したsys.pathエントリの所有権を保持する。
+if "_owned_project_root" not in globals():
+    _owned_project_root: str | None = None
 
 
 def _is_equivalent_path(entry: object, project_root: Path) -> bool:
@@ -44,12 +46,14 @@ def register() -> None:
         package_init = project_root / "ywta_link" / "__init__.py"
         if not package_init.is_file():
             return
-        if any(_is_equivalent_path(entry, project_root) for entry in sys.path):
-            return
-
         project_root_text = str(project_root)
-        sys.path.append(project_root_text)
-        _owned_project_root = project_root_text
+        equivalent_entries = [entry for entry in sys.path if _is_equivalent_path(entry, project_root)]
+        if equivalent_entries and sys.path[0] == project_root_text:
+            return
+        sys.path[:] = [entry for entry in sys.path if not _is_equivalent_path(entry, project_root)]
+        sys.path.insert(0, project_root_text)
+        if not equivalent_entries:
+            _owned_project_root = project_root_text
     except (OSError, RuntimeError, TypeError, ValueError):
         return
 

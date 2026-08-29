@@ -57,6 +57,14 @@ class _Timers:
         self.is_registered_calls += 1
         return any(entry[0] is callback for entry in self.callbacks)
 
+    def run(self, callback):
+        """Blender同様、Noneを返したcallbackを登録台帳から除去する。"""
+
+        result = callback()
+        if result is None:
+            self.callbacks = [entry for entry in self.callbacks if entry[0] is not callback]
+        return result
+
 
 class _Bpy:
     """timerだけを公開するfake bpy。"""
@@ -75,6 +83,8 @@ class _Host:
         self.last_error = None
         self.fail_register = False
         self.fail_unregister = False
+        self.fail_tick = False
+        self.local_events: list[str] = []
 
     def register(self) -> bool:
         self.calls.append("host.register")
@@ -89,6 +99,20 @@ class _Host:
             raise RuntimeError("host unregister failed")
         self.registered = False
         return True
+
+    def quarantine(self) -> None:
+        self.failed = True
+
+    def tick(self) -> None:
+        self.calls.append("host.tick")
+        if self.fail_tick:
+            raise RuntimeError("host tick failed")
+
+    def emit_local(self) -> None:
+        """登録中のhandlerだけがlocal eventを通知する状況を模倣する。"""
+
+        if self.registered and not self.failed:
+            self.local_events.append("local")
 
 
 class _Runtime:
@@ -156,13 +180,16 @@ class BlenderPlaybackLifecycleTests(unittest.TestCase):
         callback, interval, persistent = self.bpy.app.timers.callbacks[0]
         self.assertEqual(0.25, interval)
         self.assertTrue(persistent)
-        self.assertEqual(0.25, callback())
-        self.assertEqual(["runtime.start", "host.register", "runtime.pump"], self.calls)
+        self.assertEqual(0.25, self.bpy.app.timers.run(callback))
+        self.assertEqual(
+            ["runtime.start", "host.register", "runtime.pump", "host.tick"],
+            self.calls,
+        )
 
         self.assertTrue(self.lifecycle.close())
         self.assertFalse(self.lifecycle.close())
         self.assertEqual(
-            ["runtime.start", "host.register", "runtime.pump", "host.unregister", "runtime.close"],
+            ["runtime.start", "host.register", "runtime.pump", "host.tick", "host.unregister", "runtime.close"],
             self.calls,
         )
         self.assertEqual([], self.bpy.app.timers.callbacks)
@@ -174,12 +201,15 @@ class BlenderPlaybackLifecycleTests(unittest.TestCase):
         self.runtime.fail_pump = True
         self.lifecycle.start()
         callback = self.bpy.app.timers.callbacks[0][0]
-        self.assertIsNone(callback())
+        self.assertIsNone(self.bpy.app.timers.run(callback))
         self.assertFalse(self.lifecycle.timer_registered)
         self.assertTrue(self.lifecycle.failed)
-        self.assertEqual("pump", self.lifecycle.last_error.callback)
+        self.assertEqual("timer", self.lifecycle.last_error.callback)
         self.assertEqual("RuntimeError", self.lifecycle.last_error.exception_type)
         self.assertEqual([], self.bpy.app.timers.callbacks)
+        self.assertFalse(self.host.registered)
+        self.host.emit_local()
+        self.assertEqual([], self.host.local_events)
 
         self.assertTrue(self.lifecycle.close())
         self.assertEqual(["runtime.start", "host.register", "runtime.pump", "host.unregister", "runtime.close"], self.calls)
@@ -197,11 +227,48 @@ class BlenderPlaybackLifecycleTests(unittest.TestCase):
         self.assertTrue(self.lifecycle.status.failed)
         self.assertIs(host_error, self.lifecycle.status.error)
         callback = self.bpy.app.timers.callbacks[0][0]
-        self.assertIsNone(callback())
+        self.assertIsNone(self.bpy.app.timers.run(callback))
         self.assertFalse(self.lifecycle.timer_registered)
         self.assertNotIn("runtime.pump", self.calls)
 
         self.assertTrue(self.lifecycle.close())
+
+    def test_host_tick_runs_after_runtime_pump_and_stops_timer_on_failure(self) -> None:
+        """Host差分検出はpump後に実行し、失敗時はtimerを自己解除する。"""
+
+        self.host.fail_tick = True
+        self.lifecycle.start()
+        callback = self.bpy.app.timers.callbacks[0][0]
+
+        self.assertIsNone(self.bpy.app.timers.run(callback))
+        self.assertEqual(
+            ["runtime.start", "host.register", "runtime.pump", "host.tick", "host.unregister"],
+            self.calls,
+        )
+        self.assertEqual([], self.bpy.app.timers.callbacks)
+        self.assertTrue(self.lifecycle.failed)
+        self.assertEqual("timer", self.lifecycle.last_error.callback)
+
+    def test_terminal_host_unregistration_failure_is_retried_by_close(self) -> None:
+        """隔離時のHost解除失敗は台帳を残し、closeで再試行する。"""
+
+        self.runtime.fail_pump = True
+        self.host.fail_unregister = True
+        self.lifecycle.start()
+        callback = self.bpy.app.timers.callbacks[0][0]
+
+        self.assertIsNone(self.bpy.app.timers.run(callback))
+        self.assertTrue(self.host.registered)
+        self.assertTrue(self.lifecycle._host_registered)
+        self.host.emit_local()
+        self.assertEqual([], self.host.local_events)
+        with self.assertRaises(BlenderPlaybackLifecycleError):
+            self.lifecycle.close()
+
+        self.host.fail_unregister = False
+        self.assertTrue(self.lifecycle.close())
+        self.assertFalse(self.host.registered)
+        self.assertTrue(self.runtime.closed)
 
     def test_timer_unregistration_failure_keeps_actual_ledger_for_retry(self) -> None:
         """timer解除失敗時は後続componentを閉じず、次回closeで再試行する。"""

@@ -48,8 +48,8 @@ class BlenderPlaybackLifecycle:
     ) -> None:
         """既存componentを借用し、生成元threadを所有threadとして記録する。"""
 
-        if not callable(getattr(host, "register", None)) or not callable(getattr(host, "unregister", None)):
-            raise BlenderPlaybackLifecycleError("host must provide register and unregister")
+        if any(not callable(getattr(host, method, None)) for method in ("register", "unregister", "quarantine", "tick")):
+            raise BlenderPlaybackLifecycleError("host must provide register, unregister, quarantine, and tick")
         if not callable(getattr(runtime, "start", None)) or not callable(getattr(runtime, "pump", None)):
             raise BlenderPlaybackLifecycleError("runtime must provide start and pump")
         if not callable(getattr(runtime, "close", None)):
@@ -255,9 +255,13 @@ class BlenderPlaybackLifecycle:
         return errors
 
     def _timer_callback(self) -> float | None:
-        """Main Thread timerでpumpし、例外時はNoneを返してtimerを停止する。"""
+        """Main Thread timerでnetworkとDCC差分を処理し、失敗時は停止する。"""
 
-        if self._closed or not self._timer_registered or self.failed:
+        if self._closed or not self._timer_registered:
+            self._timer_registered = False
+            return None
+        if self.failed:
+            self._quarantine_host()
             self._timer_registered = False
             return None
         try:
@@ -266,16 +270,30 @@ class BlenderPlaybackLifecycle:
                 self._runtime.pump()
             else:
                 self._runtime.pump(max_items=self._max_pump_items)
+            self._host.tick()
         except BaseException as error:
             self._failed = True
-            self._record_error("pump", error)
-            # None戻り値でBlender自身にも除去させつつ、fakeが台帳を持つ場合は即時解除する。
-            try:
-                self._unregister_timer()
-            except BaseException:
-                self._timer_registered = self._timer_presence() is True
+            self._record_error("timer", error)
+            self._quarantine_host()
+            # BlenderはNoneを返したcallbackを自身のtimer台帳から除去する。
+            self._timer_registered = False
             return None
         return self._timer_interval
+
+    def _quarantine_host(self) -> None:
+        """terminal後のlocal callbackを止め、解除失敗はclose再試行へ残す。"""
+
+        try:
+            self._host.quarantine()
+        except BaseException:
+            pass
+        if not (self._host_registered or bool(getattr(self._host, "registered", False))):
+            return
+        try:
+            self._host.unregister()
+        except BaseException:
+            return
+        self._host_registered = False
 
     def _make_persistent_callback(self) -> Any:
         """再登録時も同じidentityを使うtimer wrapperを生成する。"""

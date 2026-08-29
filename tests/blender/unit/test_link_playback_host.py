@@ -165,23 +165,6 @@ class BlenderPlaybackHostTests(unittest.TestCase):
         with self.assertRaises(BlenderPlaybackHostError):
             host.apply(_snapshot())
 
-    def test_timebase_validator_failure_is_isolated_in_callback(self):
-        host = BlenderPlaybackHost(
-            self.events.append,
-            bpy_module=self.bpy,
-            timebase_validator=lambda _scene: False,
-        )
-        host._timer_registered = True
-        host._registered = True
-
-        result = host._timer_callback()
-
-        self.assertIsNone(result)
-        self.assertTrue(host.failed)
-        self.assertFalse(host._timer_registered)
-        self.assertIsNotNone(host.last_error)
-        self.assertEqual(host.last_error.exception_type, "BlenderPlaybackHostError")
-
     def test_invalid_rate_callbacks_fail_terminally_without_later_publish(self):
         expected_rate = RationalRate(24, 1)
 
@@ -270,13 +253,10 @@ class BlenderPlaybackHostTests(unittest.TestCase):
         self.assertFalse(self.host.register())
         for name in BLENDER_PLAYBACK_HANDLERS:
             self.assertEqual(1, len(getattr(self.bpy.app.handlers, name)))
-        self.assertEqual(1, len(self.bpy.app.timers.callbacks))
-        self.assertTrue(self.bpy.app.timers.callbacks[0][2])
         self.assertTrue(self.host.unregister())
         self.assertFalse(self.host.unregister())
         for name in BLENDER_PLAYBACK_HANDLERS:
             self.assertEqual([], getattr(self.bpy.app.handlers, name))
-        self.assertEqual([], self.bpy.app.timers.callbacks)
 
     def test_register_collapses_preexisting_duplicate_callback(self):
         self.host.register()
@@ -553,14 +533,6 @@ class BlenderPlaybackHostTests(unittest.TestCase):
             dcc_state,
             (self.scene.frame_current, self.scene.frame_start, self.scene.frame_end, tuple(self.controls)),
         )
-
-    def test_timer_callback_does_not_leak_scene_error(self):
-        host = BlenderPlaybackHost(self.events.append, bpy_module=self.bpy, playback_control=self._control)
-        host.register()
-        self.scene.frame_end = object()
-        self.assertIsNone(host._timer_callback_wrapper())
-        self.assertEqual("BlenderPlaybackHostError", host.last_error.exception_type)
-        self.assertTrue(host.failed)
 
     def test_optional_direction_and_job_query_failures_are_not_terminal(self):
         host = BlenderPlaybackHost(

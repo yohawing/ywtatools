@@ -133,14 +133,12 @@ class BlenderPlaybackSessionTests(unittest.TestCase):
             _config(),
             bpy_module=bpy,
             client_factory=lambda _config: client,
-            host_options={"timer_interval": 0.2},
             lifecycle_options={"timer_interval": 0.3, "max_pump_items": 4},
         )
 
         self.assertIs(type(session.lifecycle), BlenderPlaybackLifecycle)
         self.assertIs(type(session.lifecycle._host), BlenderPlaybackHost)
         self.assertIs(session.lifecycle._host._bpy, bpy)
-        self.assertEqual(session.lifecycle._host._timer_interval, 0.2)
         self.assertEqual(session.lifecycle._timer_interval, 0.3)
         self.assertEqual(session.lifecycle._max_pump_items, 4)
         session.close()
@@ -208,7 +206,6 @@ class BlenderPlaybackSessionTests(unittest.TestCase):
             result = bootstrap_blender_playback_session(
                 bpy_module=bpy,
                 connection_factory=connection_factory,
-                host_options={"timer_interval": 0.2},
                 lifecycle_options={"timer_interval": 0.3},
             )
 
@@ -226,7 +223,6 @@ class BlenderPlaybackSessionTests(unittest.TestCase):
         lifecycle = lifecycle_factory(host, runtime)
         self.assertIs(type(host), BlenderPlaybackHost)
         self.assertIs(type(lifecycle), BlenderPlaybackLifecycle)
-        self.assertEqual(host._timer_interval, 0.2)
         self.assertEqual(lifecycle._timer_interval, 0.3)
         self.assertFalse(lifecycle.started)
         self.assertEqual(host.snapshot().time_unit, config.time_unit)

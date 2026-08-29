@@ -70,7 +70,6 @@ class BlenderPlaybackHost:
         loop_mode_query: Callable[[Any], Any] | None = None,
         loop_mode_apply: Callable[[Any, str], None] | None = None,
         timebase_validator: Callable[[Any], Any] | None = None,
-        timer_interval: float = 0.1,
     ) -> None:
         """Blender API依存を解決し、所有Main Threadを記録する。"""
 
@@ -94,8 +93,6 @@ class BlenderPlaybackHost:
             raise BlenderPlaybackHostError("speed_apply requires speed_query")
         if loop_mode_apply is not None and loop_mode_query is None:
             raise BlenderPlaybackHostError("loop_mode_apply requires loop_mode_query")
-        _positive_number(timer_interval, "timer_interval")
-
         self._bpy = _BPY if bpy_module is None else bpy_module
         if self._bpy is None:
             raise BlenderPlaybackHostUnavailableError("Blender Python API is unavailable; inject bpy_module for tests")
@@ -109,12 +106,10 @@ class BlenderPlaybackHost:
         self._loop_mode_query = loop_mode_query
         self._loop_mode_apply = loop_mode_apply
         self._timebase_validator = timebase_validator
-        self._timer_interval = float(timer_interval)
         self._on_change = on_change
 
         self._owner_thread_id = threading.get_ident()
         self._registered = False
-        self._timer_registered = False
         self._failed = False
         self._applying = False
         self._playing: bool | None = None
@@ -127,14 +122,10 @@ class BlenderPlaybackHost:
         self._last_error: CallbackErrorStatus | None = None
         self._error_count = 0
         self._handler_callbacks = self._make_handler_callbacks()
-        self._timer_callback_wrapper = self._make_persistent_callback(
-            "timer",
-            self._timer_callback,
-        )
 
     @property
     def registered(self) -> bool:
-        """callbackとtimerが登録済みかを返す。"""
+        """callbackが登録済みかを返す。"""
 
         return self._registered
 
@@ -157,27 +148,16 @@ class BlenderPlaybackHost:
         return self._last_apply_approximated_fields
 
     def register(self) -> bool:
-        """Blender handlersとMain Thread timerを一度だけ登録する。"""
+        """Blender handlersを一度だけ登録する。"""
 
         self._assert_owner_thread("register")
         if self._registered:
             return False
         handlers = self._handler_lists()
-        timers = self._timers()
         callbacks = self._callback_map()
         try:
             for name, callback in callbacks.items():
                 self._append_handler_once(handlers[name], callback)
-
-            register_timer = getattr(timers, "register", None)
-            if not callable(register_timer):
-                raise BlenderPlaybackHostUnavailableError("bpy.app.timers.register is unavailable")
-            register_timer(
-                self._timer_callback_wrapper,
-                first_interval=self._timer_interval,
-                persistent=True,
-            )
-            self._timer_registered = True
 
             scene = self._scene()
             self._validate_timebase(scene)
@@ -186,9 +166,9 @@ class BlenderPlaybackHost:
             self._last_dynamic = self._dynamic_signature(scene)
         except BaseException as exc:
             try:
-                self._remove_callbacks_safely(handlers, timers)
+                self._remove_callbacks_safely(handlers)
             except BaseException as cleanup_error:
-                self._registered = bool(self._remaining_callbacks(handlers)) or self._timer_registered
+                self._registered = self._remaining_callbacks(handlers)
                 raise BlenderPlaybackHostError(
                     "Blender playback callback registration failed; callback cleanup failed"
                 ) from cleanup_error
@@ -199,18 +179,17 @@ class BlenderPlaybackHost:
         return True
 
     def unregister(self) -> bool:
-        """登録したhandlerとtimerを個別解除する。失敗した対象は台帳へ残す。"""
+        """登録したhandlerを個別解除する。失敗した対象は台帳へ残す。"""
 
         self._assert_owner_thread("unregister")
         handlers = self._handler_lists()
-        timers = self._timers()
-        if not self._remaining_callbacks(handlers) and not self._timer_registered:
+        if not self._remaining_callbacks(handlers):
             self._registered = False
             return False
         try:
-            self._remove_callbacks_safely(handlers, timers)
+            self._remove_callbacks_safely(handlers)
         except BaseException as exc:
-            self._registered = bool(self._remaining_callbacks(handlers)) or self._timer_registered
+            self._registered = self._remaining_callbacks(handlers)
             raise BlenderPlaybackHostError("Blender playback callback removal failed") from exc
 
         self._registered = False
@@ -221,6 +200,12 @@ class BlenderPlaybackHost:
         return True
 
     close = unregister
+
+    def quarantine(self) -> None:
+        """terminal後のcallbackとDCC操作を停止する。"""
+
+        self._assert_owner_thread("quarantine")
+        self._failed = True
 
     def tick(self) -> None:
         """Main Threadでrange/speed/loop差分を検出し、必要なeventを通知する。"""
@@ -683,14 +668,6 @@ class BlenderPlaybackHost:
             result[name] = value
         return result
 
-    def _timers(self) -> Any:
-        """Blender timer APIを取得する。"""
-
-        timers = getattr(getattr(self._bpy, "app", None), "timers", None)
-        if timers is None:
-            raise BlenderPlaybackHostUnavailableError("bpy.app.timers is unavailable")
-        return timers
-
     def _callback_map(self) -> dict[str, Callable[..., None]]:
         """handler名とbridge callbackの対応を返す。"""
 
@@ -749,8 +726,8 @@ class BlenderPlaybackHost:
         if not found:
             handler_list.append(callback)
 
-    def _remove_callbacks_safely(self, handlers: dict[str, Any], timers: Any) -> None:
-        """実際に残ったhandlerを観測し、timerと各handlerを個別解除する。"""
+    def _remove_callbacks_safely(self, handlers: dict[str, Any]) -> None:
+        """実際に残ったhandlerを観測し、各handlerを個別解除する。"""
 
         failures: list[BaseException] = []
         for name, callback in self._callback_map().items():
@@ -762,17 +739,6 @@ class BlenderPlaybackHost:
                     handler_list.remove(existing)
                 except BaseException as exc:
                     failures.append(exc)
-        if self._timer_registered:
-            unregister_timer = getattr(timers, "unregister", None)
-            if not callable(unregister_timer):
-                failures.append(BlenderPlaybackHostUnavailableError("bpy.app.timers.unregister is unavailable"))
-            else:
-                try:
-                    unregister_timer(self._timer_callback_wrapper)
-                except BaseException as exc:
-                    failures.append(exc)
-                else:
-                    self._timer_registered = False
         if failures:
             raise failures[0]
 
@@ -830,21 +796,6 @@ class BlenderPlaybackHost:
             setattr(instance, name, value)
         except BaseException as exc:
             raise BlenderPlaybackHostError(f"cannot set Blender property {name}") from exc
-
-    def _timer_callback(self) -> float | None:
-        """Blender timerから呼ばれ、例外をstatusへ隔離して再登録間隔を返す。"""
-
-        if not self._registered or self._failed:
-            # BlenderはNoneを返したtimer callbackを台帳から除去する。
-            self._timer_registered = False
-            return None
-        try:
-            self.tick()
-        except BaseException as exc:
-            self._record_error("timer", exc)
-            self._timer_registered = False
-            return None
-        return self._timer_interval if self._registered else None
 
     def _assert_owner_thread(self, operation: str) -> None:
         """Blender Main Thread以外からの操作を拒否する。"""

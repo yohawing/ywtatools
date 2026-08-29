@@ -48,14 +48,14 @@ class BlenderStartupLinkImportTests(unittest.TestCase):
         sys.path[:] = [entry for entry in sys.path if not _MODULE._is_equivalent_path(entry, project_root)]
         return project_root
 
-    def test_register_appends_root_and_imports_shared_package(self) -> None:
+    def test_register_prepends_root_and_imports_shared_package(self) -> None:
         """実際の共有パッケージをScript Directory経由でimportできる。"""
 
         project_root = self._remove_project_root_entries()
         _MODULE.register()
 
         project_root_text = str(project_root)
-        self.assertEqual(project_root_text, sys.path[-1])
+        self.assertEqual(project_root_text, sys.path[0])
         self.assertEqual(1, sum(entry == project_root_text for entry in sys.path))
 
         import ywta_link
@@ -78,6 +78,19 @@ class BlenderStartupLinkImportTests(unittest.TestCase):
         _MODULE.unregister()
         self.assertFalse(any(_MODULE._is_equivalent_path(entry, project_root) for entry in sys.path))
 
+    def test_reload_preserves_owned_entry_for_unregister(self) -> None:
+        """reload相当の再実行後も追加済みルートを解除できる。"""
+
+        project_root = self._remove_project_root_entries()
+        _MODULE.register()
+        owned_root = _MODULE._owned_project_root
+
+        _SPEC.loader.exec_module(_MODULE)
+
+        self.assertEqual(owned_root, _MODULE._owned_project_root)
+        _MODULE.unregister()
+        self.assertFalse(any(_MODULE._is_equivalent_path(entry, project_root) for entry in sys.path))
+
     def test_preexisting_equivalent_entry_is_preserved(self) -> None:
         """既存の同値エントリをregister/unregisterの所有物にしない。"""
 
@@ -89,6 +102,7 @@ class BlenderStartupLinkImportTests(unittest.TestCase):
         _MODULE.unregister()
 
         self.assertEqual([project_root_text], [entry for entry in sys.path if entry == project_root_text])
+        self.assertEqual(project_root_text, sys.path[0])
 
     def test_path_entry_does_not_suppress_owned_string_entry(self) -> None:
         """Pathエントリがあってもimport可能な文字列ルートを追加する。"""
@@ -99,8 +113,8 @@ class BlenderStartupLinkImportTests(unittest.TestCase):
         _MODULE.register()
 
         project_root_text = str(project_root)
-        self.assertEqual(project_root, sys.path[-2])
-        self.assertEqual(project_root_text, sys.path[-1])
+        self.assertEqual(project_root, sys.path[-1])
+        self.assertEqual(project_root_text, sys.path[0])
         self.assertEqual(project_root_text, _MODULE._owned_project_root)
 
         import ywta_link
@@ -109,6 +123,23 @@ class BlenderStartupLinkImportTests(unittest.TestCase):
             (project_root / "ywta_link" / "__init__.py").resolve(),
             Path(ywta_link.__file__).resolve(),
         )
+
+    def test_project_root_precedes_shadow_package(self) -> None:
+        """同名packageが後段にあってもrepo内の共有packageを解決する。"""
+
+        project_root = self._remove_project_root_entries()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            shadow_root = Path(temporary_directory)
+            shadow_package = shadow_root / "ywta_link"
+            shadow_package.mkdir()
+            (shadow_package / "__init__.py").write_text("SOURCE = 'shadow'\n", encoding="utf-8")
+            sys.path.insert(0, str(shadow_root))
+
+            _MODULE.register()
+            import ywta_link
+
+        self.assertEqual(str(project_root), sys.path[0])
+        self.assertEqual((project_root / "ywta_link" / "__init__.py").resolve(), Path(ywta_link.__file__).resolve())
 
     def test_missing_shared_package_is_a_noop(self) -> None:
         """共有パッケージがない配置ではsys.pathを変更しない。"""
