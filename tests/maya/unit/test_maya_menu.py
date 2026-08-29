@@ -83,7 +83,7 @@ class MayaMenuTests(TestCase):
                 raise TypeError("menu commandの呼び出し対象がcallableではありません: {}".format(command))
 
     @staticmethod
-    def _build(builder):
+    def _capture_menu_items(builder):
         calls = []
 
         def menu_item(*_args, **kwargs):
@@ -92,6 +92,11 @@ class MayaMenuTests(TestCase):
 
         with mock.patch.object(cmds, "menuItem", side_effect=menu_item):
             builder("ywtaTestMenu")
+        return calls
+
+    @staticmethod
+    def _build(builder):
+        calls = MayaMenuTests._capture_menu_items(builder)
         labels = {call.get("label") for call in calls if call.get("label")}
         commands = [call["command"] for call in calls if isinstance(call.get("command"), str)]
         for command in commands:
@@ -195,8 +200,27 @@ class MayaMenuTests(TestCase):
                 "Load Animation Clip to Selected (Replace)",
                 "Save Temporary Animation Clip",
                 "Load Temporary Animation Clip (Configured)",
+                "Playback Sync",
+                "Camera Sync",
             }.issubset(labels)
         )
+
+    def test_animation_menu_exposes_one_playback_sync_checkbox(self):
+        calls = self._capture_menu_items(menu_animation.create_animation_menu)
+
+        dividers = [call for call in calls if call.get("dividerLabel") == "YWTA Link"]
+        checkboxes = [call for call in calls if call.get("label") == "Playback Sync"]
+        self.assertEqual(1, len(dividers))
+        self.assertEqual(1, len(checkboxes))
+        self.assertIs(checkboxes[0].get("checkBox"), False)
+        self.assertEqual("play_regular.png", checkboxes[0].get("image"))
+
+    def test_animation_menu_exposes_one_camera_sync_checkbox(self):
+        calls = self._capture_menu_items(menu_animation.create_animation_menu)
+
+        checkboxes = [call for call in calls if call.get("label") == "Camera Sync"]
+        self.assertEqual(1, len(checkboxes))
+        self.assertIs(checkboxes[0].get("checkBox"), False)
 
     def test_scene_audit_is_reachable(self):
         labels = self._build(menu_utility.create_utility_menu)

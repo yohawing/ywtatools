@@ -1,0 +1,13 @@
+{
+  "protocol_version": 1,
+  "message_id": "msg-preview-001",
+  "type": "publish",
+  "room": "shot-010",
+  "sender": "blender:peer-001",
+  "topic": "sync/main-camera",
+  "schema": "ywta.sync.preview.v1",
+  "body": {
+    "revision": 8
+  },
+  "fixture_note": "未知Fieldは転送時に保持する"
+}

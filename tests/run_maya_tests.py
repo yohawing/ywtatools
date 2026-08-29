@@ -119,7 +119,7 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix="ywta_maya_tests_") as maya_app_dir:
             environment["MAYA_APP_DIR"] = maya_app_dir
-            subprocess.check_call(command, env=environment)
+            subprocess.check_call(command, env=environment, cwd=maya_app_dir)
     except subprocess.CalledProcessError as e:
         print(f"テストの実行に失敗しました: {e}")
         sys.exit(1)
